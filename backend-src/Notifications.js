@@ -1,0 +1,2 @@
+function createNotification_(userId,type,title,body,resourceType,resourceId){return insertRecord_('Notifications',{id:newId_('not'),userId:userId,type:type,title:cleanString_(title,140),body:cleanString_(body,1000),resourceType:resourceType||'',resourceId:resourceId||'',readAt:'',createdAt:nowIso_(),schemaVersion:1});}
+function getNotifications_(context){return listRecords_('Notifications').filter(function(n){return n.userId===context.user.id;}).slice(-100).reverse();}

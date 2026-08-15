@@ -1,0 +1,12 @@
+.crop-box::after { display: none; }
+.crop-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  right: -9px;
+  bottom: -9px;
+  background: #ad84fb;
+  border: 2px solid #30203f;
+  border-radius: 3px;
+  cursor: nwse-resize;
+}

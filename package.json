@@ -1,0 +1,29 @@
+{
+  "name": "project-galaxy",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --open /app.html",
+    "build": "vite build && node scripts/finalize-build.mjs",
+    "preview": "vite preview",
+    "serve-root": "node scripts/static-server.mjs",
+    "signaling": "node server/signaling.mjs",
+    "build:apps-script": "node scripts/build-single-gs.mjs",
+    "test": "vitest run",
+    "visual-check": "node scripts/visual-check.mjs",
+    "test:meeting": "node scripts/meeting-e2e.mjs"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "lucide-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "ws": "latest"
+  },
+  "devDependencies": {
+    "playwright": "latest",
+    "vitest": "latest"
+  }
+}
