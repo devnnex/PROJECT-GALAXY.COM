@@ -1,4 +1,5 @@
 export const products = [
+  { id: 'membership_sessions', kind: 'membership', title: 'Galaxy Sessions Access', seller: 'PROJECT GALAXY', category: 'Memberships', price: 80, rating: null, reviews: null, tone: 'membership', mark: 'GX', description: 'Activa tu cuenta para entrar a reuniones privadas, sesiones LIVE, chat y pantalla compartida.' },
   { id: 'prd_atlas', title: 'Atlas Creator System', seller: 'Nova Atelier', category: 'Software', price: 48, rating: 4.9, reviews: 184, tone: 'violet', mark: 'AT', description: 'Un sistema operativo de recursos, flujos y métricas para creadores independientes.' },
   { id: 'prd_signal', title: 'Signal & Story', seller: 'Mira Chen', category: 'Courses', price: 29, rating: 4.8, reviews: 96, tone: 'blue', mark: 'SS', description: 'Diseña historias digitales que convierten atención en comunidades duraderas.' },
   { id: 'prd_orbit', title: 'Orbit UI Library', seller: 'Polar Objects', category: 'Digital products', price: 64, rating: 5.0, reviews: 52, tone: 'amber', mark: 'OR', description: 'Componentes y sistemas visuales para productos de tecnología avanzada.' },

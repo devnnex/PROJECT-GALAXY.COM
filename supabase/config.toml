@@ -1,0 +1,5 @@
+[functions.membership-payments]
+verify_jwt = true
+
+[functions.nowpayments-webhook]
+verify_jwt = false

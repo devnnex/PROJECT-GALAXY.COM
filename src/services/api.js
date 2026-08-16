@@ -63,6 +63,12 @@ async function currentUser() {
   return rpc('get_current_user');
 }
 
+async function membershipPayment(payload) {
+  const { data, error } = await supabase.functions.invoke('membership-payments', { body: payload });
+  if (error || data?.error) throw new Error('No fue posible conectar con la pasarela segura de pagos. Intenta nuevamente.');
+  return data;
+}
+
 export const api = {
   mode: 'supabase',
   async login({ email, password }) {
@@ -88,6 +94,9 @@ export const api = {
   bootstrap: (modules = ['user']) => rpc('get_bootstrap_data', { modules }),
   me: currentUser,
   updateProfile: (payload) => rpc('update_profile', payload),
+  getMembershipCenter: () => rpc('get_membership_center'),
+  createMembershipPayment: ({ planCode, network }) => membershipPayment({ action: 'create', planCode, network }),
+  refreshMembershipPayment: (orderId) => membershipPayment({ action: 'refresh', orderId }),
   createMeeting: (payload) => rpc('create_meeting', payload),
   joinMeeting: (payload) => rpc('join_meeting', payload),
   getMyMeetings: () => rpc('get_my_meetings'),

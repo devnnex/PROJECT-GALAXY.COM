@@ -23,6 +23,43 @@ where key = 'ice_servers';
 
 Las credenciales TURN estáticas quedan expuestas a cualquier miembro admitido. En producción emite credenciales efímeras desde una Supabase Edge Function o desde el proveedor TURN.
 
+## Membresías y pagos USDT
+
+El acceso premium protege **Reuniones** y **En vivo** tanto en React como en PostgreSQL y Realtime. Ejecuta nuevamente `supabase/schema.sql` antes de publicar el frontend: todos los usuarios sin una membresía activa perderán acceso a esas dos secciones, tal como exige el producto.
+
+Los planes configurados son:
+
+- `MONTHLY`: USD 80 por 1 mes.
+- `QUARTERLY`: USD 250 por 3 meses.
+- `SEMESTER`: USD 499 por 6 meses.
+- `ANNUAL`: USD 7.999 por 12 meses.
+
+El precio anual reproduce literalmente el importe solicitado. Confírmalo antes de aceptar pagos reales, porque es considerablemente mayor que los demás planes.
+
+La integración usa NOWPayments para generar una dirección única por orden en `USDTTRC20` o `USDTERC20`. La aplicación nunca contiene la API key, el secreto IPN, una clave `service_role` ni la dirección privada de liquidación. Configura en NOWPayments las wallets de retiro correspondientes, crea una API key y genera un **IPN Secret**; este último se muestra completamente solo al crearlo.
+
+Con Supabase CLI instalado y autenticado:
+
+```powershell
+supabase login
+supabase link --project-ref xdsqtuubsptpzwadecha
+supabase secrets set NOWPAYMENTS_API_KEY="TU_API_KEY"
+supabase secrets set NOWPAYMENTS_IPN_SECRET="TU_IPN_SECRET"
+supabase secrets set APP_ALLOWED_ORIGINS="https://devnnex.github.io,http://localhost:5173"
+supabase functions deploy membership-payments
+supabase functions deploy nowpayments-webhook --no-verify-jwt
+```
+
+Supabase proporciona automáticamente a las funciones `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`; no las copies al repositorio. El endpoint IPN usado al crear cada pago será:
+
+```text
+https://xdsqtuubsptpzwadecha.supabase.co/functions/v1/nowpayments-webhook
+```
+
+La función pública del webhook no acepta activaciones anónimas: exige `x-nowpayments-sig`, verifica HMAC SHA-512 con el secreto IPN y después valida ID de proveedor, UUID de orden, red, moneda, importe completo, ausencia de `parent_payment_id` y estado final `finished`. El cliente también consulta el estado como recuperación si una notificación IPN se retrasa.
+
+Antes de producción realiza el flujo completo con una cuenta de prueba de NOWPayments. No cambies una orden manualmente a `FINISHED` ni concedas escritura de las tablas de membresía al rol `authenticated`. Para una prueba administrativa controlada, crea una orden de prueba a través de la pasarela y permite que el webhook ejecute la activación idempotente.
+
 ## GitHub Pages de producción
 
 `src/runtime-config.js` ya contiene la URL del proyecto y la anon key pública. El workflow `.github/workflows/deploy-pages.yml` ejecuta instalación bloqueada, pruebas y compilación. El artefacto público contiene únicamente el acceso raíz y la aplicación compilada bajo `dist/`; no publica código fuente, SQL ni archivos internos.
