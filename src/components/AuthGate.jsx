@@ -36,7 +36,7 @@ export default function AuthGate({ onAuthenticated, onBack }) {
       </div> : <>
       <p className="eyebrow">XAUUSD TRADING DESK</p>
       <h1>{mode === 'login' ? 'Vuelve al mercado.' : 'Crea tu acceso al desk.'}</h1>
-      <p className="muted">{mode === 'login' ? 'Tus sesiones, análisis y herramientas de liquidez te esperan.' : 'Una cuenta para estudiar XAUUSD, liquidez y Kill Zones.'}</p>
+      <p className="muted">{mode === 'login' ? 'Tus operativas en vivo, análisis y herramientas de liquidez te esperan.' : 'Una cuenta para acompañar el estudio de XAUUSD, liquidez y Kill Zones.'}</p>
       <form onSubmit={submit}>
         {mode === 'register' && <div className="field-row"><label>Nombre<input required name="name" value={form.name} onChange={update} placeholder="Tu nombre" /></label><label>Usuario<input required minLength="3" name="username" value={form.username} onChange={update} placeholder="usuario" /></label></div>}
         <label>Correo electrónico<input required type="email" name="email" value={form.email} onChange={update} autoComplete="email" /></label>
