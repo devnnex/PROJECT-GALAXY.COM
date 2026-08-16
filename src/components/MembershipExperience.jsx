@@ -25,9 +25,9 @@ function MembershipCountdown({ expiresAt, compact = false }) {
 export function MembershipGate({ section, onChoosePlan }) {
   return <section className="membership-gate surface">
     <div className="membership-gate-orbit"><span /><Orbit /></div>
-    <p className="eyebrow">GALAXY MEMBERSHIP</p>
+    <p className="eyebrow">XAUUSD DESK MEMBERSHIP</p>
     <h1>{section} es un espacio para miembros.</h1>
-    <p>Activa tu cuenta para acceder a reuniones privadas, sesiones LIVE, chat y pantalla compartida.</p>
+    <p>Activa tu cuenta para acceder a sesiones privadas de XAUUSD, análisis LIVE, chat y pantalla compartida.</p>
     <div className="membership-gate-features"><span><ShieldCheck /> Acceso validado por Supabase</span><span><Clock3 /> Vigencia exacta por plan</span><span><WalletCards /> USDT TRC20 o ERC20</span></div>
     <button className="primary-button" onClick={onChoosePlan}>Ver membresías <ArrowRight /></button>
   </section>;
@@ -39,7 +39,7 @@ export function MembershipProfileCard({ membership, onRenew }) {
   const tone = String(membership?.badgeTone || 'VIOLET').toLowerCase();
   return <section className={`membership-profile-card surface tone-${tone} ${active ? 'active' : 'inactive'}`}>
     <div className="membership-profile-heading"><span className="membership-crown"><Crown /></span><div><p className="eyebrow">GALAXY ACCESS</p><h2>{active ? membership.planName : 'Acceso sin activar'}</h2></div><span className="membership-plan-badge">{active ? membership.planCode : 'FREE'}</span></div>
-    {active ? permanent ? <><p>Esta cuenta cuenta con acceso administrativo a toda la plataforma.</p><div className="membership-expiry-line"><ShieldCheck /> Acceso permanente: no requiere pago ni renovación.</div></> : <><p>Tu acceso premium permanece habilitado hasta el vencimiento indicado.</p><MembershipCountdown expiresAt={membership.expiresAt} /><div className="membership-expiry-line"><ShieldCheck /> Vence el {new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short' }).format(new Date(membership.expiresAt))}</div></> : <p>Activa una membresía para entrar a reuniones y sesiones en vivo.</p>}
+    {active ? permanent ? <><p>Esta cuenta cuenta con acceso administrativo a todo el trading desk.</p><div className="membership-expiry-line"><ShieldCheck /> Acceso permanente: no requiere pago ni renovación.</div></> : <><p>Tu acceso premium a las sesiones de XAUUSD permanece habilitado hasta el vencimiento indicado.</p><MembershipCountdown expiresAt={membership.expiresAt} /><div className="membership-expiry-line"><ShieldCheck /> Vence el {new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short' }).format(new Date(membership.expiresAt))}</div></> : <p>Activa una membresía para entrar a sesiones de análisis y transmisiones en vivo.</p>}
     {!permanent && <button className={active ? 'secondary-button' : 'primary-button'} onClick={onRenew}>{active ? 'Renovar o cambiar plan' : 'Activar membresía'} <ArrowRight /></button>}
   </section>;
 }
@@ -84,11 +84,11 @@ export function MembershipCheckoutModal({ plans = [], membership, initialPlanCod
   if (isAdministrator) return <div className="modal-backdrop membership-modal-backdrop" onMouseDown={onClose}><section className="membership-checkout glass" role="dialog" aria-modal="true" aria-labelledby="membership-checkout-title" onMouseDown={(event) => event.stopPropagation()}>
     <button className="icon-button modal-close" onClick={onClose} aria-label="Cerrar"><X /></button>
     <header><span className="membership-checkout-mark"><Crown /></span><div><p className="eyebrow">PROJECT GALAXY ADMINISTRATION</p><h1 id="membership-checkout-title">Acceso permanente habilitado</h1><p>Tu cuenta administradora tiene acceso completo y no requiere membresía ni pago.</p></div></header>
-    <div className="membership-payment-request"><div className="payment-warning"><ShieldCheck /><p>Las reuniones, sesiones LIVE, chat y pantalla compartida están disponibles para esta cuenta.</p></div><button className="primary-button" onClick={onClose}>Continuar <ArrowRight /></button></div>
+    <div className="membership-payment-request"><div className="payment-warning"><ShieldCheck /><p>Las sesiones XAUUSD, análisis LIVE, chat y pantalla compartida están disponibles para esta cuenta.</p></div><button className="primary-button" onClick={onClose}>Continuar <ArrowRight /></button></div>
   </section></div>;
   return <div className="modal-backdrop membership-modal-backdrop" onMouseDown={onClose}><section className="membership-checkout glass" role="dialog" aria-modal="true" aria-labelledby="membership-checkout-title" onMouseDown={(event) => event.stopPropagation()}>
     <button className="icon-button modal-close" onClick={onClose} aria-label="Cerrar"><X /></button>
-    <header><span className="membership-checkout-mark"><Orbit /></span><div><p className="eyebrow">PROJECT GALAXY MEMBERSHIP</p><h1 id="membership-checkout-title">{order ? 'Completa tu pago' : membership?.isActive ? 'Extiende tu acceso' : 'Activa tu cuenta'}</h1><p>{order ? 'Envía exactamente el importe indicado por la red seleccionada.' : 'Elige la duración que mejor se adapte a tus sesiones.'}</p></div></header>
+    <header><span className="membership-checkout-mark"><Orbit /></span><div><p className="eyebrow">PROJECT GALAXY XAUUSD MEMBERSHIP</p><h1 id="membership-checkout-title">{order ? 'Completa tu pago' : membership?.isActive ? 'Extiende tu acceso' : 'Activa tu cuenta'}</h1><p>{order ? 'Envía exactamente el importe indicado por la red seleccionada.' : 'Elige la duración que mejor se adapte a tus sesiones de análisis.'}</p></div></header>
     {!order ? <>
       <div className="membership-plan-grid">{plans.map((plan) => <button className={`membership-plan-option tone-${String(plan.badgeTone).toLowerCase()} ${selectedPlan?.code === plan.code ? 'selected' : ''}`} onClick={() => setSelectedCode(plan.code)} key={plan.code}><span>{plan.name}</span><strong>{money(plan.priceUsd)}</strong><small>{plan.durationMonths === 1 ? '1 mes' : `${plan.durationMonths} meses`}</small>{selectedPlan?.code === plan.code && <Check />}</button>)}</div>
       <div className="membership-network"><div><p className="eyebrow">RED DE PAGO</p><h3>Selecciona dónde enviarás USDT</h3></div><div>{[['TRC20', 'TRON · TRC20', 'Comisión usualmente menor'], ['ERC20', 'Ethereum · ERC20', 'Revisa la comisión de gas']].map(([code, label, note]) => <button className={network === code ? 'selected' : ''} onClick={() => setNetwork(code)} key={code}><span>{label}</span><small>{note}</small>{network === code && <Check />}</button>)}</div></div>
@@ -111,7 +111,7 @@ export function MembershipActivationModal({ membership, onClose, onOpenSessions 
   if (!membership?.isActive) return null;
   return <div className="modal-backdrop membership-success-backdrop"><section className={`membership-success glass tone-${String(membership.badgeTone || 'VIOLET').toLowerCase()}`} role="dialog" aria-modal="true">
     <button className="icon-button modal-close" onClick={onClose}><X /></button><div className="membership-success-orbit"><span /><Sparkles /></div>
-    <p className="eyebrow">PAYMENT VERIFIED</p><h1>Tu membresía está activa.</h1><p>{membership.planName} ya forma parte de tu cuenta. Reuniones y sesiones LIVE han sido habilitadas.</p>
+    <p className="eyebrow">PAYMENT VERIFIED</p><h1>Tu membresía está activa.</h1><p>{membership.planName} ya forma parte de tu cuenta. Las sesiones XAUUSD y análisis LIVE han sido habilitados.</p>
     <span className="membership-plan-badge">{membership.planCode}</span><MembershipCountdown expiresAt={membership.expiresAt} />
     <button className="primary-button" onClick={onOpenSessions}>Entrar a reuniones <ArrowRight /></button>
   </section></div>;
