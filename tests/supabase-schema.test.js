@@ -60,6 +60,25 @@ describe('Supabase contract', () => {
     expect(meetingClient).toContain("['offer', 'answer', 'ice'].includes(message.type)");
   });
 
+  it('keeps microphone changes from looking like participant departures', () => {
+    expect(meetingClient).toContain("event: 'participant-state'");
+    expect(meetingClient).toContain('this.pendingRemovals = new Map()');
+    expect(meetingClient).toContain('this.schedulePeerRemoval(peerId)');
+    expect(meetingClient).toContain("this.broadcast('participant-state'");
+    expect(meetingClient).not.toMatch(/setPresence\(data\)[^{]*\{[^}]*channel\?\.track/s);
+    expect(meetingClient).toContain("createOffer({ iceRestart: true })");
+    expect(meetingClient).toContain("pc?.signalingState === 'have-local-offer'");
+  });
+
+  it('uses a dedicated remote-audio path with an iOS playback recovery control', () => {
+    expect(meetingStudio).toContain('<audio className="remote-audio"');
+    expect(meetingStudio).toContain('muted controls={false}');
+    expect(meetingStudio).toContain("window.addEventListener('pointerdown', unlock, true)");
+    expect(meetingStudio).toContain('className="resume-audio-button"');
+    expect(meetingStyles).toContain('.video-surface video::-webkit-media-controls');
+    expect(meetingStyles).toContain('.video-surface.audio-only-surface');
+  });
+
   it('uses the one-RPC meeting creation path and resilient realtime startup', () => {
     expect(schema).toContain("'participantStatus','ADMITTED'");
     expect(meetingStudio).toMatch(/const created = await api\.createMeeting\(form\);[\s\S]*await connectAccess\(created\)/);

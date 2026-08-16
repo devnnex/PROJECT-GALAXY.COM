@@ -43,9 +43,9 @@ export class MeetingConnection {
   }
 
   async acceptOffer(message) { const pc = await this.createPeer(message.source, false); await pc.setRemoteDescription(message.data); await this.attachLocalTracks(pc); await this.flushIce(message.source); await pc.setLocalDescription(await pc.createAnswer()); this.send({ type: 'answer', target: message.source, data: pc.localDescription }); }
-  async acceptAnswer(message) { const pc = this.peers.get(message.source)?.pc; if (pc && !pc.currentRemoteDescription) { await pc.setRemoteDescription(message.data); await this.flushIce(message.source); } }
+  async acceptAnswer(message) { const pc = this.peers.get(message.source)?.pc; if (pc?.signalingState === 'have-local-offer') { await pc.setRemoteDescription(message.data); await this.flushIce(message.source); } }
   async acceptIce(message) { if (!message.data) return; const peer = this.peers.get(message.source); if (!peer) { const pending = this.orphanIce.get(message.source) || []; pending.push(message.data); this.orphanIce.set(message.source, pending.slice(-50)); return; } if (peer.pc.remoteDescription) await peer.pc.addIceCandidate(message.data).catch(() => {}); else peer.pendingIce.push(message.data); }
-  removePeer(peerId) { this.peers.get(peerId)?.pc.close(); this.peers.delete(peerId); this.participants.delete(peerId); this.callbacks.onRemoteStream?.(peerId, null); this.emitParticipants(); }
+  removePeer(peerId) { const peer = this.peers.get(peerId); if (peer?.reconnectTimer) clearTimeout(peer.reconnectTimer); peer?.pc.close(); this.peers.delete(peerId); this.participants.delete(peerId); this.callbacks.onRemoteStream?.(peerId, null); this.emitParticipants(); }
 
   async createPeer(peerId, initiator) {
     if (this.peers.has(peerId)) return this.peers.get(peerId).pc;
@@ -56,13 +56,26 @@ export class MeetingConnection {
     }
     pc.onicecandidate = (event) => { if (event.candidate) this.send({ type: 'ice', target: peerId, data: event.candidate }); };
     pc.ontrack = (event) => { if (!remoteStream.getTracks().some((track) => track.id === event.track.id)) remoteStream.addTrack(event.track); this.callbacks.onRemoteStream?.(peerId, remoteStream); };
-    pc.onconnectionstatechange = () => this.callbacks.onPeerState?.(peerId, pc.connectionState);
-    this.peers.set(peerId, { pc, remoteStream, pendingIce: this.orphanIce.get(peerId) || [] }); this.orphanIce.delete(peerId);
+    pc.onconnectionstatechange = () => {
+      this.callbacks.onPeerState?.(peerId, pc.connectionState);
+      const peer = this.peers.get(peerId); if (!peer) return;
+      if (pc.connectionState === 'connected') { if (peer.reconnectTimer) clearTimeout(peer.reconnectTimer); peer.reconnectTimer = null; peer.restarting = false; return; }
+      if (!initiator || !['disconnected', 'failed'].includes(pc.connectionState) || peer.reconnectTimer) return;
+      peer.reconnectTimer = setTimeout(() => { peer.reconnectTimer = null; if (['disconnected', 'failed'].includes(pc.connectionState)) this.restartPeer(peerId).catch(() => {}); }, pc.connectionState === 'failed' ? 300 : 3000);
+    };
+    this.peers.set(peerId, { pc, remoteStream, pendingIce: this.orphanIce.get(peerId) || [], initiator, reconnectTimer: null, restarting: false }); this.orphanIce.delete(peerId);
     if (initiator) { await pc.setLocalDescription(await pc.createOffer()); this.send({ type: 'offer', target: peerId, data: pc.localDescription }); }
     return pc;
   }
 
   async flushIce(peerId) { const peer = this.peers.get(peerId); if (!peer) return; for (const candidate of peer.pendingIce.splice(0)) await peer.pc.addIceCandidate(candidate).catch(() => {}); }
+  async restartPeer(peerId) {
+    const peer = this.peers.get(peerId);
+    if (!peer?.initiator || peer.restarting || peer.pc.signalingState !== 'stable' || peer.pc.connectionState === 'closed') return;
+    peer.restarting = true;
+    try { await peer.pc.setLocalDescription(await peer.pc.createOffer({ iceRestart: true })); this.send({ type: 'offer', target: peerId, data: peer.pc.localDescription }); }
+    finally { setTimeout(() => { const current = this.peers.get(peerId); if (current === peer) current.restarting = false; }, 2500); }
+  }
   async attachLocalTracks(pc) { for (const kind of ['audio', 'video']) { const transceiver = pc.getTransceivers().find((item) => item.receiver.track.kind === kind); if (transceiver) { transceiver.direction = 'sendrecv'; await transceiver.sender.replaceTrack(this.localStream.getTracks().find((track) => track.kind === kind) || null); } } }
   async setLocalStream(stream) {
     this.localStream = stream || new MediaStream();
@@ -81,11 +94,18 @@ export class MeetingConnection {
   endMeeting() { if (this.role === 'HOST') this.send({ type: 'end-meeting' }); }
   send(message) { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)); }
   emitParticipants() { this.callbacks.onParticipants?.([...this.participants.values()]); }
-  disconnect() { this.peers.forEach(({ pc, remoteStream }) => { pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.socket?.close(1000, 'Participant left'); this.socket = null; }
+  disconnect() { this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.socket?.close(1000, 'Participant left'); this.socket = null; }
 }
 
 export class SupabaseMeetingConnection extends MeetingConnection {
-  constructor(callbacks = {}) { super(callbacks); this.active = false; this.channel = null; this.endValidation = null; this.connectVersion = 0; }
+  constructor(callbacks = {}) {
+    super(callbacks);
+    this.active = false;
+    this.channel = null;
+    this.endValidation = null;
+    this.connectVersion = 0;
+    this.pendingRemovals = new Map();
+  }
 
   async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT', user }) {
     const version = ++this.connectVersion;
@@ -97,6 +117,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
       if (!this.active || version !== this.connectVersion) throw Object.assign(new Error('Conexión reemplazada.'), { name: 'AbortError' });
       const channel = supabase.channel(`meeting:${roomId}`, { config: { private: true, broadcast: { self: false, ack: false }, presence: { key: this.selfId } } });
       channel.on('broadcast', { event: 'signal' }, ({ payload }) => this.handleSignal(payload).catch(() => {}));
+      channel.on('broadcast', { event: 'participant-state' }, ({ payload }) => this.handleParticipantState(payload).catch(() => {}));
       channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
       channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
       channel.on('broadcast', { event: 'meeting-ended' }, ({ payload }) => this.handleMeetingEnded(payload));
@@ -110,12 +131,13 @@ export class SupabaseMeetingConnection extends MeetingConnection {
       channel.untrack().catch(() => {}); supabase.removeChannel(channel);
       throw Object.assign(new Error('Conexión reemplazada.'), { name: 'AbortError' });
     }
-    this.channel = channel; await this.syncPresence();
+    this.channel = channel; await this.syncPresence(); this.sendPresence();
     this.callbacks.onStatus?.('connected');
   }
 
-  async syncPresence() {
-    if (!this.active || !this.channel) return; const online = new Set(); const canonicalUsers = new Map();
+  canonicalPresence() {
+    const canonicalUsers = new Map();
+    if (!this.channel) return canonicalUsers;
     for (const entries of Object.values(this.channel.presenceState())) for (const peer of entries) {
       if (!peer.peerId || peer.peerId === this.selfId || (peer.userId && peer.userId === this.identity?.userId)) continue;
       const key = peer.userId || peer.peerId; const current = canonicalUsers.get(key);
@@ -123,11 +145,56 @@ export class SupabaseMeetingConnection extends MeetingConnection {
       const currentRank = current ? `${String(Number(current.connectedAt) || 0).padStart(16, '0')}:${current.peerId}` : '';
       if (!current || peerRank > currentRank) canonicalUsers.set(key, peer);
     }
+    return canonicalUsers;
+  }
+
+  cancelPeerRemoval(peerId) {
+    const timer = this.pendingRemovals.get(peerId);
+    if (timer) clearTimeout(timer);
+    this.pendingRemovals.delete(peerId);
+  }
+
+  schedulePeerRemoval(peerId) {
+    if (this.pendingRemovals.has(peerId)) return;
+    const timer = setTimeout(() => {
+      this.pendingRemovals.delete(peerId);
+      if (!this.active || !this.participants.has(peerId)) return;
+      const stillCanonical = [...this.canonicalPresence().values()].some((peer) => peer.peerId === peerId);
+      if (stillCanonical) { this.syncPresence().catch(() => {}); return; }
+      this.removePeer(peerId);
+    }, 4500);
+    this.pendingRemovals.set(peerId, timer);
+  }
+
+  removePeer(peerId) {
+    this.cancelPeerRemoval(peerId);
+    super.removePeer(peerId);
+  }
+
+  async syncPresence() {
+    if (!this.active || !this.channel) return; const online = new Set(); const canonicalUsers = this.canonicalPresence();
     for (const peer of canonicalUsers.values()) {
-      online.add(peer.peerId); const isNew = !this.participants.has(peer.peerId); this.participants.set(peer.peerId, peer);
+      online.add(peer.peerId); this.cancelPeerRemoval(peer.peerId);
+      const isNew = !this.participants.has(peer.peerId); this.participants.set(peer.peerId, { ...this.participants.get(peer.peerId), ...peer });
       if (isNew && this.selfId > peer.peerId) await this.createPeer(peer.peerId, true).catch(() => {});
     }
-    for (const peerId of [...this.participants.keys()]) if (!online.has(peerId)) this.removePeer(peerId);
+    for (const [peerId, peer] of [...this.participants.entries()]) if (!online.has(peerId)) {
+      const replacement = peer.userId && canonicalUsers.get(peer.userId);
+      if (replacement) this.removePeer(peerId); else this.schedulePeerRemoval(peerId);
+    }
+    this.emitParticipants();
+  }
+
+  async handleParticipantState(message) {
+    if (!message?.source || message.source === this.selfId) return;
+    if (!this.participants.has(message.source)) await this.syncPresence();
+    const participant = this.participants.get(message.source);
+    if (!participant || (message.userId && participant.userId !== message.userId)) return;
+    const state = {};
+    for (const key of ['mic', 'camera', 'sharing', 'handRaised', 'speaking']) {
+      if (typeof message.data?.[key] === 'boolean') state[key] = message.data[key];
+    }
+    this.participants.set(message.source, { ...participant, ...state });
     this.emitParticipants();
   }
 
@@ -162,8 +229,19 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
 
   async broadcast(event, payload) { if (this.active && this.channel) await this.channel.send({ type: 'broadcast', event, payload }); }
-  setPresence(data) { this.presence = { ...this.presence, ...data }; this.identity = { ...this.identity, ...this.presence }; if (this.active) this.channel?.track(this.identity); }
-  sendPresence() { if (this.active) this.channel?.track(this.identity); }
+  setPresence(data) {
+    this.presence = { ...this.presence, ...data };
+    this.identity = { ...this.identity, ...this.presence };
+    this.sendPresence();
+  }
+  sendPresence() {
+    if (!this.active || !this.identity) return;
+    const data = {};
+    for (const key of ['mic', 'camera', 'sharing', 'handRaised', 'speaking']) {
+      if (typeof this.identity[key] === 'boolean') data[key] = this.identity[key];
+    }
+    this.broadcast('participant-state', { source: this.selfId, userId: this.identity.userId, data }).catch(() => {});
+  }
   send(message) {
     if (['offer', 'answer', 'ice'].includes(message.type)) this.broadcast('signal', { ...message, source: this.selfId });
     else if (message.type === 'reaction') this.broadcast('signal', { type: 'reaction', source: this.selfId, emoji: message.emoji });
@@ -180,7 +258,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
   endMeeting() { if (this.role === 'HOST') return this.broadcast('meeting-ended', { by: this.identity.name }); return undefined; }
   disconnect() {
-    this.active = false; this.connectVersion += 1; this.peers.forEach(({ pc, remoteStream }) => { pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
+    this.active = false; this.connectVersion += 1; this.pendingRemovals.forEach((timer) => clearTimeout(timer)); this.pendingRemovals.clear(); this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
     if (this.channel) { this.channel.untrack(); supabase.removeChannel(this.channel); } this.channel = null; this.callbacks.onStatus?.('disconnected');
   }
 }

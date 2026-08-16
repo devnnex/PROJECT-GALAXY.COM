@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Check, Copy, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, PhoneOff, Plus, Reply, Send, ShieldCheck, SmilePlus, Unlock, UserPlus, Users, X } from 'lucide-react';
+import { Camera, CameraOff, Check, Copy, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, PhoneOff, Plus, Reply, Send, ShieldCheck, SmilePlus, Unlock, UserPlus, Users, Volume2, X } from 'lucide-react';
 import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 import { primeRealtime, releaseRealtimePrime } from '../services/supabase';
@@ -29,12 +29,53 @@ function AudioMeter({ stream, enabled = true, onSpeakingChange, label = 'Nivel d
 }
 
 function VideoSurface({ stream, name, avatarSeed, muted = false, speaking = false, handRaised = false, presentation = false }) {
-  const videoRef = useRef(null);
-  useEffect(() => { if (videoRef.current) videoRef.current.srcObject = stream || null; }, [stream]);
+  const videoRef = useRef(null); const audioRef = useRef(null); const resumePlayback = useRef(null);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false); const [, refreshMedia] = useState(0);
+  useEffect(() => {
+    const video = videoRef.current; const audio = audioRef.current;
+    if (!video || !audio) return undefined;
+    let disposed = false;
+    const attemptPlayback = async () => {
+      if (disposed) return;
+      await video.play().catch(() => {});
+      const hasRemoteAudio = !muted && Boolean(audio.srcObject?.getAudioTracks().some((track) => track.readyState === 'live'));
+      if (!hasRemoteAudio) { setPlaybackBlocked(false); return; }
+      try { await audio.play(); if (!disposed) setPlaybackBlocked(false); }
+      catch { if (!disposed) setPlaybackBlocked(true); }
+    };
+    const syncMedia = () => {
+      if (disposed) return;
+      video.srcObject = stream || null;
+      const audioTracks = muted ? [] : (stream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
+      audio.srcObject = audioTracks.length ? new MediaStream(audioTracks) : null;
+      refreshMedia((version) => version + 1);
+      attemptPlayback();
+    };
+    resumePlayback.current = attemptPlayback;
+    const tracks = stream?.getTracks() || [];
+    const trackChanged = () => { syncMedia(); };
+    stream?.addEventListener('addtrack', trackChanged); stream?.addEventListener('removetrack', trackChanged);
+    tracks.forEach((track) => { track.addEventListener('unmute', trackChanged); track.addEventListener('mute', trackChanged); track.addEventListener('ended', trackChanged); });
+    syncMedia();
+    return () => {
+      disposed = true; resumePlayback.current = null;
+      stream?.removeEventListener('addtrack', trackChanged); stream?.removeEventListener('removetrack', trackChanged);
+      tracks.forEach((track) => { track.removeEventListener('unmute', trackChanged); track.removeEventListener('mute', trackChanged); track.removeEventListener('ended', trackChanged); });
+      video.pause(); audio.pause(); video.srcObject = null; audio.srcObject = null;
+    };
+  }, [stream, muted]);
+  useEffect(() => {
+    if (!playbackBlocked) return undefined;
+    const unlock = () => { resumePlayback.current?.(); };
+    window.addEventListener('pointerdown', unlock, true);
+    return () => window.removeEventListener('pointerdown', unlock, true);
+  }, [playbackBlocked]);
   const hasVideo = Boolean(stream?.getVideoTracks().some((track) => track.enabled && track.readyState === 'live'));
-  return <div className={`video-surface ${presentation ? 'presentation' : ''} ${speaking ? 'speaking' : ''}`}>
-    <video className={hasVideo ? '' : 'audio-only'} ref={videoRef} autoPlay playsInline muted={muted} />
+  return <div className={`video-surface ${presentation ? 'presentation' : ''} ${speaking ? 'speaking' : ''} ${hasVideo ? 'has-video' : 'audio-only-surface'}`}>
+    <video className={hasVideo ? '' : 'audio-only'} ref={videoRef} autoPlay playsInline muted controls={false} disablePictureInPicture controlsList="nodownload noplaybackrate noremoteplayback" />
+    <audio className="remote-audio" ref={audioRef} autoPlay controls={false} preload="auto" />
     {!hasVideo && <ConstellationAvatar className="video-avatar" seed={avatarSeed || name} name={name} />}
+    {!muted && playbackBlocked && <button className="resume-audio-button" type="button" onClick={() => resumePlayback.current?.()}><Volume2 /> Activar sonido</button>}
     <span className="video-name">{handRaised && <Hand />} {name}</span>
   </div>;
 }
