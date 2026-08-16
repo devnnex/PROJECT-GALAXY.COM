@@ -10,13 +10,36 @@ const parameterNames = Object.freeze({
 
 function friendlyError(error) {
   if (!error) return new Error('La solicitud no pudo completarse.');
-  const known = {
-    'Invalid login credentials': 'El correo o la contraseña no coinciden.',
-    'Email not confirmed': 'Confirma tu correo antes de iniciar sesión.',
-    'User already registered': 'Ya existe una cuenta con este correo.',
-    'JWT expired': 'Tu sesión expiró. Inicia sesión nuevamente.',
-  };
-  if (known[error.message]) return new Error(known[error.message]);
+  const message = String(error.message || '');
+  const code = String(error.code || '');
+  const known = new Map([
+    ['Invalid login credentials', 'El correo o la contraseña no coinciden.'],
+    ['Email not confirmed', 'Confirma tu correo antes de iniciar sesión.'],
+    ['User already registered', 'Ya existe una cuenta con este correo.'],
+    ['JWT expired', 'Tu sesión expiró. Inicia sesión nuevamente.'],
+  ]);
+  if (known.has(message)) return new Error(known.get(message));
+  if (code === 'email_address_not_authorized' || /email address not authorized/i.test(message)) {
+    return new Error('Este correo aún no puede recibir confirmaciones. El administrador debe activar el correo transaccional de PROJECT GALAXY.');
+  }
+  if (code === 'over_email_send_rate_limit' || /email rate limit|rate limit.*email/i.test(message)) {
+    return new Error('Se alcanzó temporalmente el límite de correos de confirmación. Espera unos minutos o contacta al administrador.');
+  }
+  if (code === 'email_send_failed' || /(?:send|sending).*confirmation email|confirmation email.*failed/i.test(message)) {
+    return new Error('No fue posible enviar el correo de confirmación. El servicio de correo de PROJECT GALAXY debe ser configurado por el administrador.');
+  }
+  if (code === 'email_address_invalid' || /invalid email|email.*invalid/i.test(message)) {
+    return new Error('Ingresa un correo electrónico válido.');
+  }
+  if (code === 'weak_password' || /password.*(weak|characters)/i.test(message)) {
+    return new Error('La contraseña no cumple los requisitos de seguridad.');
+  }
+  if (code === 'signup_disabled' || /signups?.*disabled/i.test(message)) {
+    return new Error('El registro de nuevas cuentas está temporalmente deshabilitado.');
+  }
+  if (code === 'unexpected_failure' || /database error.*(saving|creating).*user/i.test(message)) {
+    return new Error('No pudimos crear el perfil en este momento. El administrador debe revisar el registro de Auth.');
+  }
   if (error.code === 'P0001') return new Error(error.message);
   return new Error('No fue posible completar la solicitud. Intenta nuevamente.');
 }

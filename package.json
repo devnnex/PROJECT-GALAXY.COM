@@ -12,6 +12,8 @@
     "security:check": "node scripts/security-audit.mjs"
   },
   "dependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/manrope": "^5.3.0",
     "@supabase/supabase-js": "^2.112.3",
     "lucide-react": "latest",
     "react": "latest",

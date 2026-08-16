@@ -16,4 +16,12 @@ describe('Constellation avatar', () => {
       expect(point.y).toBeLessThanOrEqual(84);
     }
   });
+
+  it('creates a stable portrait variation within safe visual bounds', () => {
+    const { portrait } = createConstellation('user-a');
+    expect(portrait.haloTilt).toBeGreaterThanOrEqual(-14);
+    expect(portrait.haloTilt).toBeLessThanOrEqual(14);
+    expect(portrait.faceShift).toBeGreaterThanOrEqual(-2.5);
+    expect(portrait.faceShift).toBeLessThanOrEqual(2.5);
+  });
 });

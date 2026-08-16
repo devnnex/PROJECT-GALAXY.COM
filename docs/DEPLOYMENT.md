@@ -39,6 +39,8 @@ En **Database → Security Advisor**, resuelve todas las alertas antes de cada l
 
 ## Correo de confirmación con marca PROJECT GALAXY
 
+El SMTP integrado de Supabase es solo para pruebas: rechaza destinatarios que no pertenezcan al equipo del proyecto y limita el envío a 2 mensajes por hora. Antes de abrir el registro a usuarios reales, configura obligatoriamente un SMTP personalizado.
+
 1. Abre **Authentication → Email Templates → Confirm signup**.
 2. Usa el asunto `Confirma tu acceso a PROJECT GALAXY`.
 3. Copia íntegramente `supabase/templates/confirmation.html` en el editor y guarda. La variable `{{ .ConfirmationURL }}` debe permanecer intacta.

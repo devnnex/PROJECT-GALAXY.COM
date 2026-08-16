@@ -152,14 +152,28 @@ drop trigger if exists reactions_touch_updated_at on public.meeting_message_reac
 create trigger reactions_touch_updated_at before update on public.meeting_message_reactions for each row execute function public.touch_updated_at();
 
 create or replace function public.handle_new_user() returns trigger
-language plpgsql security definer set search_path = public, auth as $$
-declare v_name text; v_username text;
+language plpgsql security definer set search_path = '' as $$
+declare
+  v_name text;
+  v_username text;
+  v_username_base text;
+  v_suffix text;
 begin
-  v_name := trim(coalesce(new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)));
-  v_username := lower(trim(coalesce(new.raw_user_meta_data ->> 'username', split_part(new.email, '@', 1))));
-  if v_username !~ '^[a-z0-9_]{3,32}$' then v_username := 'user_' || substr(replace(new.id::text, '-', ''), 1, 10); end if;
-  if exists(select 1 from public.profiles where username = v_username) then v_username := left(v_username, 20) || '_' || substr(replace(new.id::text, '-', ''), 1, 6); end if;
-  insert into public.profiles(id, name, username) values (new.id, left(v_name, 100), v_username);
+  v_suffix:=substr(replace(new.id::text,'-',''),1,10);
+  v_name:=coalesce(nullif(trim(new.raw_user_meta_data->>'name'),''),nullif(trim(split_part(coalesce(new.email,''),'@',1)),''),'Usuario Galaxy');
+  if char_length(v_name)<2 then v_name:='Usuario Galaxy'; end if;
+
+  v_username_base:=lower(coalesce(nullif(trim(new.raw_user_meta_data->>'username'),''),split_part(coalesce(new.email,''),'@',1),''));
+  v_username_base:=regexp_replace(v_username_base,'[^a-z0-9_]+','_','g');
+  v_username_base:=trim(both '_' from v_username_base);
+  if char_length(v_username_base)<3 then v_username_base:='galaxy_'||v_suffix; end if;
+  v_username:=left(v_username_base,32);
+  begin
+    insert into public.profiles(id,name,username) values(new.id,left(v_name,100),v_username);
+  exception when unique_violation then
+    v_username:=left(v_username_base,21)||'_'||v_suffix;
+    insert into public.profiles(id,name,username) values(new.id,left(v_name,100),v_username);
+  end;
   insert into public.wallets(user_id) values (new.id);
   return new;
 end; $$;

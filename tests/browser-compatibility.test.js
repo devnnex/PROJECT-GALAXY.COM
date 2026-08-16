@@ -1,0 +1,37 @@
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
+
+const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
+const main = read('../src/main.jsx');
+const compatibility = read('../src/browser-compat.css');
+const html = read('../app.html');
+const vite = read('../vite.config.js');
+
+describe('Cross-browser visual contract', () => {
+  it('self-hosts the real product fonts at every used weight', () => {
+    for (const weight of [400, 500, 600, 700]) {
+      expect(main).toContain(`@fontsource/dm-sans/latin-${weight}.css`);
+    }
+    for (const weight of [500, 600]) {
+      expect(main).toContain(`@fontsource/manrope/latin-${weight}.css`);
+    }
+  });
+
+  it('normalizes Safari typography and premium glass effects', () => {
+    expect(compatibility).toContain('-webkit-text-size-adjust: 100%');
+    expect(compatibility).toContain('-webkit-font-smoothing: antialiased');
+    expect(compatibility).toContain('-webkit-backdrop-filter: blur(24px)');
+    expect(compatibility).toContain('-webkit-mask-image: radial-gradient');
+  });
+
+  it('supports dynamic mobile viewports and Apple safe areas', () => {
+    expect(html).toContain('viewport-fit=cover');
+    expect(compatibility).toContain('@supports (height: 100dvh)');
+    expect(compatibility).toContain('env(safe-area-inset-bottom)');
+  });
+
+  it('ships JavaScript and CSS compatible with Safari 14+', () => {
+    expect(vite).toContain("target: ['es2020', 'safari14']");
+    expect(vite).toContain("cssTarget: 'safari14'");
+  });
+});

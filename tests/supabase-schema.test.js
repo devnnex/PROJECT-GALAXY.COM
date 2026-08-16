@@ -74,6 +74,17 @@ describe('Supabase contract', () => {
     expect(app).not.toContain('Nivel 12');
   });
 
+  it('keeps account creation resilient and reports actionable Auth failures', () => {
+    expect(schema).toMatch(/function public\.handle_new_user\(\)[\s\S]*security definer set search_path = ''/i);
+    expect(schema).toContain("nullif(trim(new.raw_user_meta_data->>'name'),'')");
+    expect(schema).toContain("v_username_base:=regexp_replace");
+    expect(schema).toMatch(/exception when unique_violation[\s\S]*insert into public\.profiles/);
+    expect(api).toContain("code === 'email_address_not_authorized'");
+    expect(api).toContain("code === 'over_email_send_rate_limit'");
+    expect(api).toContain("code === 'email_send_failed'");
+    expect(api).toContain("code === 'unexpected_failure'");
+  });
+
   it('contains no Apps Script transport in the browser API', () => {
     expect(api).not.toMatch(/script\.google|pollMeetingRealtime|postMeetingSignals/);
   });
