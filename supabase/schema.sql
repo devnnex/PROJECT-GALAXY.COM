@@ -111,6 +111,7 @@ create table if not exists public.meeting_message_reactions (
 create table if not exists public.notifications (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
+  actor_id uuid references public.profiles(id) on delete cascade,
   type text not null,
   title text not null,
   body text not null default '',
@@ -119,6 +120,8 @@ create table if not exists public.notifications (
   read_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+alter table public.notifications add column if not exists actor_id uuid references public.profiles(id) on delete cascade;
 
 create table if not exists public.meeting_commands (
   id uuid primary key default gen_random_uuid(),
@@ -137,6 +140,7 @@ create index if not exists participants_meeting_status_idx on public.meeting_par
 create index if not exists messages_meeting_created_idx on public.meeting_messages(meeting_id, created_at desc);
 create index if not exists messages_sender_created_idx on public.meeting_messages(sender_id, created_at desc);
 create index if not exists notifications_user_created_idx on public.notifications(user_id, created_at desc) where read_at is null;
+create index if not exists notifications_user_type_idx on public.notifications(user_id, type, created_at desc);
 create index if not exists meeting_commands_target_idx on public.meeting_commands(target_user_id, created_at desc) where consumed_at is null;
 
 create or replace function public.touch_updated_at() returns trigger language plpgsql set search_path = public as $$
@@ -197,6 +201,7 @@ create or replace function public.can_access_realtime_topic(p_topic text,p_exten
 language sql stable security definer set search_path=public,auth as $$
   select p_extension in ('broadcast','presence') and (
     p_topic='user:'||(select auth.uid())::text
+    or p_topic like 'db:notifications:'||(select auth.uid())::text||':%'
     or exists(
       select 1 from public.meeting_participants p
       where p.user_id=(select auth.uid()) and (
@@ -246,6 +251,49 @@ create or replace function public.get_bootstrap_data(p_modules text[] default ar
 language sql stable security definer set search_path = public, auth as $$
   select jsonb_build_object('generatedAt', now(), 'user', public.get_current_user());
 $$;
+
+create or replace function public.get_my_notifications(p_limit integer default 30) returns jsonb
+language sql stable security definer set search_path=public,auth as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',notice.id,'type',notice.type,'title',notice.title,'body',notice.body,
+    'resourceId',notice.resource_id,'actorId',notice.actor_id,'readAt',notice.read_at,
+    'createdAt',notice.created_at,'meetingId',notice.meeting_id,'meetingTitle',notice.meeting_title,
+    'roomCode',notice.room_code,'meetingStatus',notice.meeting_status,
+    'participantId',notice.participant_id,'invitationId',notice.invitation_id,
+    'invitationStatus',notice.invitation_status
+  ) order by notice.created_at desc),'[]'::jsonb)
+  from (
+    select n.*,m.id meeting_id,m.title meeting_title,m.room_code,m.status meeting_status,
+      mp.id participant_id,mi.id invitation_id,mi.status invitation_status
+    from public.notifications n
+    left join public.meetings m on m.id=n.resource_id and n.resource_type='Meeting'
+    left join public.meeting_participants mp on n.type='MEETING_JOIN_REQUEST'
+      and mp.meeting_id=n.resource_id and mp.user_id=n.actor_id
+    left join public.meeting_invitations mi on n.type='MEETING_INVITE'
+      and mi.meeting_id=n.resource_id and mi.invitee_id=n.user_id
+    where n.user_id=public.require_user()
+    order by n.created_at desc
+    limit greatest(1,least(coalesce(p_limit,30),100))
+  ) notice;
+$$;
+
+create or replace function public.mark_notification_read(p_notification_id uuid) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user();
+begin
+  update public.notifications set read_at=coalesce(read_at,now()) where id=p_notification_id and user_id=v_user;
+  if not found then raise exception 'No encontramos esa notificación.' using errcode='P0001'; end if;
+  return jsonb_build_object('id',p_notification_id,'read',true);
+end; $$;
+
+create or replace function public.mark_all_notifications_read() returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user(); v_count integer:=0;
+begin
+  update public.notifications set read_at=now() where user_id=v_user and read_at is null;
+  get diagnostics v_count=row_count;
+  return jsonb_build_object('updated',v_count);
+end; $$;
 
 create or replace function public.create_meeting(p_title text, p_password text default '', p_waiting_room boolean default true) returns jsonb
 language plpgsql security definer set search_path = public, auth, extensions as $$
@@ -308,7 +356,17 @@ begin
   if v_status = 'DENIED' then raise exception 'El anfitrión no autorizó tu ingreso.' using errcode = 'P0001'; end if;
   insert into public.meeting_participants(meeting_id,user_id,role,status,joined_at,left_at)
   values(v_meeting.id,v_user,v_role,v_status,case when v_status='ADMITTED' then now() end,null)
-  on conflict(meeting_id,user_id) do update set status=excluded.status, joined_at=coalesce(public.meeting_participants.joined_at,excluded.joined_at), left_at=null;
+  on conflict(meeting_id,user_id) do update set status=excluded.status, joined_at=coalesce(public.meeting_participants.joined_at,excluded.joined_at), left_at=null
+  returning * into v_member;
+  if v_status='WAITING' and not exists(
+    select 1 from public.notifications where user_id=v_meeting.host_id and actor_id=v_user
+      and type='MEETING_JOIN_REQUEST' and resource_id=v_meeting.id and read_at is null
+  ) then
+    insert into public.notifications(user_id,actor_id,type,title,body,resource_type,resource_id)
+    select v_meeting.host_id,v_user,'MEETING_JOIN_REQUEST',p.name||' solicita entrar',
+      v_meeting.title||' · '||v_meeting.room_code,'Meeting',v_meeting.id
+    from public.profiles p where p.id=v_user;
+  end if;
   select value into v_ice from public.app_settings where key = 'ice_servers';
   return public.meeting_summary(v_meeting,v_user) || jsonb_build_object('role',v_role,'participantStatus',v_status,
     'iceServers',coalesce(v_ice,'[]'::jsonb),'messages',case when v_status='ADMITTED' then public.get_meeting_messages(v_meeting.id,100) else '[]'::jsonb end);
@@ -341,7 +399,10 @@ begin
   if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=v_user and status='ACTIVE') then raise exception 'Solo el anfitrión puede realizar esta acción.' using errcode='P0001'; end if;
   update public.meeting_participants set status=p_status,joined_at=case when p_status='ADMITTED' then now() else joined_at end,left_at=case when p_status='DENIED' then now() else null end where id=p_participant_id and meeting_id=p_meeting_id returning * into v_participant;
   if v_participant.id is null then raise exception 'No encontramos a ese participante.' using errcode='P0001'; end if;
-  insert into public.notifications(user_id,type,title,body,resource_type,resource_id) values(v_participant.user_id,'MEETING_'||p_status,case when p_status='ADMITTED' then 'Ingreso autorizado' else 'Ingreso rechazado' end,'La solicitud de ingreso cambió de estado.','Meeting',p_meeting_id);
+  update public.notifications set read_at=coalesce(read_at,now()) where user_id=v_user and actor_id=v_participant.user_id
+    and type='MEETING_JOIN_REQUEST' and resource_id=p_meeting_id and read_at is null;
+  insert into public.notifications(user_id,actor_id,type,title,body,resource_type,resource_id)
+  values(v_participant.user_id,v_user,'MEETING_'||p_status,case when p_status='ADMITTED' then 'Ingreso autorizado' else 'Ingreso rechazado' end,'La solicitud de ingreso cambió de estado.','Meeting',p_meeting_id);
   return jsonb_build_object('participantId',v_participant.id,'status',p_status);
 end; $$;
 
@@ -377,9 +438,33 @@ begin
   if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=v_host and status='ACTIVE') then raise exception 'Solo el anfitrión puede invitar.' using errcode='P0001'; end if;
   select * into v_profile from public.profiles where id=p_user_id and status='ACTIVE'; if v_profile.id is null or p_user_id=v_host then raise exception 'No encontramos a ese usuario activo.' using errcode='P0001'; end if;
   insert into public.meeting_invitations(meeting_id,inviter_id,invitee_id) values(p_meeting_id,v_host,p_user_id) on conflict(meeting_id,invitee_id) do update set inviter_id=excluded.inviter_id,status='PENDING',created_at=now(),responded_at=null returning * into v_invite;
-  insert into public.meeting_participants(meeting_id,user_id,role,status) values(p_meeting_id,p_user_id,'PARTICIPANT','INVITED') on conflict(meeting_id,user_id) do nothing;
-  insert into public.notifications(user_id,type,title,body,resource_type,resource_id) select p_user_id,'MEETING_INVITE',p.name||' te invitó a una reunión',m.title||' · '||m.room_code,'Meeting',m.id from public.meetings m join public.profiles p on p.id=v_host where m.id=p_meeting_id;
+  insert into public.meeting_participants(meeting_id,user_id,role,status) values(p_meeting_id,p_user_id,'PARTICIPANT','INVITED')
+  on conflict(meeting_id,user_id) do update set status=case when public.meeting_participants.status='ADMITTED' then 'ADMITTED' else 'INVITED' end,left_at=null;
+  update public.notifications set read_at=coalesce(read_at,now()) where user_id=p_user_id and type='MEETING_INVITE' and resource_id=p_meeting_id and read_at is null;
+  insert into public.notifications(user_id,actor_id,type,title,body,resource_type,resource_id) select p_user_id,v_host,'MEETING_INVITE',p.name||' te invitó a una reunión',m.title||' · '||m.room_code,'Meeting',m.id from public.meetings m join public.profiles p on p.id=v_host where m.id=p_meeting_id;
   return jsonb_build_object('id',v_invite.id,'userId',p_user_id,'name',v_profile.name,'status','PENDING');
+end; $$;
+
+create or replace function public.respond_to_meeting_invitation(p_invitation_id uuid,p_status text) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user(); v_invite public.meeting_invitations; v_meeting public.meetings;
+begin
+  if p_status not in ('ACCEPTED','DECLINED') then raise exception 'Respuesta de invitación inválida.' using errcode='P0001'; end if;
+  select * into v_invite from public.meeting_invitations where id=p_invitation_id and invitee_id=v_user for update;
+  if v_invite.id is null then raise exception 'No encontramos esa invitación.' using errcode='P0001'; end if;
+  if v_invite.status<>'PENDING' then raise exception 'Esta invitación ya fue respondida.' using errcode='P0001'; end if;
+  select * into v_meeting from public.meetings where id=v_invite.meeting_id;
+  if v_meeting.id is null or v_meeting.status<>'ACTIVE' then raise exception 'La reunión ya no está disponible.' using errcode='P0001'; end if;
+  update public.meeting_invitations set status=p_status,responded_at=now() where id=v_invite.id;
+  update public.meeting_participants set status=case when p_status='ACCEPTED' then 'ADMITTED' else 'DENIED' end,
+    left_at=case when p_status='DECLINED' then now() else null end
+  where meeting_id=v_invite.meeting_id and user_id=v_user;
+  update public.notifications set read_at=coalesce(read_at,now()) where user_id=v_user and type='MEETING_INVITE'
+    and resource_id=v_invite.meeting_id and read_at is null;
+  update public.notifications set read_at=coalesce(read_at,now()) where user_id=v_invite.inviter_id and actor_id=v_user
+    and type='MEETING_JOIN_REQUEST' and resource_id=v_invite.meeting_id and read_at is null;
+  return jsonb_build_object('invitationId',v_invite.id,'status',p_status,'meetingId',v_meeting.id,
+    'title',v_meeting.title,'roomCode',v_meeting.room_code);
 end; $$;
 
 create or replace function public.post_meeting_message(p_meeting_id uuid,p_body text,p_reply_to_id uuid default null) returns jsonb language plpgsql security definer set search_path=public,auth as $$
@@ -466,15 +551,18 @@ create policy galaxy_meeting_realtime_write on realtime.messages for insert to a
 do $$ begin
   alter publication supabase_realtime add table public.meeting_participants;
 exception when duplicate_object then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table public.notifications;
+exception when duplicate_object then null; end $$;
 
 revoke all on all tables in schema public from anon;
 revoke usage on schema public from anon;
 alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke execute on functions from public, anon;
-revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon;
+revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon;
 grant usage on schema public to authenticated;
 grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications to authenticated;
-grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
+grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
 grant execute on function public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text) to authenticated;
 
 commit;

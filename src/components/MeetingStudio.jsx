@@ -117,9 +117,9 @@ function InvitePanel({ members, invited, onInvite, onClose }) {
   return <div className="modal-backdrop"><div className="invite-modal glass"><div className="modal-title"><div><p className="eyebrow">COMUNIDAD</p><h2>Invitar usuarios registrados</h2></div><button className="icon-button" onClick={onClose}><X /></button></div><div className="invite-list">{members.map((member) => <div className="person" key={member.id}><ConstellationAvatar className="avatar avatar-sm" seed={member.id} name={member.name} /><span><strong>{member.name}</strong><small>@{member.username}</small></span><button className="secondary-button" disabled={invited.includes(member.id)} onClick={() => onInvite(member)}>{invited.includes(member.id) ? <><Check /> Invitado</> : <><UserPlus /> Invitar</>}</button></div>)}{!members.length && <p className="muted">No hay otros usuarios registrados todavía.</p>}</div></div></div>;
 }
 
-export default function MeetingStudio({ toast, user }) {
+export default function MeetingStudio({ toast, user, joinRequest }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`;
-  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(false);
+  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(false); const handledJoinRequest = useRef(null);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } });
@@ -162,7 +162,11 @@ export default function MeetingStudio({ toast, user }) {
   };
 
   const enterMeeting = async ({ roomCode, password = '' }) => { setBusy(true); try { const access = await getMeetingAccess({ roomCode, password }); await connectAccess(access); } catch (error) { disconnect(true); toast(error.message, 'error'); } finally { setBusy(false); } };
-  useEffect(() => { if (resumed.current) return; resumed.current = true; try { const saved = JSON.parse(localStorage.getItem(activeKey) || 'null'); if (saved?.roomCode) enterMeeting({ roomCode: saved.roomCode }); } catch { forgetMeeting(); } }, []);
+  useEffect(() => { if (resumed.current) return; resumed.current = true; if (joinRequest?.roomCode) return; try { const saved = JSON.parse(localStorage.getItem(activeKey) || 'null'); if (saved?.roomCode) enterMeeting({ roomCode: saved.roomCode }); } catch { forgetMeeting(); } }, []);
+  useEffect(() => {
+    if (!joinRequest?.roomCode || handledJoinRequest.current === joinRequest.id) return;
+    handledJoinRequest.current = joinRequest.id; enterMeeting({ roomCode: joinRequest.roomCode });
+  }, [joinRequest?.id, joinRequest?.roomCode]);
 
   useEffect(() => {
     if (!waiting || !meeting?.roomCode || !meeting?.meetingId) return undefined;

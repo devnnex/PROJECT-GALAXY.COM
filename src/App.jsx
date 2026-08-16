@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { CONFIG } from './config';
 import { api } from './services/api';
-import { feed, notifications, products } from './data';
+import { feed, products } from './data';
 import NeuralCanvas from './components/NeuralCanvas';
 import AuthGate from './components/AuthGate';
 import MeetingStudio from './components/MeetingStudio';
@@ -117,18 +117,81 @@ function EmptyState({ icon: Icon, title, text }) { return <div className="empty-
 
 function CommandPalette({ onClose, navigate }) { const [query, setQuery] = useState(''); const options = navigation.filter(([, label]) => label.toLowerCase().includes(query.toLowerCase())); return <div className="modal-backdrop command-backdrop" onMouseDown={onClose}><div className="command-palette glass" onMouseDown={(e) => e.stopPropagation()}><label><Search /><input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="¿A dónde quieres ir?" /><kbd>ESC</kbd></label><p className="eyebrow">NAVEGACIÓN</p>{options.map(([id, label, Icon]) => <button key={id} onClick={() => { navigate(id); onClose(); }}><Icon /><span>{label}</span><ArrowRight /></button>)}</div></div>; }
 
+function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose }) {
+  if (!notice) return null;
+  const joinRequest = notice.type === 'MEETING_JOIN_REQUEST';
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="notification-action-modal glass" role="dialog" aria-modal="true" aria-labelledby="notification-action-title" onMouseDown={(event) => event.stopPropagation()}>
+    <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Cerrar"><X /></button>
+    <span className="notification-action-icon"><Video /></span>
+    <p className="eyebrow">{joinRequest ? 'SALA DE ESPERA' : 'INVITACIÓN A REUNIÓN'}</p>
+    <h2 id="notification-action-title">{notice.title}</h2>
+    <p>{notice.body || notice.meetingTitle}</p>
+    {notice.roomCode && <strong className="notification-room-code">{notice.roomCode}</strong>}
+    <div className="modal-actions">
+      <button className="secondary-button" type="button" disabled={busy} onClick={onDecline}>{joinRequest ? 'Rechazar' : 'Declinar'}</button>
+      <button className="primary-button" type="button" disabled={busy} onClick={onAccept}><Check /> {busy ? 'Procesando…' : joinRequest ? 'Aceptar ingreso' : 'Aceptar y entrar'}</button>
+    </div>
+  </section></div>;
+}
+
 function AppShell({ user, onUserChange, onLogout }) {
-  const [page, setPage] = useState(() => new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : 'dashboard'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [unread, setUnread] = useState(3); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null);
+  const [page, setPage] = useState(() => new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : 'dashboard'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null);
+  const [notificationItems, setNotificationItems] = useState([]); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
   const navigate = (id) => { setPage(id); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
+  const actionableNotice = (notice) => notice?.meetingStatus === 'ACTIVE' && ((notice.type === 'MEETING_JOIN_REQUEST' && notice.participantId) || (notice.type === 'MEETING_INVITE' && notice.invitationId && notice.invitationStatus === 'PENDING'));
+  const reloadNotifications = async () => { try { setNotificationItems(await api.getMyNotifications()); } catch {} };
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => { try { const items = await api.getMyNotifications(); if (active) setNotificationItems(items); } catch {} };
+    refresh(); const unsubscribe = api.onNotificationChange(user.id, refresh); const timer = setInterval(refresh, 15_000);
+    return () => { active = false; unsubscribe(); clearInterval(timer); };
+  }, [user.id]);
+  useEffect(() => {
+    if (activeNotice) return;
+    const pending = notificationItems.find((notice) => !notice.readAt && actionableNotice(notice) && !dismissedNotices.has(notice.id));
+    if (pending) setActiveNotice(pending);
+  }, [notificationItems, activeNotice, dismissedNotices]);
+  const unread = notificationItems.filter((notice) => !notice.readAt).length;
+  const openNotice = async (notice) => {
+    setNotices(false);
+    if (actionableNotice(notice)) { setActiveNotice(notice); return; }
+    if (!notice.readAt) {
+      setNotificationItems((items) => items.map((item) => item.id === notice.id ? { ...item, readAt: new Date().toISOString() } : item));
+      api.markNotificationRead(notice.id).catch(() => reloadNotifications());
+    }
+    if (notice.type === 'MEETING_ADMITTED' && notice.roomCode) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() });
+    if (notice.meetingId) navigate('meetings'); else toast(notice.title, 'info');
+  };
+  const closeNotice = () => { if (activeNotice) setDismissedNotices((items) => new Set(items).add(activeNotice.id)); setActiveNotice(null); };
+  const resolveNotice = async (accepted) => {
+    if (!activeNotice || noticeBusy) return;
+    setNoticeBusy(true);
+    try {
+      if (activeNotice.type === 'MEETING_JOIN_REQUEST') {
+        await api[accepted ? 'admitMeetingParticipant' : 'denyMeetingParticipant']({ meetingId: activeNotice.meetingId, participantId: activeNotice.participantId });
+        toast(accepted ? 'Participante admitido en la reunión.' : 'Solicitud de ingreso rechazada.');
+      } else {
+        const result = await api.respondToMeetingInvitation({ invitationId: activeNotice.invitationId, status: accepted ? 'ACCEPTED' : 'DECLINED' });
+        if (accepted) { setJoinRequest({ roomCode: result.roomCode, id: Date.now() }); navigate('meetings'); }
+        toast(accepted ? 'Invitación aceptada. Entrando a la reunión…' : 'Invitación declinada.');
+      }
+      setActiveNotice(null); await reloadNotifications();
+    } catch (error) { toast(error.message, 'error'); } finally { setNoticeBusy(false); }
+  };
+  const markAllRead = async () => {
+    setNotificationItems((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })));
+    setNotices(false);
+    try { await api.markAllNotificationsRead(); } catch (error) { toast(error.message, 'error'); reloadNotifications(); }
+  };
   const activeLabel = navigation.find(([id]) => id === page)?.[1] || 'Inicio';
   let content;
   if (page === 'dashboard') content = <Dashboard user={user} navigate={navigate} openProduct={setSelectedProduct} />;
   else if (page === 'discover') content = <FeedPage toast={toast} />;
   else if (page === 'marketplace') content = <Marketplace onOpen={setSelectedProduct} />;
   else if (page === 'live') content = <LivePage toast={toast} />;
-  else if (page === 'meetings') content = <MeetingStudio toast={toast} user={user} />;
+  else if (page === 'meetings') content = <MeetingStudio toast={toast} user={user} joinRequest={joinRequest} />;
   else if (page === 'messages') content = <MessagesPage toast={toast} />;
   else if (page === 'wallet') content = <WalletPage user={user} />;
   else if (page === 'orders') content = <OrdersPage />;
@@ -136,10 +199,11 @@ function AppShell({ user, onUserChange, onLogout }) {
   return <div className="app-shell">
     <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{navigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{label === 'Mensajes' && <i>3</i>}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><div><strong>{user.name}</strong><span>{user.role} · LVL {user.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> Cerrar sesión</button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
-    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>Buscar en Galaxy</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)}><Bell />{unread > 0 && <i>{unread}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>Notificaciones</h3><span>{unread} nuevas</span></div>{notifications.map((n) => <button key={n.id} onClick={() => toast(n.text, 'info')}><span className={`notice-icon ${n.type}`}><Bell /></span><div><strong>{n.text}</strong><small>{n.time}</small></div></button>)}<button className="view-all" onClick={() => { setUnread(0); setNotices(false); }}>Marcar como revisadas</button></div>}</header><div className="page-content">{content}</div></main>
+    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>Buscar en Galaxy</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>Notificaciones</h3><span>{unread} nuevas</span></div>{notificationItems.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}><Bell /></span><div><strong>{notice.title}</strong><small>{notice.body || notice.meetingTitle || 'Actividad de tu cuenta'}</small></div></button>)}{!notificationItems.length && <p className="notifications-empty">No tienes notificaciones nuevas.</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>Marcar como revisadas</button></div>}</header><div className="page-content">{content}</div></main>
     <nav className="bottom-nav">{navigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>
     {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} />}
     <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} toast={toast} />
+    <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
     <Toast item={toastItem} />
   </div>;
 }

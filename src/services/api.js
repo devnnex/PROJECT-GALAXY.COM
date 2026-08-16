@@ -5,7 +5,8 @@ const parameterNames = Object.freeze({
   roomCode: 'p_room_code', meetingId: 'p_meeting_id', participantId: 'p_participant_id',
   locked: 'p_locked', query: 'p_query', userId: 'p_user_id', limit: 'p_limit',
   body: 'p_body', replyToId: 'p_reply_to_id', messageId: 'p_message_id', emoji: 'p_emoji',
-  commandId: 'p_command_id',
+  commandId: 'p_command_id', notificationId: 'p_notification_id', invitationId: 'p_invitation_id',
+  status: 'p_status',
 });
 
 function friendlyError(error) {
@@ -90,6 +91,9 @@ export const api = {
   createMeeting: (payload) => rpc('create_meeting', payload),
   joinMeeting: (payload) => rpc('join_meeting', payload),
   getMyMeetings: () => rpc('get_my_meetings'),
+  getMyNotifications: (limit = 30) => rpc('get_my_notifications', { limit }),
+  markNotificationRead: (notificationId) => rpc('mark_notification_read', { notificationId }),
+  markAllNotificationsRead: () => rpc('mark_all_notifications_read'),
   getMeetingState: (payload) => rpc('get_meeting_state', payload),
   admitMeetingParticipant: (payload) => rpc('admit_meeting_participant', payload),
   denyMeetingParticipant: (payload) => rpc('deny_meeting_participant', payload),
@@ -97,6 +101,7 @@ export const api = {
   endMeeting: (payload) => rpc('end_meeting', payload),
   getCommunityMembers: (query = '') => rpc('get_community_members', { query }),
   inviteToMeeting: (payload) => rpc('invite_to_meeting', payload),
+  respondToMeetingInvitation: (payload) => rpc('respond_to_meeting_invitation', payload),
   getMeetingMessages: (payload) => rpc('get_meeting_messages', payload),
   getMeetingMessage: (payload) => rpc('get_meeting_message', payload),
   postMeetingMessage: (payload) => rpc('post_meeting_message', { ...payload, replyToId: payload.replyToId || null }),
@@ -109,6 +114,16 @@ export const api = {
       if (!active) return;
       channel = supabase.channel(`db:participants:${meetingId}:${crypto.randomUUID()}`, { config: { private: true } })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'meeting_participants', filter: `meeting_id=eq.${meetingId}` }, callback)
+        .subscribe();
+    }).catch(() => {});
+    return () => { active = false; if (channel) supabase.removeChannel(channel); };
+  },
+  onNotificationChange(userId, callback) {
+    let active = true; let channel = null;
+    authorizeRealtime().then(() => {
+      if (!active) return;
+      channel = supabase.channel(`db:notifications:${userId}:${crypto.randomUUID()}`, { config: { private: true } })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, callback)
         .subscribe();
     }).catch(() => {});
     return () => { active = false; if (channel) supabase.removeChannel(channel); };

@@ -10,6 +10,8 @@
 
 Después de esta actualización vuelve a ejecutar `supabase/schema.sql`: la versión nueva incorpora la autorización rápida `can_access_realtime_topic`, el canal de precalentamiento por usuario y la respuesta completa de `create_meeting`. El archivo es idempotente y conserva los datos existentes.
 
+El mismo script habilita las notificaciones accionables de reuniones. Una solicitud de sala de espera abre al anfitrión el modal **Aceptar ingreso / Rechazar**; una invitación abre al destinatario **Aceptar y entrar / Declinar**. La tabla `notifications` se agrega a `supabase_realtime` y el cliente mantiene sondeo de respaldo si el WebSocket se interrumpe.
+
 Para cambiar ICE, actualiza únicamente el valor JSON de `ice_servers`:
 
 ```sql

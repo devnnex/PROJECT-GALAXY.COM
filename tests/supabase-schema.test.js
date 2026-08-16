@@ -15,6 +15,7 @@ const publicRpc = [
   'end_meeting', 'get_community_members', 'invite_to_meeting', 'get_meeting_messages',
   'post_meeting_message', 'react_to_meeting_message',
   'get_meeting_message', 'request_meeting_mute', 'consume_meeting_command',
+  'get_my_notifications', 'mark_notification_read', 'mark_all_notifications_read', 'respond_to_meeting_invitation',
 ];
 
 describe('Supabase contract', () => {
@@ -33,6 +34,17 @@ describe('Supabase contract', () => {
     expect(schema).toContain("p_topic='user:'||(select auth.uid())::text");
     expect(schema).toContain('public.can_access_realtime_topic((select realtime.topic()),realtime.messages.extension)');
     expect(api).toContain("config: { private: true }");
+  });
+
+  it('delivers actionable meeting notifications to both sides', () => {
+    expect(schema).toContain("'MEETING_JOIN_REQUEST'");
+    expect(schema).toContain("'MEETING_INVITE'");
+    expect(schema).toContain("p_topic like 'db:notifications:'||(select auth.uid())::text||':%'");
+    expect(schema).toContain('alter publication supabase_realtime add table public.notifications');
+    expect(api).toContain('onNotificationChange(userId, callback)');
+    expect(app).toContain('<NotificationActionModal');
+    expect(app).toContain("status: accepted ? 'ACCEPTED' : 'DECLINED'");
+    expect(app).toContain("accepted ? 'admitMeetingParticipant' : 'denyMeetingParticipant'");
   });
 
   it('uses the one-RPC meeting creation path and resilient realtime startup', () => {
