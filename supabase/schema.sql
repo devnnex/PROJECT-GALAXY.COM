@@ -437,6 +437,13 @@ declare v_host uuid:=public.require_user(); v_profile public.profiles; v_invite 
 begin
   if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=v_host and status='ACTIVE') then raise exception 'Solo el anfitrión puede invitar.' using errcode='P0001'; end if;
   select * into v_profile from public.profiles where id=p_user_id and status='ACTIVE'; if v_profile.id is null or p_user_id=v_host then raise exception 'No encontramos a ese usuario activo.' using errcode='P0001'; end if;
+  if exists(select 1 from public.meeting_participants where meeting_id=p_meeting_id and user_id=p_user_id and status='ADMITTED') then
+    raise exception 'Ese usuario ya se encuentra dentro de la reunión.' using errcode='P0001';
+  end if;
+  select * into v_invite from public.meeting_invitations where meeting_id=p_meeting_id and invitee_id=p_user_id;
+  if v_invite.id is not null and v_invite.status='PENDING' then
+    return jsonb_build_object('id',v_invite.id,'userId',p_user_id,'name',v_profile.name,'status','PENDING');
+  end if;
   insert into public.meeting_invitations(meeting_id,inviter_id,invitee_id) values(p_meeting_id,v_host,p_user_id) on conflict(meeting_id,invitee_id) do update set inviter_id=excluded.inviter_id,status='PENDING',created_at=now(),responded_at=null returning * into v_invite;
   insert into public.meeting_participants(meeting_id,user_id,role,status) values(p_meeting_id,p_user_id,'PARTICIPANT','INVITED')
   on conflict(meeting_id,user_id) do update set status=case when public.meeting_participants.status='ADMITTED' then 'ADMITTED' else 'INVITED' end,left_at=null;
@@ -452,9 +459,15 @@ begin
   if p_status not in ('ACCEPTED','DECLINED') then raise exception 'Respuesta de invitación inválida.' using errcode='P0001'; end if;
   select * into v_invite from public.meeting_invitations where id=p_invitation_id and invitee_id=v_user for update;
   if v_invite.id is null then raise exception 'No encontramos esa invitación.' using errcode='P0001'; end if;
-  if v_invite.status<>'PENDING' then raise exception 'Esta invitación ya fue respondida.' using errcode='P0001'; end if;
   select * into v_meeting from public.meetings where id=v_invite.meeting_id;
   if v_meeting.id is null or v_meeting.status<>'ACTIVE' then raise exception 'La reunión ya no está disponible.' using errcode='P0001'; end if;
+  if v_invite.status<>'PENDING' then
+    if v_invite.status=p_status then
+      return jsonb_build_object('invitationId',v_invite.id,'status',v_invite.status,'meetingId',v_meeting.id,
+        'title',v_meeting.title,'roomCode',v_meeting.room_code);
+    end if;
+    raise exception 'Esta invitación ya fue respondida.' using errcode='P0001';
+  end if;
   update public.meeting_invitations set status=p_status,responded_at=now() where id=v_invite.id;
   update public.meeting_participants set status=case when p_status='ACCEPTED' then 'ADMITTED' else 'DENIED' end,
     left_at=case when p_status='DECLINED' then now() else null end

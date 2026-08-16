@@ -45,6 +45,19 @@ describe('Supabase contract', () => {
     expect(app).toContain('<NotificationActionModal');
     expect(app).toContain("status: accepted ? 'ACCEPTED' : 'DECLINED'");
     expect(app).toContain("accepted ? 'admitMeetingParticipant' : 'denyMeetingParticipant'");
+    expect(app).toContain('setActiveNotice(null)');
+    expect(schema).toContain("if v_invite.status=p_status then");
+    expect(schema).toContain("and v_invite.status='PENDING'");
+  });
+
+  it('prevents duplicate connections and duplicate presence for one user', () => {
+    expect(meetingStudio).toContain('const lifecycleEpoch = useRef(0)');
+    expect(meetingStudio).toContain('const connectSequence = useRef(0)');
+    expect(meetingStudio).toContain('entryInFlight.current?.key === key');
+    expect(meetingClient).toContain('this.connectVersion = 0');
+    expect(meetingClient).toContain('peer.userId === this.identity?.userId');
+    expect(meetingClient).toContain('const canonicalUsers = new Map()');
+    expect(meetingClient).toContain("['offer', 'answer', 'ice'].includes(message.type)");
   });
 
   it('uses the one-RPC meeting creation path and resilient realtime startup', () => {

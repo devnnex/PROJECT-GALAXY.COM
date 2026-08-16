@@ -119,7 +119,7 @@ function InvitePanel({ members, invited, onInvite, onClose }) {
 
 export default function MeetingStudio({ toast, user, joinRequest }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`;
-  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(false); const handledJoinRequest = useRef(null);
+  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } });
@@ -135,37 +135,52 @@ export default function MeetingStudio({ toast, user, joinRequest }) {
   const showReaction = ({ emoji }) => { const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), 2400); };
 
   const stopMedia = () => { mediaRef.current.getTracks().forEach((track) => track.stop()); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
-  const disconnect = useCallback((clearMeeting = false) => { connection.current?.disconnect(); connection.current = null; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setHandRaised(false); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
-  useEffect(() => () => { connection.current?.disconnect(); sharedAudio.current?.close(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); }, []);
+  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setHandRaised(false); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
+  useEffect(() => {
+    const epoch = ++lifecycleEpoch.current;
+    return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); };
+  }, []);
   useEffect(() => { primeRealtime(user.id).catch(() => {}); return () => releaseRealtimePrime(user.id); }, [user.id]);
   useEffect(() => { api.getMyMeetings().then(setMeetings).catch((error) => toast(error.message, 'error')); }, []);
 
-  const connectAccess = async (access) => {
+  const connectAccess = async (access, expectedEpoch = lifecycleEpoch.current) => {
+    if (expectedEpoch !== lifecycleEpoch.current) return false;
+    const sequence = ++connectSequence.current;
     const legacyParticipantStatus = ['ADMITTED', 'WAITING', 'INVITED', 'DENIED'].includes(access.status) ? access.status : null;
     const normalized = { ...access, role: access.role || (access.host ? 'HOST' : 'PARTICIPANT'), participantStatus: access.participantStatus || legacyParticipantStatus || (access.host ? 'ADMITTED' : null) };
     setMeeting(normalized); setMessages(normalized.messages || []); rememberMeeting(normalized);
-    if (normalized.participantStatus !== 'ADMITTED') { setWaiting(true); setStatus('waiting'); return; }
+    if (normalized.participantStatus !== 'ADMITTED') { setWaiting(true); setStatus('waiting'); return true; }
     setWaiting(false); setJoined(true); setStatus('signaling'); connection.current?.disconnect();
-    const client = new SupabaseMeetingConnection({
-      onStatus: setStatus, onParticipants: setParticipants,
-      onRemoteStream: (peerId, stream) => setRemoteStreams((current) => { const next = { ...current }; if (stream) next[peerId] = stream; else delete next[peerId]; return next; }),
-      onPeerState: (peerId, state) => setPeerStates((current) => ({ ...current, [peerId]: state })), onReaction: showReaction, onChat: mergeMessage,
-      onChatHistory: (history) => history.forEach(mergeMessage), onChatReaction: applyChatReaction,
-      onForceMute: ({ by }) => { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); client.setPresence({ mic: false, speaking: false }); toast(`${by || 'El anfitrión'} silenció tu micrófono.`, 'info'); },
-      onMeetingEnded: async ({ by }) => { await stopShare(); disconnect(true); stopMedia(); toast(`${by || 'El anfitrión'} finalizó la reunión.`, 'info'); },
+    const isCurrent = (client) => expectedEpoch === lifecycleEpoch.current && sequence === connectSequence.current && connection.current === client;
+    let client;
+    client = new SupabaseMeetingConnection({
+      onStatus: (value) => { if (isCurrent(client)) setStatus(value); }, onParticipants: (value) => { if (isCurrent(client)) setParticipants(value); },
+      onRemoteStream: (peerId, stream) => { if (isCurrent(client)) setRemoteStreams((current) => { const next = { ...current }; if (stream) next[peerId] = stream; else delete next[peerId]; return next; }); },
+      onPeerState: (peerId, state) => { if (isCurrent(client)) setPeerStates((current) => ({ ...current, [peerId]: state })); }, onReaction: (value) => { if (isCurrent(client)) showReaction(value); }, onChat: (value) => { if (isCurrent(client)) mergeMessage(value); },
+      onChatHistory: (history) => { if (isCurrent(client)) history.forEach(mergeMessage); }, onChatReaction: (value) => { if (isCurrent(client)) applyChatReaction(value); },
+      onForceMute: ({ by }) => { if (!isCurrent(client)) return; const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); client.setPresence({ mic: false, speaking: false }); toast(`${by || 'El anfitrión'} silenció tu micrófono.`, 'info'); },
+      onMeetingEnded: async ({ by }) => { if (!isCurrent(client)) return; await stopShare(); disconnect(true); stopMedia(); toast(`${by || 'El anfitrión'} finalizó la reunión.`, 'info'); },
     });
     client.setPresence({ mic, camera, sharing: false, handRaised, speaking: false }); connection.current = client;
     try {
       await client.connect({ roomId: normalized.meetingId, role: normalized.role, stream: mediaRef.current, iceServers: normalized.iceServers, user });
+      if (!isCurrent(client)) { client.disconnect(); return false; }
       toast(`Conectado a ${normalized.title}.`);
-    } catch (error) { setJoined(false); throw error; }
+      return true;
+    } catch (error) { client.disconnect(); if (!isCurrent(client) || error.name === 'AbortError') return false; connection.current = null; setJoined(false); throw error; }
   };
 
-  const enterMeeting = async ({ roomCode, password = '' }) => { setBusy(true); try { const access = await getMeetingAccess({ roomCode, password }); await connectAccess(access); } catch (error) { disconnect(true); toast(error.message, 'error'); } finally { setBusy(false); } };
-  useEffect(() => { if (resumed.current) return; resumed.current = true; if (joinRequest?.roomCode) return; try { const saved = JSON.parse(localStorage.getItem(activeKey) || 'null'); if (saved?.roomCode) enterMeeting({ roomCode: saved.roomCode }); } catch { forgetMeeting(); } }, []);
+  const enterMeeting = ({ roomCode, password = '' }) => {
+    const epoch = lifecycleEpoch.current; const key = `${epoch}:${String(roomCode).toUpperCase()}:${password}`;
+    if (entryInFlight.current?.key === key) return entryInFlight.current.promise;
+    const requestId = ++entrySequence.current;
+    const promise = (async () => { setBusy(true); try { const access = await getMeetingAccess({ roomCode, password }); if (epoch !== lifecycleEpoch.current || requestId !== entrySequence.current) return false; return await connectAccess(access, epoch); } catch (error) { if (epoch === lifecycleEpoch.current && requestId === entrySequence.current) { disconnect(true); toast(error.message, 'error'); } return false; } finally { const ownsEntry = entryInFlight.current?.promise === promise; if (ownsEntry) entryInFlight.current = null; if (ownsEntry && epoch === lifecycleEpoch.current) setBusy(false); } })();
+    entryInFlight.current = { key, promise }; return promise;
+  };
+  useEffect(() => { const epoch = lifecycleEpoch.current; if (resumed.current === epoch) return; resumed.current = epoch; if (joinRequest?.roomCode) return; try { const saved = JSON.parse(localStorage.getItem(activeKey) || 'null'); if (saved?.roomCode) enterMeeting({ roomCode: saved.roomCode }); } catch { forgetMeeting(); } }, []);
   useEffect(() => {
-    if (!joinRequest?.roomCode || handledJoinRequest.current === joinRequest.id) return;
-    handledJoinRequest.current = joinRequest.id; enterMeeting({ roomCode: joinRequest.roomCode });
+    const epoch = lifecycleEpoch.current; if (!joinRequest?.roomCode || (handledJoinRequest.current?.id === joinRequest.id && handledJoinRequest.current?.epoch === epoch)) return;
+    handledJoinRequest.current = { id: joinRequest.id, epoch }; enterMeeting({ roomCode: joinRequest.roomCode });
   }, [joinRequest?.id, joinRequest?.roomCode]);
 
   useEffect(() => {

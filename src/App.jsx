@@ -167,18 +167,25 @@ function AppShell({ user, onUserChange, onLogout }) {
   const closeNotice = () => { if (activeNotice) setDismissedNotices((items) => new Set(items).add(activeNotice.id)); setActiveNotice(null); };
   const resolveNotice = async (accepted) => {
     if (!activeNotice || noticeBusy) return;
+    const notice = activeNotice; const resolvedAt = new Date().toISOString();
     setNoticeBusy(true);
+    setActiveNotice(null);
+    setDismissedNotices((items) => new Set(items).add(notice.id));
+    setNotificationItems((items) => items.map((item) => item.id === notice.id ? {
+      ...item, readAt: item.readAt || resolvedAt,
+      ...(item.type === 'MEETING_INVITE' ? { invitationStatus: accepted ? 'ACCEPTED' : 'DECLINED' } : {}),
+    } : item));
     try {
-      if (activeNotice.type === 'MEETING_JOIN_REQUEST') {
-        await api[accepted ? 'admitMeetingParticipant' : 'denyMeetingParticipant']({ meetingId: activeNotice.meetingId, participantId: activeNotice.participantId });
+      if (notice.type === 'MEETING_JOIN_REQUEST') {
+        await api[accepted ? 'admitMeetingParticipant' : 'denyMeetingParticipant']({ meetingId: notice.meetingId, participantId: notice.participantId });
         toast(accepted ? 'Participante admitido en la reunión.' : 'Solicitud de ingreso rechazada.');
       } else {
-        const result = await api.respondToMeetingInvitation({ invitationId: activeNotice.invitationId, status: accepted ? 'ACCEPTED' : 'DECLINED' });
+        const result = await api.respondToMeetingInvitation({ invitationId: notice.invitationId, status: accepted ? 'ACCEPTED' : 'DECLINED' });
         if (accepted) { setJoinRequest({ roomCode: result.roomCode, id: Date.now() }); navigate('meetings'); }
         toast(accepted ? 'Invitación aceptada. Entrando a la reunión…' : 'Invitación declinada.');
       }
-      setActiveNotice(null); await reloadNotifications();
-    } catch (error) { toast(error.message, 'error'); } finally { setNoticeBusy(false); }
+      await reloadNotifications();
+    } catch (error) { toast(error.message, 'error'); await reloadNotifications(); } finally { setNoticeBusy(false); }
   };
   const markAllRead = async () => {
     setNotificationItems((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })));

@@ -85,30 +85,45 @@ export class MeetingConnection {
 }
 
 export class SupabaseMeetingConnection extends MeetingConnection {
-  constructor(callbacks = {}) { super(callbacks); this.active = false; this.channel = null; this.endValidation = null; }
+  constructor(callbacks = {}) { super(callbacks); this.active = false; this.channel = null; this.endValidation = null; this.connectVersion = 0; }
 
   async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT', user }) {
+    const version = ++this.connectVersion;
     this.roomId = roomId; this.role = role; this.selfId = crypto.randomUUID(); this.localStream = stream || new MediaStream(); this.iceServers = iceServers.length ? iceServers : defaultIceServers(); this.active = true; this.callbacks.onStatus?.('signaling');
     const identity = user || await api.me();
-    this.identity = { peerId: this.selfId, userId: identity.id, name: identity.name, role, ...(this.presence || {}) };
+    this.identity = { peerId: this.selfId, userId: identity.id, name: identity.name, role, connectedAt: Date.now(), ...(this.presence || {}) };
     primeRealtime(identity.id).catch(() => {});
-    this.channel = await subscribeRealtimeChannel(() => {
+    const channel = await subscribeRealtimeChannel(() => {
+      if (!this.active || version !== this.connectVersion) throw Object.assign(new Error('Conexión reemplazada.'), { name: 'AbortError' });
       const channel = supabase.channel(`meeting:${roomId}`, { config: { private: true, broadcast: { self: false, ack: false }, presence: { key: this.selfId } } });
-      this.channel = channel;
       channel.on('broadcast', { event: 'signal' }, ({ payload }) => this.handleSignal(payload).catch(() => {}));
       channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
       channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
       channel.on('broadcast', { event: 'meeting-ended' }, ({ payload }) => this.handleMeetingEnded(payload));
       channel.on('presence', { event: 'sync' }, () => this.syncPresence());
       return channel;
-    }, { onSubscribed: (channel) => channel.track(this.identity) });
+    }, { onSubscribed: (subscribedChannel) => {
+      if (!this.active || version !== this.connectVersion) throw Object.assign(new Error('Conexión reemplazada.'), { name: 'AbortError' });
+      return subscribedChannel.track(this.identity);
+    } });
+    if (!this.active || version !== this.connectVersion) {
+      channel.untrack().catch(() => {}); supabase.removeChannel(channel);
+      throw Object.assign(new Error('Conexión reemplazada.'), { name: 'AbortError' });
+    }
+    this.channel = channel; await this.syncPresence();
     this.callbacks.onStatus?.('connected');
   }
 
   async syncPresence() {
-    if (!this.active || !this.channel) return; const online = new Set();
+    if (!this.active || !this.channel) return; const online = new Set(); const canonicalUsers = new Map();
     for (const entries of Object.values(this.channel.presenceState())) for (const peer of entries) {
-      if (!peer.peerId || peer.peerId === this.selfId) continue;
+      if (!peer.peerId || peer.peerId === this.selfId || (peer.userId && peer.userId === this.identity?.userId)) continue;
+      const key = peer.userId || peer.peerId; const current = canonicalUsers.get(key);
+      const peerRank = `${String(Number(peer.connectedAt) || 0).padStart(16, '0')}:${peer.peerId}`;
+      const currentRank = current ? `${String(Number(current.connectedAt) || 0).padStart(16, '0')}:${current.peerId}` : '';
+      if (!current || peerRank > currentRank) canonicalUsers.set(key, peer);
+    }
+    for (const peer of canonicalUsers.values()) {
       online.add(peer.peerId); const isNew = !this.participants.has(peer.peerId); this.participants.set(peer.peerId, peer);
       if (isNew && this.selfId > peer.peerId) await this.createPeer(peer.peerId, true).catch(() => {});
     }
@@ -118,6 +133,9 @@ export class SupabaseMeetingConnection extends MeetingConnection {
 
   async handleSignal(message) {
     if (!message || (message.target && message.target !== this.selfId)) return;
+    if (['offer', 'answer', 'ice'].includes(message.type) && message.source && !this.participants.has(message.source)) {
+      await this.syncPresence(); if (!this.participants.has(message.source)) return;
+    }
     if (message.type === 'offer') return this.acceptOffer(message);
     if (message.type === 'answer') return this.acceptAnswer(message);
     if (message.type === 'ice') return this.acceptIce(message);
@@ -162,7 +180,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
   endMeeting() { if (this.role === 'HOST') return this.broadcast('meeting-ended', { by: this.identity.name }); return undefined; }
   disconnect() {
-    this.active = false; this.peers.forEach(({ pc, remoteStream }) => { pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
+    this.active = false; this.connectVersion += 1; this.peers.forEach(({ pc, remoteStream }) => { pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
     if (this.channel) { this.channel.untrack(); supabase.removeChannel(this.channel); } this.channel = null; this.callbacks.onStatus?.('disconnected');
   }
 }
