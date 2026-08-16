@@ -65,4 +65,13 @@ describe('verified Galaxy memberships', () => {
     expect(experience).toContain('Envía únicamente USDT por');
     expect(experience).toContain('Tu membresía está activa.');
   });
+
+  it('shows all four requested membership prices directly in Marketplace', () => {
+    expect(app).toContain("{ code: 'MONTHLY', name: 'Órbita mensual', duration: '1 mes', price: 80");
+    expect(app).toContain("{ code: 'QUARTERLY', name: 'Nexo trimestral', duration: '3 meses', price: 250");
+    expect(app).toContain("{ code: 'SEMESTER', name: 'Horizonte semestral', duration: '6 meses', price: 499");
+    expect(app).toContain("{ code: 'ANNUAL', name: 'Constelación anual', duration: '12 meses', price: 999");
+    expect(app).toContain('<MembershipMarketplaceCards');
+    expect(experience).toContain('initialPlanCode');
+  });
 });

@@ -21,6 +21,13 @@ const navigation = [
   ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['profile', 'Perfil', User],
 ];
 
+const membershipMarketplacePlans = [
+  { code: 'MONTHLY', name: 'Órbita mensual', duration: '1 mes', price: 80, tone: 'violet', note: 'Acceso flexible' },
+  { code: 'QUARTERLY', name: 'Nexo trimestral', duration: '3 meses', price: 250, tone: 'cyan', note: 'Ritmo continuo' },
+  { code: 'SEMESTER', name: 'Horizonte semestral', duration: '6 meses', price: 499, tone: 'amber', note: 'Mayor continuidad' },
+  { code: 'ANNUAL', name: 'Constelación anual', duration: '12 meses', price: 999, tone: 'platinum', note: 'Acceso anual' },
+];
+
 function Brand() { return <div className="brand"><span className="brand-mark"><Orbit /></span><span>{CONFIG.APP_NAME}</span></div>; }
 
 function Toast({ item }) { return item && <div className={`toast ${item.kind || ''}`} role="status"><span className="toast-orbit"><Check /></span><div><strong>{item.kind === 'error' ? 'Revisa esta acción' : 'Sistema actualizado'}</strong><p>{item.message}</p></div></div>; }
@@ -64,16 +71,27 @@ function FeedPage({ toast }) {
 function ProductCard({ product, onOpen }) { const [saved, setSaved] = useState(false); return <article className="product-card surface" onClick={() => onOpen(product)}><div className={`product-art ${product.tone}`}><span className="product-mark">{product.mark}</span>{product.kind !== 'membership' && <button className={`icon-button ${saved ? 'saved' : ''}`} aria-label={saved ? 'Quitar de guardados' : 'Guardar'} onClick={(e) => { e.stopPropagation(); setSaved(!saved); }}><Bookmark fill={saved ? 'currentColor' : 'none'} /></button>}<div className="orb-art" /></div><div className="product-info"><span>{product.category}</span><h3>{product.title}</h3><p>por {product.seller}</p><div><strong>{product.kind === 'membership' ? `Desde ${product.price}` : product.price} USDT</strong><small>{product.kind === 'membership' ? <><ShieldCheck /> Acceso verificado</> : <><Star /> {product.rating} ({product.reviews})</>}</small></div></div></article>; }
 function ProductGrid({ items, onOpen }) { return <div className="product-grid">{items.map((p) => <ProductCard key={p.id} product={p} onOpen={onOpen} />)}</div>; }
 
+function MembershipMarketplaceCards({ product, onOpen }) {
+  return <section className="membership-marketplace surface">
+    <header><div><p className="eyebrow">PROJECT GALAXY MEMBERSHIP</p><h2>Activa tu acceso a sesiones.</h2><p>Reuniones privadas, LIVE, chat y pantalla compartida en una sola membresía.</p></div><span><ShieldCheck /> USDT · TRC20 / ERC20</span></header>
+    <div className="membership-marketplace-grid">{membershipMarketplacePlans.map((plan) => <button key={plan.code} className={`membership-marketplace-card tone-${plan.tone}`} onClick={() => onOpen({ ...product, planCode: plan.code })}>
+      <div><span>{plan.duration}</span><ShieldCheck /></div><strong>{plan.name}</strong><b>US$ {plan.price}</b><small>{plan.note}</small><em>Elegir plan <ArrowRight /></em>
+    </button>)}</div>
+  </section>;
+}
+
 function Marketplace({ onOpen }) {
   const [query, setQuery] = useState(''); const [category, setCategory] = useState('Todos'); const [sort, setSort] = useState('rating');
   const visible = products.filter((p) => (category === 'Todos' || p.category === category) && `${p.title} ${p.seller}`.toLowerCase().includes(query.toLowerCase())).sort((a, b) => sort === 'rating' ? b.rating - a.rating : a.price - b.price);
-  return <div className="page-stack"><header className="market-hero"><div><p className="eyebrow">THE EXCHANGE LAYER</p><h1>Ideas que puedes<br /><em>llevar contigo.</em></h1><p>Herramientas, conocimiento y experiencias creadas por personas excepcionales.</p></div><div className="market-orbit"><Orbit /></div></header><div className="market-controls"><label className="search-field"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar productos, creadores…" /></label><button className="secondary-button" onClick={() => setSort(sort === 'rating' ? 'price' : 'rating')}>{sort === 'rating' ? 'Más relevantes' : 'Menor precio'} <ChevronDown /></button></div><div className="category-row">{['Todos', ...new Set(products.map((p) => p.category))].map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><div className="section-title"><div><p className="eyebrow">FEATURED</p><h2>{visible.length} objetos seleccionados</h2></div></div>{visible.length ? <ProductGrid items={visible} onOpen={onOpen} /> : <EmptyState icon={Search} title="Sin coincidencias" text="Prueba con otra palabra o categoría." />}</div>;
+  const membershipProduct = visible.find((product) => product.kind === 'membership'); const regularProducts = visible.filter((product) => product.kind !== 'membership');
+  const visibleCount = regularProducts.length + (membershipProduct ? membershipMarketplacePlans.length : 0);
+  return <div className="page-stack"><header className="market-hero"><div><p className="eyebrow">THE EXCHANGE LAYER</p><h1>Ideas que puedes<br /><em>llevar contigo.</em></h1><p>Herramientas, conocimiento y experiencias creadas por personas excepcionales.</p></div><div className="market-orbit"><Orbit /></div></header><div className="market-controls"><label className="search-field"><Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Buscar productos, creadores…" /></label><button className="secondary-button" onClick={() => setSort(sort === 'rating' ? 'price' : 'rating')}>{sort === 'rating' ? 'Más relevantes' : 'Menor precio'} <ChevronDown /></button></div><div className="category-row">{['Todos', ...new Set(products.map((p) => p.category))].map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div><div className="section-title"><div><p className="eyebrow">FEATURED</p><h2>{visibleCount} objetos seleccionados</h2></div></div>{membershipProduct && <MembershipMarketplaceCards product={membershipProduct} onOpen={onOpen} />}{regularProducts.length ? <ProductGrid items={regularProducts} onOpen={onOpen} /> : !membershipProduct && <EmptyState icon={Search} title="Sin coincidencias" text="Prueba con otra palabra o categoría." />}</div>;
 }
 
 function ProductModal({ product, onClose, toast, membershipCenter, onMembershipActivated }) {
   const [checkout, setCheckout] = useState(false); const [network, setNetwork] = useState('');
   if (!product) return null;
-  if (product.kind === 'membership') return <MembershipCheckoutModal plans={membershipCenter?.plans || []} membership={membershipCenter?.membership} onClose={onClose} onActivated={onMembershipActivated} toast={toast} />;
+  if (product.kind === 'membership') return <MembershipCheckoutModal plans={membershipCenter?.plans || []} membership={membershipCenter?.membership} initialPlanCode={product.planCode} onClose={onClose} onActivated={onMembershipActivated} toast={toast} />;
   const createPayment = () => {
     if (!network) return toast('Selecciona una red antes de continuar.', 'error');
     toast('Los pagos están desactivados hasta configurar un proveedor verificable en el backend.', 'error');

@@ -44,8 +44,8 @@ export function MembershipProfileCard({ membership, onRenew }) {
   </section>;
 }
 
-export function MembershipCheckoutModal({ plans = [], membership, onClose, onActivated, toast }) {
-  const [selectedCode, setSelectedCode] = useState(plans[0]?.code || ''); const [network, setNetwork] = useState('TRC20');
+export function MembershipCheckoutModal({ plans = [], membership, initialPlanCode = '', onClose, onActivated, toast }) {
+  const [selectedCode, setSelectedCode] = useState(initialPlanCode || plans[0]?.code || ''); const [network, setNetwork] = useState('TRC20');
   const [order, setOrder] = useState(null); const [busy, setBusy] = useState(false); const [checking, setChecking] = useState(false);
   const selectedPlan = useMemo(() => plans.find((plan) => plan.code === selectedCode) || plans[0], [plans, selectedCode]);
   const status = String(order?.status || '').toUpperCase();
@@ -66,6 +66,10 @@ export function MembershipCheckoutModal({ plans = [], membership, onClose, onAct
     if (!order?.id || TERMINAL_PAYMENT_STATES.has(status)) return undefined;
     const timer = setInterval(() => refreshPayment(true), 8000); return () => clearInterval(timer);
   }, [order?.id, status]);
+
+  useEffect(() => {
+    if (!order && plans.some((plan) => plan.code === initialPlanCode)) setSelectedCode(initialPlanCode);
+  }, [initialPlanCode, order, plans]);
 
   const createPayment = async () => {
     if (!selectedPlan) return toast('Los planes todavía no están disponibles en Supabase.', 'error');
