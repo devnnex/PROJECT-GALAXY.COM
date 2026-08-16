@@ -85,16 +85,16 @@ export class MeetingConnection {
 }
 
 export class SupabaseMeetingConnection extends MeetingConnection {
-  constructor(callbacks = {}) { super(callbacks); this.active = false; this.channel = null; }
+  constructor(callbacks = {}) { super(callbacks); this.active = false; this.channel = null; this.endValidation = null; }
 
   async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT' }) {
     this.roomId = roomId; this.role = role; this.selfId = crypto.randomUUID(); this.localStream = stream || new MediaStream(); this.iceServers = iceServers.length ? iceServers : defaultIceServers(); this.active = true; this.callbacks.onStatus?.('signaling');
     const user = await api.me(); this.identity = { peerId: this.selfId, userId: user.id, name: user.name, role, ...(this.presence || {}) };
     const channel = supabase.channel(`meeting:${roomId}`, { config: { private: true, broadcast: { self: false, ack: true }, presence: { key: this.selfId } } }); this.channel = channel;
     channel.on('broadcast', { event: 'signal' }, ({ payload }) => this.handleSignal(payload).catch(() => {}));
-    channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.callbacks.onChat?.(payload));
-    channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.callbacks.onChatReaction?.(payload));
-    channel.on('broadcast', { event: 'meeting-ended' }, ({ payload }) => this.callbacks.onMeetingEnded?.(payload));
+    channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
+    channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
+    channel.on('broadcast', { event: 'meeting-ended' }, ({ payload }) => this.handleMeetingEnded(payload));
     channel.on('presence', { event: 'sync' }, () => this.syncPresence());
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('Supabase Realtime no respondió a tiempo.')), 10_000);
@@ -122,7 +122,25 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (message.type === 'answer') return this.acceptAnswer(message);
     if (message.type === 'ice') return this.acceptIce(message);
     if (message.type === 'reaction') { this.callbacks.onReaction?.({ peerId: message.source, emoji: message.emoji }); return; }
-    if (message.type === 'force-mute') this.callbacks.onForceMute?.({ by: message.by });
+    if (message.type === 'force-mute' && message.commandId) {
+      const command = await api.consumeMeetingCommand({ commandId: message.commandId });
+      if (command?.meetingId === this.roomId && command.command === 'MUTE') this.callbacks.onForceMute?.({ by: message.by });
+    }
+  }
+
+  async handlePersistedMessage(messageId) {
+    if (!messageId) return;
+    const message = await api.getMeetingMessage({ meetingId: this.roomId, messageId }).catch(() => null);
+    if (message) this.callbacks.onChat?.(message);
+  }
+
+  async handleMeetingEnded(payload) {
+    if (this.endValidation) return this.endValidation;
+    this.endValidation = api.getMeetingState({ meetingId: this.roomId })
+      .then((state) => { if (state?.status === 'ENDED') this.callbacks.onMeetingEnded?.(payload || {}); })
+      .catch(() => {})
+      .finally(() => { setTimeout(() => { this.endValidation = null; }, 1500); });
+    return this.endValidation;
   }
 
   async broadcast(event, payload) { if (this.active && this.channel) await this.channel.send({ type: 'broadcast', event, payload }); }
@@ -131,10 +149,17 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   send(message) {
     if (['offer', 'answer', 'ice'].includes(message.type)) this.broadcast('signal', { ...message, source: this.selfId });
     else if (message.type === 'reaction') this.broadcast('signal', { type: 'reaction', source: this.selfId, emoji: message.emoji });
-    else if (message.type === 'moderation' && message.action === 'mute' && this.role === 'HOST') this.broadcast('signal', { type: 'force-mute', source: this.selfId, target: message.target, by: this.identity.name });
+    else if (message.type === 'moderation' && message.action === 'mute' && this.role === 'HOST') this.mutePeer(message.target);
   }
-  chat(message) { return this.broadcast('chat', message); }
-  reactToChat(update) { return this.broadcast('chat-reaction', update); }
+  chat(message) { return this.broadcast('chat', { messageId: message.id }); }
+  reactToChat(update) { return this.broadcast('chat-reaction', { messageId: update.messageId }); }
+  async mutePeer(peerId) {
+    if (this.role !== 'HOST') return;
+    const peer = this.participants.get(peerId);
+    if (!peer?.userId) return;
+    const command = await api.requestMeetingMute({ meetingId: this.roomId, userId: peer.userId });
+    await this.broadcast('signal', { type: 'force-mute', source: this.selfId, target: peerId, commandId: command.id, by: this.identity.name });
+  }
   endMeeting() { if (this.role === 'HOST') return this.broadcast('meeting-ended', { by: this.identity.name }); return undefined; }
   disconnect() {
     this.active = false; this.peers.forEach(({ pc, remoteStream }) => { pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();

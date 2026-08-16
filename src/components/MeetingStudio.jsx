@@ -78,7 +78,7 @@ function InvitePanel({ members, invited, onInvite, onClose }) {
 }
 
 export default function MeetingStudio({ toast, user }) {
-  const activeKey = `galaxy_active_meeting_${user.id}`; const passwordKey = `galaxy_meeting_password_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`;
+  const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`;
   const sourceStream = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(false);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
@@ -88,8 +88,8 @@ export default function MeetingStudio({ toast, user }) {
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
   const [sideTab, setSideTab] = useState('people'); const [messages, setMessages] = useState([]); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [members, setMembers] = useState([]); const [invited, setInvited] = useState([]);
 
-  const rememberMeeting = (value, password = '') => { localStorage.setItem(activeKey, JSON.stringify({ roomCode: value.roomCode, title: value.title, role: value.role || (value.host ? 'HOST' : 'PARTICIPANT') })); if (password) sessionStorage.setItem(passwordKey, password); };
-  const forgetMeeting = () => { localStorage.removeItem(activeKey); sessionStorage.removeItem(passwordKey); };
+  const rememberMeeting = (value) => { localStorage.setItem(activeKey, JSON.stringify({ roomCode: value.roomCode, title: value.title, role: value.role || (value.host ? 'HOST' : 'PARTICIPANT') })); };
+  const forgetMeeting = () => { localStorage.removeItem(activeKey); };
   const mergeMessage = useCallback((message) => setMessages((items) => items.some((item) => item.id === message.id) ? items.map((item) => item.id === message.id ? { ...item, ...message } : item) : [...items, message]), []);
   const applyChatReaction = useCallback((update) => { if (!update.emoji) return; setMessages((items) => items.map((item) => { if (item.id !== update.messageId) return item; const reactions = [...(item.reactions || [])]; const index = reactions.findIndex((entry) => entry.emoji === update.emoji); if (index < 0 && update.active) reactions.push({ emoji: update.emoji, count: 1, mine: update.userId === user.id }); else if (index >= 0) { const current = reactions[index]; const count = Math.max(0, current.count + (update.active ? 1 : -1)); if (!count) reactions.splice(index, 1); else reactions[index] = { ...current, count, ...(update.userId === user.id ? { mine: update.active } : {}) }; } return { ...item, reactions }; })); }, [user.id]);
   const showReaction = ({ emoji }) => { const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), 2400); };
@@ -99,8 +99,8 @@ export default function MeetingStudio({ toast, user }) {
   useEffect(() => () => { connection.current?.disconnect(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); }, []);
   useEffect(() => { api.getMyMeetings().then(setMeetings).catch((error) => toast(error.message, 'error')); }, []);
 
-  const connectAccess = async (access, password = '') => {
-    setMeeting(access); setMessages(access.messages || []); rememberMeeting(access, password);
+  const connectAccess = async (access) => {
+    setMeeting(access); setMessages(access.messages || []); rememberMeeting(access);
     if (access.status !== 'ADMITTED') { setWaiting(true); setStatus('waiting'); return; }
     setWaiting(false); connection.current?.disconnect();
     const client = new SupabaseMeetingConnection({
@@ -115,13 +115,13 @@ export default function MeetingStudio({ toast, user }) {
     client.setPresence({ mic, camera, sharing: false, handRaised, speaking: false }); setJoined(true); toast(`Conectado a ${access.title}.`);
   };
 
-  const enterMeeting = async ({ roomCode, password = '' }) => { setBusy(true); try { const access = await getMeetingAccess({ roomCode, password }); await connectAccess(access, password); } catch (error) { disconnect(false); toast(error.message, 'error'); } finally { setBusy(false); } };
-  useEffect(() => { if (resumed.current) return; resumed.current = true; try { const saved = JSON.parse(localStorage.getItem(activeKey) || 'null'); if (saved?.roomCode) enterMeeting({ roomCode: saved.roomCode, password: sessionStorage.getItem(passwordKey) || '' }); } catch { forgetMeeting(); } }, []);
+  const enterMeeting = async ({ roomCode, password = '' }) => { setBusy(true); try { const access = await getMeetingAccess({ roomCode, password }); await connectAccess(access); } catch (error) { disconnect(false); toast(error.message, 'error'); } finally { setBusy(false); } };
+  useEffect(() => { if (resumed.current) return; resumed.current = true; try { const saved = JSON.parse(localStorage.getItem(activeKey) || 'null'); if (saved?.roomCode) enterMeeting({ roomCode: saved.roomCode }); } catch { forgetMeeting(); } }, []);
 
   useEffect(() => {
     if (!waiting || !meeting?.roomCode || !meeting?.meetingId) return undefined;
     let connecting = false;
-    const refresh = async () => { if (connecting) return; connecting = true; try { const access = await getMeetingAccess({ roomCode: meeting.roomCode, password: sessionStorage.getItem(passwordKey) || '' }); if (access.status === 'ADMITTED') await connectAccess(access, sessionStorage.getItem(passwordKey) || ''); } catch (error) { if (/no autorizó|terminó/.test(error.message)) { disconnect(true); toast(error.message, 'error'); } } finally { connecting = false; } };
+    const refresh = async () => { if (connecting) return; connecting = true; try { const access = await getMeetingAccess({ roomCode: meeting.roomCode }); if (access.status === 'ADMITTED') await connectAccess(access); } catch (error) { if (/no autorizó|terminó/.test(error.message)) { disconnect(true); toast(error.message, 'error'); } } finally { connecting = false; } };
     const unsubscribe = api.onMeetingParticipantChange(meeting.meetingId, refresh); const timer = setInterval(refresh, 15_000);
     return () => { unsubscribe(); clearInterval(timer); };
   }, [waiting, meeting?.roomCode, meeting?.meetingId]);

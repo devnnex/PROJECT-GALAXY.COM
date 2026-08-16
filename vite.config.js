@@ -6,6 +6,7 @@ export default defineConfig(({ command }) => ({
   base: command === 'build' ? '/PROJECT-GALAXY.COM/dist/' : '/',
   build: {
     target: 'es2022',
+    minify: 'oxc',
     sourcemap: false,
     rollupOptions: { input: 'app.html' },
   },

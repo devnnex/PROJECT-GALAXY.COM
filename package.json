@@ -8,7 +8,8 @@
     "build": "vite build && node scripts/finalize-build.mjs",
     "preview": "vite preview",
     "serve-root": "node scripts/static-server.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "security:check": "node scripts/security-audit.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

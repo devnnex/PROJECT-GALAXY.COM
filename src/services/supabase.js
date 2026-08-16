@@ -10,6 +10,7 @@ export const supabase = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_K
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
+    flowType: 'pkce',
     storageKey: 'galaxy_supabase_auth',
   },
   realtime: { params: { eventsPerSecond: 30 } },

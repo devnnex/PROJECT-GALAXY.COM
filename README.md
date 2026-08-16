@@ -25,6 +25,8 @@ La anon key de Supabase es una credencial pública diseñada para el navegador. 
 
 La clave JWT `anon` suministrada funciona con este cliente. Supabase está migrando proyectos hacia claves `sb_publishable_...`; cuando el panel te ofrezca una, reemplázala sin cambiar el esquema ni la API.
 
+El artefacto público está minificado, no incluye sourcemaps ni archivos fuente y aplica una CSP restrictiva. Las contraseñas de reunión no se guardan en Web Storage; mensajes, moderación y cierre de salas se validan contra PostgreSQL antes de aceptarse desde Realtime. El CI añade auditoría del build, acciones fijadas por SHA, Dependabot y CodeQL. Consulta [SECURITY.md](SECURITY.md) y la [guía de despliegue](docs/DEPLOYMENT.md).
+
 ## Reuniones
 
 Supabase Realtime Broadcast/Presence entrega señalización WebRTC, presencia, manos levantadas, emoji, chat y moderación sin el polling de Apps Script. PostgreSQL persiste salas, admisiones, invitaciones, mensajes y reacciones.

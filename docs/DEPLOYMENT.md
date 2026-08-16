@@ -26,3 +26,15 @@ Las credenciales TURN estáticas quedan expuestas a cualquier miembro admitido. 
 En GitHub abre **Settings → Pages → Build and deployment → Source** y selecciona **GitHub Actions**. Cada push a `main` desplegará después de aprobar todas las pruebas. La URL canónica será `https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html`; la raíz redirige allí conservando parámetros de invitación y autenticación.
 
 No agregues URLs locales, comodines ni dominios de preview a Supabase Auth para este despliegue. Si posteriormente conectas un dominio propio, cambia `Site URL`, la Redirect URL y `base` en `vite.config.js` antes de publicar.
+
+## Endurecimiento obligatorio
+
+Después de actualizar el repositorio, vuelve a ejecutar `supabase/schema.sql` completo. Es idempotente y añade los comandos de moderación verificables, el límite de mensajes, la reanudación sin almacenar contraseñas y los privilegios restrictivos por defecto.
+
+En **Authentication → Rate Limits**, conserva límites estrictos para registro, inicio de sesión, recuperación y verificación. En **Authentication → Attack Protection**, habilita CAPTCHA para registro, inicio de sesión y recuperación. Configura una longitud mínima de 10 caracteres y, si el plan lo permite, activa la detección de contraseñas filtradas.
+
+En **Database → Security Advisor**, resuelve todas las alertas antes de cada lanzamiento. No desactives RLS ni concedas acceso directo de escritura a tablas operativas; el cliente debe escribir exclusivamente mediante las RPC autorizadas.
+
+El workflow ejecuta pruebas, build y `npm run security:check`. La publicación se detiene si aparecen sourcemaps, archivos fuente, una clave privilegiada, JavaScript inline o una CSP debilitada. CodeQL y Dependabot cubren análisis estático y actualizaciones de dependencias.
+
+GitHub Pages no admite encabezados HTTP personalizados por repositorio. La CSP disponible en HTML protege scripts, conexiones y recursos, pero `frame-ancestors` solo funciona como encabezado. Para bloquear clickjacking a nivel HTTP, usa un dominio propio detrás de Cloudflare u otro alojamiento con encabezados configurables.

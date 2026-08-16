@@ -9,6 +9,7 @@ const publicRpc = [
   'get_meeting_state', 'admit_meeting_participant', 'deny_meeting_participant', 'set_meeting_locked',
   'end_meeting', 'get_community_members', 'invite_to_meeting', 'get_meeting_messages',
   'post_meeting_message', 'react_to_meeting_message',
+  'get_meeting_message', 'request_meeting_mute', 'consume_meeting_command',
 ];
 
 describe('Supabase contract', () => {

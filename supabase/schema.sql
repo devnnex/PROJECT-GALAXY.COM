@@ -1,5 +1,5 @@
 -- PROJECT GALAXY · Supabase/PostgreSQL schema
--- Ejecutar completo una sola vez en Supabase Dashboard > SQL Editor.
+-- Ejecutar completo en Supabase Dashboard > SQL Editor después de cada actualización del esquema.
 -- Es idempotente para objetos y políticas; no borra datos existentes.
 
 begin;
@@ -119,11 +119,24 @@ create table if not exists public.notifications (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.meeting_commands (
+  id uuid primary key default gen_random_uuid(),
+  meeting_id uuid not null references public.meetings(id) on delete cascade,
+  issuer_id uuid not null references public.profiles(id) on delete cascade,
+  target_user_id uuid not null references public.profiles(id) on delete cascade,
+  command text not null check (command in ('MUTE')),
+  created_at timestamptz not null default now(),
+  expires_at timestamptz not null default (now() + interval '30 seconds'),
+  consumed_at timestamptz
+);
+
 create index if not exists meetings_host_created_idx on public.meetings(host_id, created_at desc);
 create index if not exists participants_user_status_idx on public.meeting_participants(user_id, status, meeting_id);
 create index if not exists participants_meeting_status_idx on public.meeting_participants(meeting_id, status);
 create index if not exists messages_meeting_created_idx on public.meeting_messages(meeting_id, created_at desc);
+create index if not exists messages_sender_created_idx on public.meeting_messages(sender_id, created_at desc);
 create index if not exists notifications_user_created_idx on public.notifications(user_id, created_at desc) where read_at is null;
+create index if not exists meeting_commands_target_idx on public.meeting_commands(target_user_id, created_at desc) where consumed_at is null;
 
 create or replace function public.touch_updated_at() returns trigger language plpgsql set search_path = public as $$
 begin new.updated_at = now(); return new; end; $$;
@@ -218,15 +231,25 @@ begin
   return v_result;
 end; $$;
 
+create or replace function public.get_meeting_message(p_meeting_id uuid,p_message_id uuid) returns jsonb
+language plpgsql stable security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user(); v_message public.meeting_messages;
+begin
+  if not public.is_admitted_to_meeting(p_meeting_id) then return null; end if;
+  select * into v_message from public.meeting_messages where id=p_message_id and meeting_id=p_meeting_id;
+  if v_message.id is null then return null; end if;
+  return public.message_view(v_message,v_user);
+end; $$;
+
 create or replace function public.join_meeting(p_room_code text, p_password text default '') returns jsonb
 language plpgsql security definer set search_path = public, auth, extensions as $$
 declare v_user uuid := public.require_user(); v_meeting public.meetings; v_member public.meeting_participants; v_status text; v_role text; v_ice jsonb;
 begin
   select * into v_meeting from public.meetings where room_code = upper(trim(p_room_code));
   if v_meeting.id is null or v_meeting.status = 'ENDED' then raise exception 'La sala no existe o ya terminó.' using errcode = 'P0001'; end if;
-  if v_meeting.host_id <> v_user and v_meeting.locked then raise exception 'La sala está bloqueada por el anfitrión.' using errcode = 'P0001'; end if;
-  if v_meeting.host_id <> v_user and v_meeting.password_hash is not null and crypt(coalesce(p_password,''), v_meeting.password_hash) <> v_meeting.password_hash then raise exception 'La contraseña de la sala no coincide.' using errcode = 'P0001'; end if;
   select * into v_member from public.meeting_participants where meeting_id = v_meeting.id and user_id = v_user;
+  if v_meeting.host_id <> v_user and v_meeting.locked then raise exception 'La sala está bloqueada por el anfitrión.' using errcode = 'P0001'; end if;
+  if v_meeting.host_id <> v_user and v_member.id is null and v_meeting.password_hash is not null and crypt(coalesce(p_password,''), v_meeting.password_hash) <> v_meeting.password_hash then raise exception 'La contraseña de la sala no coincide.' using errcode = 'P0001'; end if;
   v_role := case when v_meeting.host_id = v_user then 'HOST' else 'PARTICIPANT' end;
   v_status := case when v_meeting.host_id = v_user then 'ADMITTED' when v_member.status = 'DENIED' then 'DENIED' when v_member.status = 'ADMITTED' then 'ADMITTED' when v_meeting.waiting_room then 'WAITING' else 'ADMITTED' end;
   if v_status = 'DENIED' then raise exception 'El anfitrión no autorizó tu ingreso.' using errcode = 'P0001'; end if;
@@ -300,6 +323,7 @@ begin
   if not exists(select 1 from public.meetings where id=p_meeting_id and status='ACTIVE') then raise exception 'La reunión ya terminó.' using errcode='P0001'; end if;
   if char_length(trim(coalesce(p_body,''))) not between 1 and 2000 then raise exception 'Escribe un mensaje válido.' using errcode='P0001'; end if;
   if p_reply_to_id is not null and not exists(select 1 from public.meeting_messages where id=p_reply_to_id and meeting_id=p_meeting_id) then raise exception 'El mensaje respondido no pertenece a esta reunión.' using errcode='P0001'; end if;
+  if (select count(*)>=20 from public.meeting_messages where sender_id=v_user and created_at>now()-interval '10 seconds') then raise exception 'Has enviado demasiados mensajes. Espera unos segundos.' using errcode='P0001'; end if;
   insert into public.meeting_messages(meeting_id,sender_id,body,reply_to_id) values(p_meeting_id,v_user,trim(p_body),p_reply_to_id) returning * into v_message; return public.message_view(v_message,v_user);
 end; $$;
 
@@ -315,6 +339,27 @@ begin
   return jsonb_build_object('messageId',p_message_id,'emoji',p_emoji,'active',v_active,'userId',v_user);
 end; $$;
 
+create or replace function public.request_meeting_mute(p_meeting_id uuid,p_user_id uuid) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_host uuid:=public.require_user(); v_command public.meeting_commands;
+begin
+  if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=v_host and status='ACTIVE') then raise exception 'Solo el anfitrión puede silenciar participantes.' using errcode='P0001'; end if;
+  if not exists(select 1 from public.meeting_participants where meeting_id=p_meeting_id and user_id=p_user_id and role='PARTICIPANT' and status='ADMITTED') then raise exception 'El participante ya no está disponible.' using errcode='P0001'; end if;
+  insert into public.meeting_commands(meeting_id,issuer_id,target_user_id,command) values(p_meeting_id,v_host,p_user_id,'MUTE') returning * into v_command;
+  return jsonb_build_object('id',v_command.id,'meetingId',v_command.meeting_id,'targetUserId',v_command.target_user_id,'command',v_command.command,'expiresAt',v_command.expires_at);
+end; $$;
+
+create or replace function public.consume_meeting_command(p_command_id uuid) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user(); v_command public.meeting_commands;
+begin
+  update public.meeting_commands set consumed_at=now()
+  where id=p_command_id and target_user_id=v_user and consumed_at is null and expires_at>now()
+  returning * into v_command;
+  if v_command.id is null then return null; end if;
+  return jsonb_build_object('id',v_command.id,'meetingId',v_command.meeting_id,'command',v_command.command,'issuerId',v_command.issuer_id);
+end; $$;
+
 alter table public.profiles enable row level security;
 alter table public.wallets enable row level security;
 alter table public.app_settings enable row level security;
@@ -324,6 +369,7 @@ alter table public.meeting_invitations enable row level security;
 alter table public.meeting_messages enable row level security;
 alter table public.meeting_message_reactions enable row level security;
 alter table public.notifications enable row level security;
+alter table public.meeting_commands enable row level security;
 
 drop policy if exists profiles_authenticated_read on public.profiles;
 create policy profiles_authenticated_read on public.profiles for select to authenticated using (status='ACTIVE');
@@ -363,10 +409,13 @@ do $$ begin
 exception when duplicate_object then null; end $$;
 
 revoke all on all tables in schema public from anon;
-revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.is_admitted_to_meeting(uuid),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text) from public, anon;
+revoke usage on schema public from anon;
+alter default privileges in schema public revoke all on tables from anon;
+alter default privileges in schema public revoke execute on functions from public, anon;
+revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.is_admitted_to_meeting(uuid),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon;
 grant usage on schema public to authenticated;
 grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications to authenticated;
-grant execute on function public.get_current_user(),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.get_meeting_messages(uuid,integer),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text) to authenticated;
+grant execute on function public.get_current_user(),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
 grant execute on function public.is_admitted_to_meeting(uuid) to authenticated;
 
 commit;

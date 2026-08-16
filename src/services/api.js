@@ -5,6 +5,7 @@ const parameterNames = Object.freeze({
   roomCode: 'p_room_code', meetingId: 'p_meeting_id', participantId: 'p_participant_id',
   locked: 'p_locked', query: 'p_query', userId: 'p_user_id', limit: 'p_limit',
   body: 'p_body', replyToId: 'p_reply_to_id', messageId: 'p_message_id', emoji: 'p_emoji',
+  commandId: 'p_command_id',
 });
 
 function friendlyError(error) {
@@ -15,7 +16,9 @@ function friendlyError(error) {
     'User already registered': 'Ya existe una cuenta con este correo.',
     'JWT expired': 'Tu sesión expiró. Inicia sesión nuevamente.',
   };
-  return new Error(known[error.message] || error.message || 'La solicitud no pudo completarse.');
+  if (known[error.message]) return new Error(known[error.message]);
+  if (error.code === 'P0001') return new Error(error.message);
+  return new Error('No fue posible completar la solicitud. Intenta nuevamente.');
 }
 
 function toParams(payload = {}) {
@@ -70,8 +73,11 @@ export const api = {
   getCommunityMembers: (query = '') => rpc('get_community_members', { query }),
   inviteToMeeting: (payload) => rpc('invite_to_meeting', payload),
   getMeetingMessages: (payload) => rpc('get_meeting_messages', payload),
+  getMeetingMessage: (payload) => rpc('get_meeting_message', payload),
   postMeetingMessage: (payload) => rpc('post_meeting_message', { ...payload, replyToId: payload.replyToId || null }),
   reactToMeetingMessage: (payload) => rpc('react_to_meeting_message', payload),
+  requestMeetingMute: (payload) => rpc('request_meeting_mute', payload),
+  consumeMeetingCommand: (payload) => rpc('consume_meeting_command', payload),
   onMeetingParticipantChange(meetingId, callback) {
     const channel = supabase.channel(`db:participants:${meetingId}:${crypto.randomUUID()}`, { config: { private: true } })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'meeting_participants', filter: `meeting_id=eq.${meetingId}` }, callback)
