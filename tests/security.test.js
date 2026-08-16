@@ -8,6 +8,7 @@ const meeting = read('../src/components/MeetingStudio.jsx');
 const schema = read('../supabase/schema.sql');
 const workflow = read('../.github/workflows/deploy-pages.yml');
 const confirmationEmail = read('../supabase/templates/confirmation.html');
+const authMailHook = read('../apps-script/Code.gs');
 
 describe('Production security guardrails', () => {
   it('enforces a restrictive browser content policy', () => {
@@ -44,5 +45,11 @@ describe('Production security guardrails', () => {
     expect(confirmationEmail).toContain('PROJECT GALAXY');
     expect(confirmationEmail).not.toMatch(/supabase|service_role|sb_secret_/i);
     expect(confirmationEmail).not.toMatch(/<script|https?:\/\/[^"']+\.(?:js|png|jpg|svg)/i);
+  });
+
+  it('ships an Apps Script mail hook without exposing a Supabase administrative key', () => {
+    expect(authMailHook).toContain('PROJECT GALAXY Auth Mail Hook');
+    expect(authMailHook).toContain("'GALAXY_HOOK_KEY'");
+    expect(authMailHook).not.toMatch(/service[_-]?role|sb_secret_|SUPABASE_SERVICE/i);
   });
 });

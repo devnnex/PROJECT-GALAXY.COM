@@ -26,7 +26,7 @@ function friendlyError(error) {
     return new Error('Se alcanzó temporalmente el límite de correos de confirmación. Espera unos minutos o contacta al administrador.');
   }
   if (code === 'email_send_failed' || /(?:send|sending).*confirmation email|confirmation email.*failed/i.test(message)) {
-    return new Error('No fue posible enviar el correo de confirmación. El servicio de correo de PROJECT GALAXY debe ser configurado por el administrador.');
+    return new Error('No fue posible enviar el correo de confirmación. Intenta nuevamente en unos minutos o contacta al administrador.');
   }
   if (code === 'email_address_invalid' || /invalid email|email.*invalid/i.test(message)) {
     return new Error('Ingresa un correo electrónico válido.');

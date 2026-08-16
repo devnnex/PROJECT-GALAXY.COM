@@ -37,18 +37,30 @@ En **Authentication → Rate Limits**, conserva límites estrictos para registro
 
 En **Database → Security Advisor**, resuelve todas las alertas antes de cada lanzamiento. No desactives RLS ni concedas acceso directo de escritura a tablas operativas; el cliente debe escribir exclusivamente mediante las RPC autorizadas.
 
-## Correo de confirmación con marca PROJECT GALAXY
+## Confirmación de correo mediante Apps Script
 
-El SMTP integrado de Supabase es solo para pruebas: rechaza destinatarios que no pertenezcan al equipo del proyecto y limita el envío a 2 mensajes por hora. Antes de abrir el registro a usuarios reales, configura obligatoriamente un SMTP personalizado.
+La confirmación sigue perteneciendo a Supabase Auth. El Web App de `apps-script/Code.gs` sustituye únicamente el transporte SMTP: recibe el token generado por el **Send Email Hook**, envía el mensaje con `MailApp` y el enlace confirma directamente contra Supabase. No desactives **Confirm email** y no agregues una `service_role` al script.
 
-1. Abre **Authentication → Email Templates → Confirm signup**.
-2. Usa el asunto `Confirma tu acceso a PROJECT GALAXY`.
-3. Copia íntegramente `supabase/templates/confirmation.html` en el editor y guarda. La variable `{{ .ConfirmationURL }}` debe permanecer intacta.
-4. Abre la configuración de **Authentication → SMTP Settings**, activa SMTP personalizado y establece **Sender name** como `PROJECT GALAXY`.
-5. Usa una dirección verificada de tu dominio, por ejemplo `no-reply@auth.tudominio.com`, y configura SPF, DKIM y DMARC con el proveedor de correo.
-6. Envía una confirmación de prueba y valida en escritorio y móvil que el remitente, asunto, botón y redirección sean correctos.
+1. Crea un proyecto independiente en Google Apps Script y copia `apps-script/Code.gs` y `apps-script/appsscript.json`.
+2. En **Project Settings → Script properties** agrega:
+   - `GALAXY_HOOK_KEY`: secreto aleatorio de al menos 32 caracteres, distinto de cualquier clave de Supabase.
+   - `SUPABASE_URL`: `https://xdsqtuubsptpzwadecha.supabase.co`.
+   - `APP_REDIRECT_URL`: `https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html`.
+3. Ejecuta manualmente `authorizeMailAccess` una vez y acepta exclusivamente el permiso para enviar correo.
+4. Usa **Deploy → New deployment → Web app**. Selecciona **Execute as: Me** y permite acceso a **Anyone**. Copia la URL terminada en `/exec`.
+5. En **Authentication → Hooks**, crea **Send Email → HTTPS** con esta URL, sustituyendo el valor por el secreto real:
 
-La plantilla controla el diseño y el asunto; el nombre/dominio del remitente solo cambia mediante SMTP personalizado. Las credenciales SMTP pertenecen exclusivamente a Supabase Dashboard: no deben añadirse a GitHub, `runtime-config.js` ni variables `VITE_*`. Desactiva el seguimiento de enlaces del proveedor SMTP para evitar que modifique el enlace de confirmación.
+   ```text
+   https://script.google.com/macros/s/DEPLOYMENT_ID/exec?hook_key=GALAXY_HOOK_KEY
+   ```
+
+6. Genera el secreto de firma solicitado por Supabase y activa el hook. Apps Script no expone los encabezados HTTP al `doPost`; por eso el endpoint valida además `hook_key`, el proyecto, UUID, destinatario, tipo de acción y hash del token.
+7. Mantén habilitado el proveedor **Email** y **Confirm email**. Cuando el hook ya funcione, desactiva **Custom SMTP**: con el hook activo no se utiliza SMTP.
+8. Registra una cuenta nueva y comprueba **Apps Script → Executions**, **Supabase → Auth Logs** y la bandeja de correo. El enlace debe volver a la URL canónica de GitHub Pages.
+
+El script usa caché para evitar duplicados y revisa la cuota antes de enviar. Google limita actualmente las cuentas personales a 100 destinatarios diarios y las cuentas Workspace a 1.500; estas cuotas pueden cambiar. Además, Supabase exige que el hook HTTP termine en 5 segundos. Esta solución es adecuada para la etapa inicial, pero para volumen o disponibilidad garantizada migra a SMTP con dominio verificado o a una Edge Function con un proveedor transaccional.
+
+La alternativa SMTP sigue disponible en `supabase/templates/confirmation.html`. Sus credenciales nunca deben añadirse a GitHub, `runtime-config.js` ni variables `VITE_*`.
 
 El workflow ejecuta pruebas, build y `npm run security:check`. La publicación se detiene si aparecen sourcemaps, archivos fuente, una clave privilegiada, JavaScript inline o una CSP debilitada. CodeQL y Dependabot cubren análisis estático y actualizaciones de dependencias.
 

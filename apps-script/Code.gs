@@ -1,0 +1,228 @@
+/*
+ * PROJECT GALAXY · Supabase Send Email Auth Hook
+ *
+ * Este Web App solo transporta correos de Auth. Supabase genera y valida los
+ * tokens; el script nunca recibe ni necesita credenciales administrativas.
+ */
+
+const AUTH_ACTIONS = Object.freeze({
+  signup: {
+    subject: 'Confirma tu acceso a PROJECT GALAXY',
+    title: 'Confirma tu cuenta',
+    copy: 'Activa tu cuenta para comenzar a usar PROJECT GALAXY.',
+    button: 'Confirmar mi correo',
+  },
+  invite: {
+    subject: 'Te invitaron a PROJECT GALAXY',
+    title: 'Acepta tu invitación',
+    copy: 'Usa este enlace seguro para aceptar tu invitación.',
+    button: 'Aceptar invitación',
+  },
+  magiclink: {
+    subject: 'Tu acceso seguro a PROJECT GALAXY',
+    title: 'Accede a tu cuenta',
+    copy: 'Solicitaste un enlace temporal para acceder.',
+    button: 'Acceder',
+  },
+  magic_link: {
+    subject: 'Tu acceso seguro a PROJECT GALAXY',
+    title: 'Accede a tu cuenta',
+    copy: 'Solicitaste un enlace temporal para acceder.',
+    button: 'Acceder',
+  },
+  recovery: {
+    subject: 'Restablece tu contraseña de PROJECT GALAXY',
+    title: 'Restablece tu contraseña',
+    copy: 'Solicitaste recuperar el acceso a tu cuenta.',
+    button: 'Restablecer contraseña',
+  },
+  email_change: {
+    subject: 'Confirma tu nuevo correo en PROJECT GALAXY',
+    title: 'Confirma el cambio de correo',
+    copy: 'Confirma esta dirección para completar el cambio.',
+    button: 'Confirmar nuevo correo',
+  },
+  reauthentication: {
+    subject: 'Código de seguridad de PROJECT GALAXY',
+    title: 'Confirma que eres tú',
+    copy: 'Usa este enlace o el código temporal para continuar.',
+    button: 'Confirmar identidad',
+  },
+});
+
+function doGet() {
+  return jsonOutput_({ ok: true, service: 'PROJECT GALAXY Auth Mail Hook' });
+}
+
+function doPost(event) {
+  const properties = PropertiesService.getScriptProperties();
+  const expectedKey = requireProperty_(properties, 'GALAXY_HOOK_KEY');
+  if (expectedKey.length < 32) {
+    throw new Error('GALAXY_HOOK_KEY debe tener al menos 32 caracteres.');
+  }
+  const suppliedKey = String(event && event.parameter && event.parameter.hook_key || '');
+
+  if (!constantTimeEqual_(suppliedKey, expectedKey)) {
+    throw new Error('Solicitud de hook no autorizada.');
+  }
+
+  const rawBody = String(event && event.postData && event.postData.contents || '');
+  if (!rawBody || rawBody.length > 100000) throw new Error('Carga de hook inválida.');
+
+  let payload;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch (error) {
+    throw new Error('El hook no contiene JSON válido.');
+  }
+
+  const user = payload && payload.user || {};
+  const emailData = payload && payload.email_data || {};
+  const action = String(emailData.email_action_type || '');
+  const template = AUTH_ACTIONS[action];
+  if (!template) throw new Error('Tipo de correo de Auth no permitido.');
+  if (!isUuid_(user.id)) throw new Error('Usuario de Auth inválido.');
+
+  const supabaseUrl = requireHttpsUrl_(requireProperty_(properties, 'SUPABASE_URL'), 'SUPABASE_URL');
+  const redirectUrl = requireHttpsUrl_(requireProperty_(properties, 'APP_REDIRECT_URL'));
+  const payloadSiteUrl = requireHttpsUrl_(String(emailData.site_url || ''));
+  if (normalizeUrl_(payloadSiteUrl) !== normalizeUrl_(redirectUrl)) {
+    throw new Error('El sitio de Auth no coincide.');
+  }
+  const messages = buildMessages_(user, emailData, action);
+  if (!messages.length) throw new Error('No hay un token de Auth válido para enviar.');
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(500)) throw new Error('El servicio de correo está ocupado.');
+  try {
+    const cache = CacheService.getScriptCache();
+    messages.forEach(function (message) {
+      const fingerprint = digestHex_([
+        user.id, action, message.to, message.tokenHash,
+      ].join('|'));
+      if (cache.get(fingerprint)) return;
+      if (MailApp.getRemainingDailyQuota() < 1) throw new Error('Se agotó la cuota diaria de correo.');
+
+      const verifyUrl = buildVerificationUrl_(supabaseUrl, message.tokenHash, action, redirectUrl);
+      MailApp.sendEmail({
+        to: message.to,
+        subject: template.subject,
+        body: buildTextBody_(template, verifyUrl, message.token),
+        htmlBody: buildHtmlBody_(template, verifyUrl, message.token),
+        name: 'PROJECT GALAXY',
+      });
+      cache.put(fingerprint, 'sent', 21600);
+    });
+  } finally {
+    lock.releaseLock();
+  }
+
+  return jsonOutput_({});
+}
+
+// Ejecuta esta función una vez desde el editor para autorizar MailApp y revisar
+// cuántos destinatarios quedan disponibles en la cuenta de Google.
+function authorizeMailAccess() {
+  return MailApp.getRemainingDailyQuota();
+}
+
+function buildMessages_(user, emailData, action) {
+  if (action === 'email_change' && user.new_email) {
+    const messages = [];
+    if (isEmail_(user.email) && isTokenHash_(emailData.token_hash_new)) {
+      messages.push({ to: user.email, token: emailData.token, tokenHash: emailData.token_hash_new });
+    }
+    if (isEmail_(user.new_email) && isTokenHash_(emailData.token_hash)) {
+      messages.push({ to: user.new_email, token: emailData.token_new || emailData.token, tokenHash: emailData.token_hash });
+    }
+    return messages;
+  }
+
+  if (!isEmail_(user.email) || !isTokenHash_(emailData.token_hash)) return [];
+  return [{ to: user.email, token: emailData.token, tokenHash: emailData.token_hash }];
+}
+
+function buildVerificationUrl_(supabaseUrl, tokenHash, action, redirectUrl) {
+  return supabaseUrl + '/auth/v1/verify?token=' + encodeURIComponent(tokenHash)
+    + '&type=' + encodeURIComponent(action)
+    + '&redirect_to=' + encodeURIComponent(redirectUrl);
+}
+
+function buildTextBody_(template, verifyUrl, token) {
+  return template.title + '\n\n' + template.copy + '\n\n'
+    + verifyUrl + '\n\nCódigo temporal: ' + String(token || '')
+    + '\n\nSi no realizaste esta solicitud, ignora este mensaje.';
+}
+
+function buildHtmlBody_(template, verifyUrl, token) {
+  const safeUrl = escapeHtml_(verifyUrl);
+  const safeToken = escapeHtml_(String(token || ''));
+  return '<!doctype html><html><body style="margin:0;background:#08070d;color:#f7f4ff;font-family:Arial,sans-serif">'
+    + '<div style="max-width:560px;margin:0 auto;padding:40px 24px">'
+    + '<p style="color:#c8a8ff;letter-spacing:2px;font-size:12px">PROJECT GALAXY</p>'
+    + '<h1 style="font-size:30px;margin:16px 0">' + escapeHtml_(template.title) + '</h1>'
+    + '<p style="color:#c9c3d6;line-height:1.65">' + escapeHtml_(template.copy) + '</p>'
+    + '<p style="margin:32px 0"><a href="' + safeUrl + '" style="display:inline-block;padding:14px 22px;border-radius:999px;background:#9b6cff;color:#fff;text-decoration:none;font-weight:700">'
+    + escapeHtml_(template.button) + '</a></p>'
+    + '<p style="color:#9991a8;font-size:13px">Código temporal</p>'
+    + '<p style="font-size:24px;letter-spacing:5px;font-weight:700">' + safeToken + '</p>'
+    + '<p style="margin-top:36px;color:#777181;font-size:12px;line-height:1.5">Si no realizaste esta solicitud, ignora este mensaje.</p>'
+    + '</div></body></html>';
+}
+
+function requireProperty_(properties, name) {
+  const value = String(properties.getProperty(name) || '').trim();
+  if (!value) throw new Error('Falta la propiedad segura ' + name + '.');
+  return value;
+}
+
+function normalizeUrl_(value) {
+  return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function requireHttpsUrl_(value, propertyName) {
+  const normalized = normalizeUrl_(value);
+  if (!/^https:\/\/[a-z0-9.-]+(?::\d+)?(?:\/[^\s]*)?$/i.test(normalized)) {
+    throw new Error(String(propertyName || 'APP_REDIRECT_URL') + ' debe usar HTTPS.');
+  }
+  return normalized;
+}
+
+function isEmail_(value) {
+  return typeof value === 'string' && value.length <= 320
+    && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isUuid_(value) {
+  return typeof value === 'string'
+    && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function isTokenHash_(value) {
+  return typeof value === 'string' && /^[0-9a-f]{40,128}$/i.test(value);
+}
+
+function constantTimeEqual_(left, right) {
+  const a = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(left));
+  const b = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(right));
+  let difference = 0;
+  for (let index = 0; index < a.length; index += 1) difference |= a[index] ^ b[index];
+  return difference === 0 && String(left).length === String(right).length;
+}
+
+function digestHex_(value) {
+  return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, value)
+    .map(function (byte) { return ('0' + (byte & 255).toString(16)).slice(-2); })
+    .join('');
+}
+
+function escapeHtml_(value) {
+  return String(value).replace(/[&<>"']/g, function (character) {
+    return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character];
+  });
+}
+
+function jsonOutput_(value) {
+  return ContentService.createTextOutput(JSON.stringify(value))
+    .setMimeType(ContentService.MimeType.JSON);
+}
