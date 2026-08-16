@@ -4,6 +4,8 @@ Cada usuario admitido abre el canal privado `meeting:<uuid>`. Las políticas sob
 
 El canal transporta ofertas, respuestas e ICE de WebRTC, estado de micrófono/cámara, mano levantada, reacciones, chat y moderación. Los mensajes también se escriben en PostgreSQL para recuperar historial tras recargar. La sala de espera escucha cambios autorizados de `meeting_participants` y conserva un refresco lento como recuperación.
 
+La pantalla compartida solicita también audio al navegador. Cuando la fuente seleccionada entrega sonido, el cliente lo mezcla con el micrófono en una sola pista WebRTC para que ambos se escuchen simultáneamente. Chrome y Edge suelen ofrecerlo al compartir una pestaña y marcar **Compartir audio**; si el sistema operativo o navegador no entrega una pista de audio, la imagen continúa compartiéndose y la interfaz lo informa.
+
 Al abrir el centro de reuniones, el cliente precalienta un canal privado `user:<uuid>`. Esto inicia el WebSocket y permite que Realtime prepare su partición diaria antes de crear o entrar a una sala. Las suscripciones aplican `setAuth()` explícitamente, reintentos cortos ante errores transitorios como `MissingPartition` y Broadcast sin `ack`, ya que PostgreSQL confirma por separado las operaciones persistentes. La política delega su comprobación a `can_access_realtime_topic`, una función `security definer` que evita encadenar varias políticas RLS durante cada alta del canal.
 
 ## Retención del chat de reuniones

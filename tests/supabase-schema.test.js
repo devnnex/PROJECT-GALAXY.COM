@@ -54,6 +54,14 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('<VideoSurface presentation stream={presentationStream}');
   });
 
+  it('captures and mixes shared audio with the presenter microphone', () => {
+    expect(meetingStudio).toContain('async function createSharedAudioMixer(displayStream, microphoneStream)');
+    expect(meetingStudio).toContain('context.createMediaStreamDestination()');
+    expect(meetingStudio).toContain('audio: true');
+    expect(meetingStudio).toContain('sharedLocalStream(stream)');
+    expect(meetingStudio).toContain('Pantalla y sonido compartidos por WebRTC.');
+  });
+
   it('deletes persisted meeting chat when the host ends a meeting', () => {
     expect(schema).toMatch(/function public\.end_meeting[\s\S]*delete from public\.meeting_messages where meeting_id=p_meeting_id/);
     expect(schema).toContain("'messagesDeleted',v_deleted_messages");

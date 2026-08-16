@@ -50,6 +50,33 @@ function waitForVideoMetadata(video) {
   });
 }
 
+async function createSharedAudioMixer(displayStream, microphoneStream) {
+  const tracks = [...(displayStream?.getAudioTracks() || []), ...(microphoneStream?.getAudioTracks() || [])]
+    .filter((track, index, items) => track.readyState === 'live' && items.findIndex((item) => item.id === track.id) === index);
+  if (!tracks.length) return { track: null, close() {} };
+  if (tracks.length === 1) return { track: tracks[0], close() {} };
+  const Context = window.AudioContext || window.webkitAudioContext;
+  if (!Context) return { track: tracks[0], close() {} };
+
+  const context = new Context(); const destination = context.createMediaStreamDestination(); const sources = [];
+  tracks.forEach((track) => {
+    const source = context.createMediaStreamSource(new MediaStream([track])); source.connect(destination); sources.push(source);
+  });
+  await context.resume?.().catch(() => {});
+  if (context.state !== 'running') {
+    sources.forEach((source) => source.disconnect()); destination.stream.getTracks().forEach((track) => track.stop()); context.close().catch(() => {});
+    return { track: tracks[0], close() {} };
+  }
+  return {
+    track: destination.stream.getAudioTracks()[0] || tracks[0],
+    close() {
+      sources.forEach((source) => source.disconnect());
+      destination.stream.getTracks().forEach((track) => track.stop());
+      context.close().catch(() => {});
+    },
+  };
+}
+
 function CropEditor({ stream, initialCrop, onConfirm, onCancel }) {
   const videoRef = useRef(null); const stageRef = useRef(null); const drag = useRef(null);
   const [crop, setCrop] = useState(initialCrop || { x: 12, y: 12, w: 64, h: 62 });
@@ -92,7 +119,7 @@ function InvitePanel({ members, invited, onInvite, onClose }) {
 
 export default function MeetingStudio({ toast, user }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`;
-  const sourceStream = useRef(null); const sharingRef = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(false);
+  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(false);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } });
@@ -109,7 +136,7 @@ export default function MeetingStudio({ toast, user }) {
 
   const stopMedia = () => { mediaRef.current.getTracks().forEach((track) => track.stop()); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
   const disconnect = useCallback((clearMeeting = false) => { connection.current?.disconnect(); connection.current = null; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setHandRaised(false); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
-  useEffect(() => () => { connection.current?.disconnect(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); }, []);
+  useEffect(() => () => { connection.current?.disconnect(); sharedAudio.current?.close(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); }, []);
   useEffect(() => { primeRealtime(user.id).catch(() => {}); return () => releaseRealtimePrime(user.id); }, [user.id]);
   useEffect(() => { api.getMyMeetings().then(setMeetings).catch((error) => toast(error.message, 'error')); }, []);
 
@@ -125,7 +152,7 @@ export default function MeetingStudio({ toast, user }) {
       onPeerState: (peerId, state) => setPeerStates((current) => ({ ...current, [peerId]: state })), onReaction: showReaction, onChat: mergeMessage,
       onChatHistory: (history) => history.forEach(mergeMessage), onChatReaction: applyChatReaction,
       onForceMute: ({ by }) => { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); client.setPresence({ mic: false, speaking: false }); toast(`${by || 'El anfitrión'} silenció tu micrófono.`, 'info'); },
-      onMeetingEnded: ({ by }) => { disconnect(true); stopMedia(); toast(`${by || 'El anfitrión'} finalizó la reunión.`, 'info'); },
+      onMeetingEnded: async ({ by }) => { await stopShare(); disconnect(true); stopMedia(); toast(`${by || 'El anfitrión'} finalizó la reunión.`, 'info'); },
     });
     client.setPresence({ mic, camera, sharing: false, handRaised, speaking: false }); connection.current = client;
     try {
@@ -152,12 +179,17 @@ export default function MeetingStudio({ toast, user }) {
   }, [joined, meeting?.meetingId, meeting?.role]);
 
   const createMeeting = async (form) => { setBusy(true); try { const created = await api.createMeeting(form); setMeetings((items) => [created, ...items]); await connectAccess(created); } catch (error) { disconnect(true); toast(error.message, 'error'); } finally { setBusy(false); } };
-  const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharing ? new MediaStream([...next.getAudioTracks(), ...sharing.getVideoTracks()]) : next); };
+  const sharedLocalStream = async (screen, microphone = mediaRef.current) => {
+    sharedAudio.current?.close();
+    sharedAudio.current = await createSharedAudioMixer(sourceStream.current, microphone);
+    return new MediaStream([...(sharedAudio.current.track ? [sharedAudio.current.track] : []), ...screen.getVideoTracks()]);
+  };
+  const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharing ? await sharedLocalStream(sharing, next) : next); };
   const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio', video: kind === 'video' }); const track = captured.getTracks()[0]; const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); await publishMedia(new MediaStream([...retained, track])); return track; };
   const toggleTrack = async (kind) => { try { const isAudio = kind === 'audio'; const active = isAudio ? mic : camera; let track = mediaRef.current.getTracks().find((item) => item.kind === kind && item.readyState === 'live'); if (!track) track = await acquireTrack(kind); else track.enabled = !active; const enabled = track.enabled; if (isAudio) setMic(enabled); else setCamera(enabled); connection.current?.setPresence({ mic: isAudio ? enabled : mic, camera: isAudio ? camera : enabled, sharing: Boolean(sharing), handRaised, speaking: isAudio ? localSpeaking && enabled : localSpeaking }); } catch (error) { toast(error.message || 'No fue posible acceder al dispositivo.', 'error'); } };
-  const stopShare = async () => { sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; sharingRef.current = null; setSharing(null); setCropSource(null); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false }); };
-  const publishShare = async (stream) => { sharingRef.current = stream; setSharing(stream); await connection.current?.setLocalStream(new MediaStream([...mediaRef.current.getAudioTracks(), ...stream.getVideoTracks()])); connection.current?.setPresence({ sharing: true }); };
-  const capture = async (custom = false) => { setShareMenu(false); if (!joined) return; try { if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('La captura de pantalla no está disponible en este navegador.'); const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 24, max: 30 } }, audio: false }); sourceStream.current = stream; stream.getVideoTracks()[0].addEventListener('ended', stopShare, { once: true }); if (custom) setCropSource(stream); else await publishShare(stream); } catch (error) { if (error.name !== 'NotAllowedError') toast(error.message, 'error'); } };
+  const stopShare = async () => { sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; sharingRef.current = null; setSharing(null); setCropSource(null); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false }); };
+  const publishShare = async (stream) => { sharingRef.current = stream; setSharing(stream); await connection.current?.setLocalStream(await sharedLocalStream(stream)); connection.current?.setPresence({ sharing: true }); };
+  const capture = async (custom = false) => { setShareMenu(false); if (!joined) return; try { if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('La captura de pantalla no está disponible en este navegador.'); const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 24, max: 30 } }, audio: true }); sourceStream.current = stream; stream.getVideoTracks()[0].addEventListener('ended', stopShare, { once: true }); if (custom) setCropSource(stream); else { await publishShare(stream); toast(stream.getAudioTracks().length ? 'Pantalla y sonido compartidos por WebRTC.' : 'Pantalla compartida sin sonido. Selecciona una pestaña y activa Compartir audio cuando el navegador lo ofrezca.', 'info'); } } catch (error) { if (error.name !== 'NotAllowedError') toast(error.message, 'error'); } };
   const confirmCrop = async (crop) => {
     try {
       localStorage.setItem(cropKey, JSON.stringify(crop)); setSavedCrop(crop);
@@ -171,7 +203,7 @@ export default function MeetingStudio({ toast, user }) {
         if (canvas.width !== Math.round(sw * scale) || canvas.height !== Math.round(sh * scale)) { canvas.width = Math.max(2, Math.round(sw * scale)); canvas.height = Math.max(2, Math.round(sh * scale)); }
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height); renderLoop.current = requestAnimationFrame(draw);
       };
-      draw(); const processed = canvas.captureStream(24); setCropSource(null); await publishShare(processed); toast('Área guardada y publicada por WebRTC.');
+      draw(); const processed = canvas.captureStream(24); setCropSource(null); await publishShare(processed); toast(sourceStream.current?.getAudioTracks().length ? 'Área y sonido compartidos por WebRTC.' : 'Área compartida sin sonido. El navegador no entregó audio de la fuente seleccionada.', 'info');
     } catch (error) { await stopShare(); toast(error.message || 'No fue posible compartir el área seleccionada.', 'error'); }
   };
   const toggleHand = () => { const next = !handRaised; setHandRaised(next); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised: next, speaking: localSpeaking }); };
@@ -184,7 +216,7 @@ export default function MeetingStudio({ toast, user }) {
   const invite = async (member) => { try { await api.inviteToMeeting({ meetingId: meeting.meetingId, userId: member.id }); setInvited((items) => [...items, member.id]); toast(`${member.name} recibió la invitación.`); } catch (error) { toast(error.message, 'error'); } };
   const admission = async (participant, admit) => { try { await api[admit ? 'admitMeetingParticipant' : 'denyMeetingParticipant']({ meetingId: meeting.meetingId, participantId: participant.id }); setWaitingParticipants((items) => items.filter((item) => item.id !== participant.id)); toast(admit ? `${participant.name} puede entrar.` : `${participant.name} fue rechazado.`); } catch (error) { toast(error.message, 'error'); } };
   const toggleLock = async () => { try { const result = await api.setMeetingLocked({ meetingId: meeting.meetingId, locked: !meeting.locked }); setMeeting({ ...meeting, locked: result.locked }); toast(result.locked ? 'Sala bloqueada.' : 'Sala desbloqueada.'); } catch (error) { toast(error.message, 'error'); } };
-  const endMeeting = async () => { if (!confirm('¿Finalizar la reunión para todos? Esta acción no se puede deshacer.')) return; try { await api.endMeeting({ meetingId: meeting.meetingId }); await connection.current?.endMeeting(); disconnect(true); stopMedia(); toast('Reunión finalizada para todos.'); } catch (error) { toast(error.message, 'error'); } };
+  const endMeeting = async () => { if (!confirm('¿Finalizar la reunión para todos? Esta acción no se puede deshacer.')) return; try { await api.endMeeting({ meetingId: meeting.meetingId }); await connection.current?.endMeeting(); await stopShare(); disconnect(true); stopMedia(); toast('Reunión finalizada para todos.'); } catch (error) { toast(error.message, 'error'); } };
   const leave = async () => { await stopShare(); disconnect(true); stopMedia(); toast(meeting?.role === 'HOST' ? 'Saliste; la reunión seguirá activa hasta que la finalices.' : 'Saliste de la reunión.'); api.getMyMeetings().then(setMeetings).catch(() => {}); };
 
   if (!meeting) return <MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} />;
