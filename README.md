@@ -1,59 +1,32 @@
 # Project Galaxy
 
-An original, black-and-violet digital ecosystem prototype with a modular Google Apps Script backend.
+Plataforma React/Vite con autenticación, datos, salas y señalización en tiempo real sobre Supabase.
 
-## Run locally
+## Puesta en marcha
+
+1. Abre **Supabase Dashboard → SQL Editor**, pega y ejecuta [`supabase/schema.sql`](supabase/schema.sql) completo.
+2. En **Authentication → URL Configuration**, usa `https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html` como `Site URL` y única Redirect URL, según la [guía de despliegue](docs/DEPLOYMENT.md).
+3. En **Realtime Settings**, desactiva **Allow public access** para forzar las políticas de canales privados.
+4. Decide en **Authentication → Providers → Email** si exigirás confirmación de correo. El cliente soporta ambos modos.
+5. Comprueba `SUPABASE_URL` y `SUPABASE_ANON_KEY` en `src/runtime-config.js`.
+6. Instala, valida y compila:
 
 ```bash
 npm install
-npm run dev
-```
-
-También puede abrirse directamente con **Open Live Server** sobre el `index.html` de la raíz. Este archivo dirige a la compilación estática incluida en `dist/`.
-
-Para comprobar localmente el mismo comportamiento sin la extensión:
-
-```bash
-npm run serve-root
-```
-
-Authentication is remote-only and uses the Apps Script Web App configured in `src/runtime-config.js`. If that URL is absent, authentication fails closed instead of storing local users. See [architecture](docs/ARCHITECTURE.md) and [deployment](docs/DEPLOYMENT.md).
-
-Real multi-account audio meetings use the Apps Script HTTP signaling fallback when `SIGNALING_URL` is empty. Presence, voice meters, host controls, chat, reactions and optional WebSocket deployment are documented in [realtime meetings](docs/REALTIME.md).
-
-## Single-file Apps Script backend
-
-Deploy only `apps-script/Code.gs`. It contains all 18 backend modules in one file. Do not upload `backend-src/*.js` to Apps Script; those files are the maintainable source used to regenerate `Code.gs`:
-
-```bash
-npm run build:apps-script
-```
-
-Performance changes and measurements are documented in [performance report](docs/PERFORMANCE.md).
-
-## Verification
-
-```bash
 npm test
 npm run build
-npm run preview -- --host 127.0.0.1 --port 4173
-npm run visual-check
 ```
 
-Después de modificar el código fuente, ejecuta `npm run build` antes de usar Live Server o publicar el branch. La compilación usa rutas relativas, por lo que funciona en GitHub Pages aunque el proyecto se publique bajo `/nombre-del-repositorio/`.
+Para desarrollo usa `npm run dev`. Para probar la compilación estática usa `npm run serve-root`.
 
-## GitHub Pages desde main
+## Seguridad
 
-1. Sube la raíz completa, incluyendo `dist/` y `.nojekyll`.
-2. En **Settings → Pages**, selecciona **Deploy from a branch**.
-3. Selecciona `main` y la carpeta `/(root)`.
+La anon key de Supabase es una credencial pública diseñada para el navegador. La protección real está en Supabase Auth, funciones `security definer`, permisos explícitos y Row Level Security. No añadas nunca la `service_role` al repositorio ni al frontend.
 
-GitHub abrirá el `index.html` raíz y cargará `dist/index.html`. No es necesario modificar rutas con el nombre del repositorio.
+La clave JWT `anon` suministrada funciona con este cliente. Supabase está migrando proyectos hacia claves `sb_publishable_...`; cuando el panel te ofrezca una, reemplázala sin cambiar el esquema ni la API.
 
-## Honest integration status
+## Reuniones
 
-- Browser camera, microphone and screen capture call native media APIs.
-- Custom-area sharing performs real canvas cropping and returns a processed `MediaStream` track.
-- Small-room WebRTC signaling works through Apps Script. Restrictive networks may still require TURN, and larger rooms require an SFU.
-- TRC20/ERC20 payments fail closed until a reviewed provider adapter, token contract, destination and webhook verifier are configured.
-- No private keys, seed phrases or frontend secrets are stored.
+Supabase Realtime Broadcast/Presence entrega señalización WebRTC, presencia, manos levantadas, emoji, chat y moderación sin el polling de Apps Script. PostgreSQL persiste salas, admisiones, invitaciones, mensajes y reacciones.
+
+Supabase no incluye TURN. El SQL deja `ice_servers` configurado con STUN; para redes restrictivas agrega credenciales TURN de corta duración mediante un proveedor TURN o una Edge Function. Consulta [tiempo real](docs/REALTIME.md).

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, CameraOff, Check, Copy, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, PhoneOff, Plus, Reply, Send, ShieldCheck, SmilePlus, Unlock, UserPlus, Users, X } from 'lucide-react';
 import { api } from '../services/api';
-import { AppsScriptMeetingConnection, getMeetingAccess, MeetingConnection } from '../services/meetingClient';
+import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 
 const EMOJIS = ['👍', '👏', '❤️', '😂', '🎉', '🔥'];
 
@@ -103,8 +103,7 @@ export default function MeetingStudio({ toast, user }) {
     setMeeting(access); setMessages(access.messages || []); rememberMeeting(access, password);
     if (access.status !== 'ADMITTED') { setWaiting(true); setStatus('waiting'); return; }
     setWaiting(false); connection.current?.disconnect();
-    const Connection = access.transport === 'apps-script' ? AppsScriptMeetingConnection : MeetingConnection;
-    const client = new Connection({
+    const client = new SupabaseMeetingConnection({
       onStatus: setStatus, onParticipants: setParticipants,
       onRemoteStream: (peerId, stream) => setRemoteStreams((current) => { const next = { ...current }; if (stream) next[peerId] = stream; else delete next[peerId]; return next; }),
       onPeerState: (peerId, state) => setPeerStates((current) => ({ ...current, [peerId]: state })), onReaction: showReaction, onChat: mergeMessage,
@@ -119,8 +118,19 @@ export default function MeetingStudio({ toast, user }) {
   const enterMeeting = async ({ roomCode, password = '' }) => { setBusy(true); try { const access = await getMeetingAccess({ roomCode, password }); await connectAccess(access, password); } catch (error) { disconnect(false); toast(error.message, 'error'); } finally { setBusy(false); } };
   useEffect(() => { if (resumed.current) return; resumed.current = true; try { const saved = JSON.parse(localStorage.getItem(activeKey) || 'null'); if (saved?.roomCode) enterMeeting({ roomCode: saved.roomCode, password: sessionStorage.getItem(passwordKey) || '' }); } catch { forgetMeeting(); } }, []);
 
-  useEffect(() => { if (!waiting || !meeting?.roomCode) return undefined; const timer = setInterval(async () => { try { const access = await getMeetingAccess({ roomCode: meeting.roomCode, password: sessionStorage.getItem(passwordKey) || '' }); if (access.status === 'ADMITTED') await connectAccess(access, sessionStorage.getItem(passwordKey) || ''); } catch (error) { if (/no autorizó|terminó/.test(error.message)) { disconnect(true); toast(error.message, 'error'); } } }, 4000); return () => clearInterval(timer); }, [waiting, meeting?.roomCode]);
-  useEffect(() => { if (!joined || meeting?.role !== 'HOST') return undefined; const refresh = async () => { try { const state = await api.getMeetingState({ meetingId: meeting.meetingId }); setWaitingParticipants(state.waitingParticipants || []); setMeeting((current) => ({ ...current, locked: state.locked })); if (state.status === 'ENDED') disconnect(true); } catch {} }; refresh(); const timer = setInterval(refresh, 5000); return () => clearInterval(timer); }, [joined, meeting?.meetingId, meeting?.role]);
+  useEffect(() => {
+    if (!waiting || !meeting?.roomCode || !meeting?.meetingId) return undefined;
+    let connecting = false;
+    const refresh = async () => { if (connecting) return; connecting = true; try { const access = await getMeetingAccess({ roomCode: meeting.roomCode, password: sessionStorage.getItem(passwordKey) || '' }); if (access.status === 'ADMITTED') await connectAccess(access, sessionStorage.getItem(passwordKey) || ''); } catch (error) { if (/no autorizó|terminó/.test(error.message)) { disconnect(true); toast(error.message, 'error'); } } finally { connecting = false; } };
+    const unsubscribe = api.onMeetingParticipantChange(meeting.meetingId, refresh); const timer = setInterval(refresh, 15_000);
+    return () => { unsubscribe(); clearInterval(timer); };
+  }, [waiting, meeting?.roomCode, meeting?.meetingId]);
+  useEffect(() => {
+    if (!joined || meeting?.role !== 'HOST') return undefined;
+    const refresh = async () => { try { const state = await api.getMeetingState({ meetingId: meeting.meetingId }); setWaitingParticipants(state.waitingParticipants || []); setMeeting((current) => ({ ...current, locked: state.locked })); if (state.status === 'ENDED') disconnect(true); } catch {} };
+    refresh(); const unsubscribe = api.onMeetingParticipantChange(meeting.meetingId, refresh); const timer = setInterval(refresh, 20_000);
+    return () => { unsubscribe(); clearInterval(timer); };
+  }, [joined, meeting?.meetingId, meeting?.role]);
 
   const createMeeting = async (form) => { setBusy(true); try { const created = await api.createMeeting(form); setMeetings((items) => [created, ...items]); await enterMeeting({ roomCode: created.roomCode }); } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); } };
   const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharing ? new MediaStream([...next.getAudioTracks(), ...sharing.getVideoTracks()]) : next); };
@@ -140,7 +150,7 @@ export default function MeetingStudio({ toast, user }) {
   const invite = async (member) => { try { await api.inviteToMeeting({ meetingId: meeting.meetingId, userId: member.id }); setInvited((items) => [...items, member.id]); toast(`${member.name} recibió la invitación.`); } catch (error) { toast(error.message, 'error'); } };
   const admission = async (participant, admit) => { try { await api[admit ? 'admitMeetingParticipant' : 'denyMeetingParticipant']({ meetingId: meeting.meetingId, participantId: participant.id }); setWaitingParticipants((items) => items.filter((item) => item.id !== participant.id)); toast(admit ? `${participant.name} puede entrar.` : `${participant.name} fue rechazado.`); } catch (error) { toast(error.message, 'error'); } };
   const toggleLock = async () => { try { const result = await api.setMeetingLocked({ meetingId: meeting.meetingId, locked: !meeting.locked }); setMeeting({ ...meeting, locked: result.locked }); toast(result.locked ? 'Sala bloqueada.' : 'Sala desbloqueada.'); } catch (error) { toast(error.message, 'error'); } };
-  const endMeeting = async () => { if (!confirm('¿Finalizar la reunión para todos? Esta acción no se puede deshacer.')) return; try { await api.endMeeting({ meetingId: meeting.meetingId }); connection.current?.endMeeting(); disconnect(true); stopMedia(); toast('Reunión finalizada para todos.'); } catch (error) { toast(error.message, 'error'); } };
+  const endMeeting = async () => { if (!confirm('¿Finalizar la reunión para todos? Esta acción no se puede deshacer.')) return; try { await api.endMeeting({ meetingId: meeting.meetingId }); await connection.current?.endMeeting(); disconnect(true); stopMedia(); toast('Reunión finalizada para todos.'); } catch (error) { toast(error.message, 'error'); } };
   const leave = async () => { await stopShare(); disconnect(true); stopMedia(); toast(meeting?.role === 'HOST' ? 'Saliste; la reunión seguirá activa hasta que la finalices.' : 'Saliste de la reunión.'); api.getMyMeetings().then(setMeetings).catch(() => {}); };
 
   if (!meeting) return <MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} />;

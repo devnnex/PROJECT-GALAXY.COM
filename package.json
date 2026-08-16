@@ -8,22 +8,17 @@
     "build": "vite build && node scripts/finalize-build.mjs",
     "preview": "vite preview",
     "serve-root": "node scripts/static-server.mjs",
-    "signaling": "node server/signaling.mjs",
-    "build:apps-script": "node scripts/build-single-gs.mjs",
-    "test": "vitest run",
-    "visual-check": "node scripts/visual-check.mjs",
-    "test:meeting": "node scripts/meeting-e2e.mjs"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
+    "@supabase/supabase-js": "^2.112.3",
     "lucide-react": "latest",
-    "vite": "latest",
     "react": "latest",
-    "react-dom": "latest",
-    "ws": "latest"
+    "react-dom": "latest"
   },
   "devDependencies": {
-    "playwright": "latest",
+    "@vitejs/plugin-react": "^6.0.5",
+    "vite": "^8.2.1",
     "vitest": "latest"
   }
 }

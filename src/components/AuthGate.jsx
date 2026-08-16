@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowLeft, ArrowRight, Eye, EyeOff, LoaderCircle, Orbit } from 'lucide-react';
-import { api, storeRemoteSession } from '../services/api';
+import { api } from '../services/api';
 import { CONFIG } from '../config';
 import NeuralCanvas from './NeuralCanvas';
 
@@ -16,7 +16,6 @@ export default function AuthGate({ onAuthenticated, onBack }) {
     event.preventDefault(); setError(''); setBusy(true);
     try {
       const result = await (mode === 'login' ? api.login(form) : api.register(form));
-      storeRemoteSession(result);
       onAuthenticated(result.user);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   };
