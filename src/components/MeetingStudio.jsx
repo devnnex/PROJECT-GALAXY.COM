@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, CameraOff, Check, Copy, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, PhoneOff, Plus, Reply, Send, ShieldCheck, SmilePlus, Unlock, UserPlus, Users, X } from 'lucide-react';
 import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
+import { primeRealtime, releaseRealtimePrime } from '../services/supabase';
+import ConstellationAvatar from './ConstellationAvatar';
 
 const EMOJIS = ['👍', '👏', '❤️', '😂', '🎉', '🔥'];
 
@@ -26,15 +28,26 @@ function AudioMeter({ stream, enabled = true, onSpeakingChange, label = 'Nivel d
   return <span className={`voice-meter ${level ? 'detecting' : ''}`} role="meter" aria-label={label} aria-valuenow={level} aria-valuemin="0" aria-valuemax="5">{[1, 2, 3, 4, 5].map((bar) => <i className={bar <= level ? 'on' : ''} key={bar} />)}</span>;
 }
 
-function VideoSurface({ stream, name, muted = false, speaking = false, handRaised = false }) {
+function VideoSurface({ stream, name, avatarSeed, muted = false, speaking = false, handRaised = false, presentation = false }) {
   const videoRef = useRef(null);
   useEffect(() => { if (videoRef.current) videoRef.current.srcObject = stream || null; }, [stream]);
   const hasVideo = Boolean(stream?.getVideoTracks().some((track) => track.enabled && track.readyState === 'live'));
-  return <div className={`video-surface ${speaking ? 'speaking' : ''}`}>
+  return <div className={`video-surface ${presentation ? 'presentation' : ''} ${speaking ? 'speaking' : ''}`}>
     <video className={hasVideo ? '' : 'audio-only'} ref={videoRef} autoPlay playsInline muted={muted} />
-    {!hasVideo && <div className="video-avatar">{name.split(' ').map((part) => part[0]).join('').slice(0, 2)}</div>}
+    {!hasVideo && <ConstellationAvatar className="video-avatar" seed={avatarSeed || name} name={name} />}
     <span className="video-name">{handRaised && <Hand />} {name}</span>
   </div>;
+}
+
+function waitForVideoMetadata(video) {
+  if (video.videoWidth && video.videoHeight) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { cleanup(); reject(new Error('La pantalla seleccionada no entregó imagen. Intenta compartirla nuevamente.')); }, 5000);
+    const ready = () => { if (!video.videoWidth || !video.videoHeight) return; cleanup(); resolve(); };
+    const failed = () => { cleanup(); reject(new Error('No fue posible leer la pantalla seleccionada.')); };
+    const cleanup = () => { clearTimeout(timeout); video.removeEventListener('loadedmetadata', ready); video.removeEventListener('resize', ready); video.removeEventListener('error', failed); };
+    video.addEventListener('loadedmetadata', ready); video.addEventListener('resize', ready); video.addEventListener('error', failed); ready();
+  });
 }
 
 function CropEditor({ stream, initialCrop, onConfirm, onCancel }) {
@@ -74,12 +87,12 @@ function ChatPanel({ messages, user, replyTo, setReplyTo, onSend, onReact }) {
 }
 
 function InvitePanel({ members, invited, onInvite, onClose }) {
-  return <div className="modal-backdrop"><div className="invite-modal glass"><div className="modal-title"><div><p className="eyebrow">COMUNIDAD</p><h2>Invitar usuarios registrados</h2></div><button className="icon-button" onClick={onClose}><X /></button></div><div className="invite-list">{members.map((member) => <div className="person" key={member.id}><div className="avatar avatar-sm">{member.name.slice(0, 2).toUpperCase()}</div><span><strong>{member.name}</strong><small>@{member.username}</small></span><button className="secondary-button" disabled={invited.includes(member.id)} onClick={() => onInvite(member)}>{invited.includes(member.id) ? <><Check /> Invitado</> : <><UserPlus /> Invitar</>}</button></div>)}{!members.length && <p className="muted">No hay otros usuarios registrados todavía.</p>}</div></div></div>;
+  return <div className="modal-backdrop"><div className="invite-modal glass"><div className="modal-title"><div><p className="eyebrow">COMUNIDAD</p><h2>Invitar usuarios registrados</h2></div><button className="icon-button" onClick={onClose}><X /></button></div><div className="invite-list">{members.map((member) => <div className="person" key={member.id}><ConstellationAvatar className="avatar avatar-sm" seed={member.id} name={member.name} /><span><strong>{member.name}</strong><small>@{member.username}</small></span><button className="secondary-button" disabled={invited.includes(member.id)} onClick={() => onInvite(member)}>{invited.includes(member.id) ? <><Check /> Invitado</> : <><UserPlus /> Invitar</>}</button></div>)}{!members.length && <p className="muted">No hay otros usuarios registrados todavía.</p>}</div></div></div>;
 }
 
 export default function MeetingStudio({ toast, user }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`;
-  const sourceStream = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(false);
+  const sourceStream = useRef(null); const sharingRef = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(false);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } });
@@ -95,14 +108,17 @@ export default function MeetingStudio({ toast, user }) {
   const showReaction = ({ emoji }) => { const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), 2400); };
 
   const stopMedia = () => { mediaRef.current.getTracks().forEach((track) => track.stop()); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
-  const disconnect = useCallback((clearMeeting = false) => { connection.current?.disconnect(); connection.current = null; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setHandRaised(false); if (clearMeeting) { setMeeting(null); forgetMeeting(); } }, []);
-  useEffect(() => () => { connection.current?.disconnect(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); }, []);
+  const disconnect = useCallback((clearMeeting = false) => { connection.current?.disconnect(); connection.current = null; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setHandRaised(false); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
+  useEffect(() => () => { connection.current?.disconnect(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); }, []);
+  useEffect(() => { primeRealtime(user.id).catch(() => {}); return () => releaseRealtimePrime(user.id); }, [user.id]);
   useEffect(() => { api.getMyMeetings().then(setMeetings).catch((error) => toast(error.message, 'error')); }, []);
 
   const connectAccess = async (access) => {
-    setMeeting(access); setMessages(access.messages || []); rememberMeeting(access);
-    if (access.status !== 'ADMITTED') { setWaiting(true); setStatus('waiting'); return; }
-    setWaiting(false); connection.current?.disconnect();
+    const legacyParticipantStatus = ['ADMITTED', 'WAITING', 'INVITED', 'DENIED'].includes(access.status) ? access.status : null;
+    const normalized = { ...access, role: access.role || (access.host ? 'HOST' : 'PARTICIPANT'), participantStatus: access.participantStatus || legacyParticipantStatus || (access.host ? 'ADMITTED' : null) };
+    setMeeting(normalized); setMessages(normalized.messages || []); rememberMeeting(normalized);
+    if (normalized.participantStatus !== 'ADMITTED') { setWaiting(true); setStatus('waiting'); return; }
+    setWaiting(false); setJoined(true); setStatus('signaling'); connection.current?.disconnect();
     const client = new SupabaseMeetingConnection({
       onStatus: setStatus, onParticipants: setParticipants,
       onRemoteStream: (peerId, stream) => setRemoteStreams((current) => { const next = { ...current }; if (stream) next[peerId] = stream; else delete next[peerId]; return next; }),
@@ -111,35 +127,53 @@ export default function MeetingStudio({ toast, user }) {
       onForceMute: ({ by }) => { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); client.setPresence({ mic: false, speaking: false }); toast(`${by || 'El anfitrión'} silenció tu micrófono.`, 'info'); },
       onMeetingEnded: ({ by }) => { disconnect(true); stopMedia(); toast(`${by || 'El anfitrión'} finalizó la reunión.`, 'info'); },
     });
-    connection.current = client; await client.connect({ url: access.signalingUrl, roomId: access.meetingId, token: access.token, role: access.role, stream: mediaRef.current, iceServers: access.iceServers });
-    client.setPresence({ mic, camera, sharing: false, handRaised, speaking: false }); setJoined(true); toast(`Conectado a ${access.title}.`);
+    client.setPresence({ mic, camera, sharing: false, handRaised, speaking: false }); connection.current = client;
+    try {
+      await client.connect({ roomId: normalized.meetingId, role: normalized.role, stream: mediaRef.current, iceServers: normalized.iceServers, user });
+      toast(`Conectado a ${normalized.title}.`);
+    } catch (error) { setJoined(false); throw error; }
   };
 
-  const enterMeeting = async ({ roomCode, password = '' }) => { setBusy(true); try { const access = await getMeetingAccess({ roomCode, password }); await connectAccess(access); } catch (error) { disconnect(false); toast(error.message, 'error'); } finally { setBusy(false); } };
+  const enterMeeting = async ({ roomCode, password = '' }) => { setBusy(true); try { const access = await getMeetingAccess({ roomCode, password }); await connectAccess(access); } catch (error) { disconnect(true); toast(error.message, 'error'); } finally { setBusy(false); } };
   useEffect(() => { if (resumed.current) return; resumed.current = true; try { const saved = JSON.parse(localStorage.getItem(activeKey) || 'null'); if (saved?.roomCode) enterMeeting({ roomCode: saved.roomCode }); } catch { forgetMeeting(); } }, []);
 
   useEffect(() => {
     if (!waiting || !meeting?.roomCode || !meeting?.meetingId) return undefined;
     let connecting = false;
-    const refresh = async () => { if (connecting) return; connecting = true; try { const access = await getMeetingAccess({ roomCode: meeting.roomCode }); if (access.status === 'ADMITTED') await connectAccess(access); } catch (error) { if (/no autorizó|terminó/.test(error.message)) { disconnect(true); toast(error.message, 'error'); } } finally { connecting = false; } };
-    const unsubscribe = api.onMeetingParticipantChange(meeting.meetingId, refresh); const timer = setInterval(refresh, 15_000);
+    const refresh = async () => { if (connecting) return; connecting = true; try { const access = await getMeetingAccess({ roomCode: meeting.roomCode }); if ((access.participantStatus || access.status) === 'ADMITTED') await connectAccess(access); } catch (error) { if (/no autorizó|terminó/.test(error.message)) { disconnect(true); toast(error.message, 'error'); } } finally { connecting = false; } };
+    const unsubscribe = api.onMeetingParticipantChange(meeting.meetingId, refresh); const timer = setInterval(refresh, 5_000);
     return () => { unsubscribe(); clearInterval(timer); };
   }, [waiting, meeting?.roomCode, meeting?.meetingId]);
   useEffect(() => {
     if (!joined || meeting?.role !== 'HOST') return undefined;
     const refresh = async () => { try { const state = await api.getMeetingState({ meetingId: meeting.meetingId }); setWaitingParticipants(state.waitingParticipants || []); setMeeting((current) => ({ ...current, locked: state.locked })); if (state.status === 'ENDED') disconnect(true); } catch {} };
-    refresh(); const unsubscribe = api.onMeetingParticipantChange(meeting.meetingId, refresh); const timer = setInterval(refresh, 20_000);
+    refresh(); const unsubscribe = api.onMeetingParticipantChange(meeting.meetingId, refresh); const timer = setInterval(refresh, 10_000);
     return () => { unsubscribe(); clearInterval(timer); };
   }, [joined, meeting?.meetingId, meeting?.role]);
 
-  const createMeeting = async (form) => { setBusy(true); try { const created = await api.createMeeting(form); setMeetings((items) => [created, ...items]); await enterMeeting({ roomCode: created.roomCode }); } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); } };
+  const createMeeting = async (form) => { setBusy(true); try { const created = await api.createMeeting(form); setMeetings((items) => [created, ...items]); await connectAccess(created); } catch (error) { disconnect(true); toast(error.message, 'error'); } finally { setBusy(false); } };
   const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharing ? new MediaStream([...next.getAudioTracks(), ...sharing.getVideoTracks()]) : next); };
   const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio', video: kind === 'video' }); const track = captured.getTracks()[0]; const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); await publishMedia(new MediaStream([...retained, track])); return track; };
   const toggleTrack = async (kind) => { try { const isAudio = kind === 'audio'; const active = isAudio ? mic : camera; let track = mediaRef.current.getTracks().find((item) => item.kind === kind && item.readyState === 'live'); if (!track) track = await acquireTrack(kind); else track.enabled = !active; const enabled = track.enabled; if (isAudio) setMic(enabled); else setCamera(enabled); connection.current?.setPresence({ mic: isAudio ? enabled : mic, camera: isAudio ? camera : enabled, sharing: Boolean(sharing), handRaised, speaking: isAudio ? localSpeaking && enabled : localSpeaking }); } catch (error) { toast(error.message || 'No fue posible acceder al dispositivo.', 'error'); } };
-  const stopShare = async () => { sourceStream.current?.getTracks().forEach((track) => track.stop()); sharing?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; setSharing(null); setCropSource(null); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false }); };
-  const publishShare = async (stream) => { setSharing(stream); await connection.current?.setLocalStream(new MediaStream([...mediaRef.current.getAudioTracks(), ...stream.getVideoTracks()])); connection.current?.setPresence({ sharing: true }); };
+  const stopShare = async () => { sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; sharingRef.current = null; setSharing(null); setCropSource(null); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false }); };
+  const publishShare = async (stream) => { sharingRef.current = stream; setSharing(stream); await connection.current?.setLocalStream(new MediaStream([...mediaRef.current.getAudioTracks(), ...stream.getVideoTracks()])); connection.current?.setPresence({ sharing: true }); };
   const capture = async (custom = false) => { setShareMenu(false); if (!joined) return; try { if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('La captura de pantalla no está disponible en este navegador.'); const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: { ideal: 24, max: 30 } }, audio: false }); sourceStream.current = stream; stream.getVideoTracks()[0].addEventListener('ended', stopShare, { once: true }); if (custom) setCropSource(stream); else await publishShare(stream); } catch (error) { if (error.name !== 'NotAllowedError') toast(error.message, 'error'); } };
-  const confirmCrop = async (crop) => { localStorage.setItem(cropKey, JSON.stringify(crop)); setSavedCrop(crop); const video = document.createElement('video'); video.srcObject = cropSource; video.muted = true; await video.play(); const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d', { alpha: false }); const draw = () => { if (video.videoWidth) { const sx = video.videoWidth * crop.x / 100; const sy = video.videoHeight * crop.y / 100; const sw = video.videoWidth * crop.w / 100; const sh = video.videoHeight * crop.h / 100; const scale = Math.min(1, 1280 / sw); if (canvas.width !== Math.round(sw * scale) || canvas.height !== Math.round(sh * scale)) { canvas.width = Math.max(2, Math.round(sw * scale)); canvas.height = Math.max(2, Math.round(sh * scale)); } ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height); } renderLoop.current = requestAnimationFrame(draw); }; draw(); const processed = canvas.captureStream(24); setCropSource(null); await publishShare(processed); toast('Área guardada y publicada por WebRTC.'); };
+  const confirmCrop = async (crop) => {
+    try {
+      localStorage.setItem(cropKey, JSON.stringify(crop)); setSavedCrop(crop);
+      const video = document.createElement('video'); video.srcObject = cropSource; video.muted = true; video.playsInline = true;
+      await video.play(); await waitForVideoMetadata(video);
+      const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx || typeof canvas.captureStream !== 'function') throw new Error('Tu navegador no permite compartir un área procesada.');
+      const draw = () => {
+        const sx = video.videoWidth * crop.x / 100; const sy = video.videoHeight * crop.y / 100;
+        const sw = video.videoWidth * crop.w / 100; const sh = video.videoHeight * crop.h / 100; const scale = Math.min(1, 1280 / sw);
+        if (canvas.width !== Math.round(sw * scale) || canvas.height !== Math.round(sh * scale)) { canvas.width = Math.max(2, Math.round(sw * scale)); canvas.height = Math.max(2, Math.round(sh * scale)); }
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height); renderLoop.current = requestAnimationFrame(draw);
+      };
+      draw(); const processed = canvas.captureStream(24); setCropSource(null); await publishShare(processed); toast('Área guardada y publicada por WebRTC.');
+    } catch (error) { await stopShare(); toast(error.message || 'No fue posible compartir el área seleccionada.', 'error'); }
+  };
   const toggleHand = () => { const next = !handRaised; setHandRaised(next); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised: next, speaking: localSpeaking }); };
   const react = (emoji) => { connection.current?.react(emoji); showReaction({ emoji }); setReactionMenu(false); };
   const speakingChanged = useCallback((speaking) => { setLocalSpeaking(speaking); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised, speaking }); }, [mic, camera, sharing, handRaised]);
@@ -157,11 +191,14 @@ export default function MeetingStudio({ toast, user }) {
   if (waiting) return <div className="meeting-waiting surface"><span className="waiting-orbit" /><p className="eyebrow">SALA DE ESPERA</p><h1>{meeting.title}</h1><p>El anfitrión recibió tu solicitud. Esta pantalla entrará automáticamente cuando te admita.</p><strong>{meeting.roomCode}</strong><button className="secondary-button" onClick={() => disconnect(true)}>Cancelar</button></div>;
 
   const remoteEntries = Object.entries(remoteStreams); const isHost = meeting.role === 'HOST';
+  const remotePresentation = remoteEntries.find(([peerId, stream]) => participants.find((item) => item.peerId === peerId)?.sharing && stream.getVideoTracks().some((track) => track.readyState === 'live'));
+  const presentationStream = sharing || remotePresentation?.[1];
+  const presentationPeer = remotePresentation && participants.find((item) => item.peerId === remotePresentation[0]);
   return <section className="meeting-page">
     <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1></div><div className="meeting-top-actions"><button className="secondary-button" onClick={copyInvite}><Copy /> {meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar</button>}<div className={`secure-pill ${status}`}><ShieldCheck /> {status === 'connected' ? 'WebRTC conectado' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
     <div className="meeting-grid">
-      <div className="meeting-stage">{sharing ? <><VideoSurface stream={sharing} name="Tu pantalla" muted /><span className="presenter-label">Tu pantalla · compartiendo por WebRTC</span></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} muted speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}<div className="reaction-layer">{reactions.map((item) => <span key={item.id}>{item.emoji}</span>)}</div></div>
-      <aside className="meeting-side"><div className="meeting-side-tabs"><button className={sideTab === 'people' ? 'active' : ''} onClick={() => setSideTab('people')}><Users /> Personas <span>{participants.length + 1}</span></button><button className={sideTab === 'chat' ? 'active' : ''} onClick={() => setSideTab('chat')}><MessageCircle /> Chat <span>{messages.length}</span></button></div>{sideTab === 'people' ? <><div className="people-list"><div className={`person ${localSpeaking ? 'speaking' : ''}`}><div className="avatar avatar-sm">TÚ</div><span>{user.name} · Tú {isHost && <small>Anfitrión</small>} {handRaised && '✋'}</span><AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} />{mic ? <Mic /> : <MicOff />}</div>{participants.map((peer) => <div className={`person ${peer.speaking ? 'speaking' : ''}`} key={peer.peerId}><div className="avatar avatar-sm">{peer.name.slice(0, 2).toUpperCase()}</div><span>{peer.name} {peer.handRaised && '✋'}<small>{peer.role === 'HOST' ? 'Anfitrión' : peerStates[peer.peerId] === 'connected' ? 'Audio P2P conectado' : 'Enlazando medios'}</small></span><AudioMeter stream={remoteStreams[peer.peerId]} enabled={peer.mic} />{isHost && peer.role !== 'HOST' && peer.mic ? <button className="host-mute" title="Silenciar participante" onClick={() => connection.current?.mutePeer(peer.peerId)}><MicOff /></button> : peer.mic ? <Mic /> : <MicOff />}</div>)}</div>{isHost && waitingParticipants.length > 0 && <div className="waiting-list"><p className="eyebrow">ESPERANDO ({waitingParticipants.length})</p>{waitingParticipants.map((item) => <div className="person" key={item.id}><div className="avatar avatar-sm">{item.name.slice(0, 2)}</div><span>{item.name}<small>@{item.username}</small></span><button title="Admitir" onClick={() => admission(item, true)}><Check /></button><button title="Rechazar" onClick={() => admission(item, false)}><X /></button></div>)}</div>}<div className="meeting-side-footer"><button className="secondary-button" onClick={copyInvite}><Copy /> Copiar invitación</button>{isHost && <button className="secondary-button" onClick={toggleLock}>{meeting.locked ? <Unlock /> : <Lock />} {meeting.locked ? 'Desbloquear' : 'Bloquear sala'}</button>}</div></> : <ChatPanel messages={messages} user={user} replyTo={replyTo} setReplyTo={setReplyTo} onSend={sendChat} onReact={reactToMessage} />}</aside>
+      <div className="meeting-stage">{presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} muted={Boolean(sharing)} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} muted speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}<div className="reaction-layer">{reactions.map((item) => <span key={item.id}>{item.emoji}</span>)}</div></div>
+      <aside className="meeting-side"><div className="meeting-side-tabs"><button className={sideTab === 'people' ? 'active' : ''} onClick={() => setSideTab('people')}><Users /> Personas <span>{participants.length + 1}</span></button><button className={sideTab === 'chat' ? 'active' : ''} onClick={() => setSideTab('chat')}><MessageCircle /> Chat <span>{messages.length}</span></button></div>{sideTab === 'people' ? <><div className="people-list"><div className={`person ${localSpeaking ? 'speaking' : ''}`}><ConstellationAvatar className="avatar avatar-sm" seed={user.id} name={user.name} /><span>{user.name} · Tú {isHost && <small>Anfitrión</small>} {handRaised && '✋'}</span><AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} />{mic ? <Mic /> : <MicOff />}</div>{participants.map((peer) => <div className={`person ${peer.speaking ? 'speaking' : ''}`} key={peer.peerId}><ConstellationAvatar className="avatar avatar-sm" seed={peer.userId || peer.peerId} name={peer.name} /><span>{peer.name} {peer.handRaised && '✋'}<small>{peer.role === 'HOST' ? 'Anfitrión' : peerStates[peer.peerId] === 'connected' ? 'Audio P2P conectado' : 'Enlazando medios'}</small></span><AudioMeter stream={remoteStreams[peer.peerId]} enabled={peer.mic} />{isHost && peer.role !== 'HOST' && peer.mic ? <button className="host-mute" title="Silenciar participante" onClick={() => connection.current?.mutePeer(peer.peerId)}><MicOff /></button> : peer.mic ? <Mic /> : <MicOff />}</div>)}</div>{isHost && waitingParticipants.length > 0 && <div className="waiting-list"><p className="eyebrow">ESPERANDO ({waitingParticipants.length})</p>{waitingParticipants.map((item) => <div className="person" key={item.id}><ConstellationAvatar className="avatar avatar-sm" seed={item.userId} name={item.name} /><span>{item.name}<small>@{item.username}</small></span><button title="Admitir" onClick={() => admission(item, true)}><Check /></button><button title="Rechazar" onClick={() => admission(item, false)}><X /></button></div>)}</div>}<div className="meeting-side-footer"><button className="secondary-button" onClick={copyInvite}><Copy /> Copiar invitación</button>{isHost && <button className="secondary-button" onClick={toggleLock}>{meeting.locked ? <Unlock /> : <Lock />} {meeting.locked ? 'Desbloquear' : 'Bloquear sala'}</button>}</div></> : <ChatPanel messages={messages} user={user} replyTo={replyTo} setReplyTo={setReplyTo} onSend={sendChat} onReact={reactToMessage} />}</aside>
     </div>
     <div className="control-dock glass"><button className={mic ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('audio')}>{mic ? <Mic /> : <MicOff />}<AudioMeter stream={media} enabled={mic} /><span>{mic ? 'Silenciar' : 'Activar audio'}</span></button><button className={camera ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('video')}>{camera ? <Camera /> : <CameraOff />}<span>{camera ? 'Apagar cámara' : 'Iniciar video'}</span></button><div className="share-wrap"><button className={sharing ? 'active' : ''} disabled={!joined} onClick={() => sharing ? stopShare() : setShareMenu(!shareMenu)}><MonitorUp /><span>{sharing ? 'Detener' : 'Compartir'}</span></button>{shareMenu && <div className="share-menu glass"><button onClick={() => capture(false)}><MonitorUp />Pantalla, ventana o pestaña<span>Selector seguro del navegador</span></button><button onClick={() => capture(true)}><span className="crop-icon" />Área personalizada<span>{savedCrop ? 'Reutilizar el recorte guardado' : 'Captura autorizada + recorte local'}</span></button></div>}</div><button className={handRaised ? 'active' : ''} disabled={!joined} onClick={toggleHand}><Hand /><span>{handRaised ? 'Bajar mano' : 'Alzar mano'}</span></button><div className="reaction-wrap"><button disabled={!joined} onClick={() => setReactionMenu(!reactionMenu)}><SmilePlus /><span>Reaccionar</span></button>{reactionMenu && <div className="reaction-menu glass">{EMOJIS.map((emoji) => <button key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}</div><button className="leave-control" onClick={leave}><PhoneOff /><span>Salir</span></button>{isHost && <button className="end-control" onClick={endMeeting}><X /><span>Finalizar</span></button>}</div>
     {cropSource && <CropEditor stream={cropSource} initialCrop={savedCrop} onConfirm={confirmCrop} onCancel={stopShare} />}{inviteOpen && <InvitePanel members={members} invited={invited} onInvite={invite} onClose={() => setInviteOpen(false)} />}

@@ -8,6 +8,7 @@ Plataforma React/Vite con autenticación, datos, salas y señalización en tiemp
 2. En **Authentication → URL Configuration**, usa `https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html` como `Site URL` y única Redirect URL, según la [guía de despliegue](docs/DEPLOYMENT.md).
 3. En **Realtime Settings**, desactiva **Allow public access** para forzar las políticas de canales privados.
 4. Decide en **Authentication → Providers → Email** si exigirás confirmación de correo. El cliente soporta ambos modos.
+5. Para correo de producción, instala la plantilla `supabase/templates/confirmation.html` y configura SMTP propio con remitente `PROJECT GALAXY`; consulta `docs/DEPLOYMENT.md`.
 5. Comprueba `SUPABASE_URL` y `SUPABASE_ANON_KEY` en `src/runtime-config.js`.
 6. Instala, valida y compila:
 

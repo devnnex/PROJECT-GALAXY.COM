@@ -8,6 +8,8 @@
 4. Crea dos cuentas de prueba y valida creación, sala de espera, admisión, mensajes y reacciones desde dos navegadores.
 5. No desactives RLS y no publiques una clave `service_role`.
 
+Después de esta actualización vuelve a ejecutar `supabase/schema.sql`: la versión nueva incorpora la autorización rápida `can_access_realtime_topic`, el canal de precalentamiento por usuario y la respuesta completa de `create_meeting`. El archivo es idempotente y conserva los datos existentes.
+
 Para cambiar ICE, actualiza únicamente el valor JSON de `ice_servers`:
 
 ```sql
@@ -34,6 +36,17 @@ Después de actualizar el repositorio, vuelve a ejecutar `supabase/schema.sql` c
 En **Authentication → Rate Limits**, conserva límites estrictos para registro, inicio de sesión, recuperación y verificación. En **Authentication → Attack Protection**, habilita CAPTCHA para registro, inicio de sesión y recuperación. Configura una longitud mínima de 10 caracteres y, si el plan lo permite, activa la detección de contraseñas filtradas.
 
 En **Database → Security Advisor**, resuelve todas las alertas antes de cada lanzamiento. No desactives RLS ni concedas acceso directo de escritura a tablas operativas; el cliente debe escribir exclusivamente mediante las RPC autorizadas.
+
+## Correo de confirmación con marca PROJECT GALAXY
+
+1. Abre **Authentication → Email Templates → Confirm signup**.
+2. Usa el asunto `Confirma tu acceso a PROJECT GALAXY`.
+3. Copia íntegramente `supabase/templates/confirmation.html` en el editor y guarda. La variable `{{ .ConfirmationURL }}` debe permanecer intacta.
+4. Abre la configuración de **Authentication → SMTP Settings**, activa SMTP personalizado y establece **Sender name** como `PROJECT GALAXY`.
+5. Usa una dirección verificada de tu dominio, por ejemplo `no-reply@auth.tudominio.com`, y configura SPF, DKIM y DMARC con el proveedor de correo.
+6. Envía una confirmación de prueba y valida en escritorio y móvil que el remitente, asunto, botón y redirección sean correctos.
+
+La plantilla controla el diseño y el asunto; el nombre/dominio del remitente solo cambia mediante SMTP personalizado. Las credenciales SMTP pertenecen exclusivamente a Supabase Dashboard: no deben añadirse a GitHub, `runtime-config.js` ni variables `VITE_*`. Desactiva el seguimiento de enlaces del proveedor SMTP para evitar que modifique el enlace de confirmación.
 
 El workflow ejecuta pruebas, build y `npm run security:check`. La publicación se detiene si aparecen sourcemaps, archivos fuente, una clave privilegiada, JavaScript inline o una CSP debilitada. CodeQL y Dependabot cubren análisis estático y actualizaciones de dependencias.
 

@@ -1,4 +1,4 @@
-const CACHE = 'galaxy-shell-v3';
+const CACHE = 'galaxy-shell-v4';
 const SHELL = ['./index.html', './manifest.webmanifest', './galaxy-icon.svg'];
 self.addEventListener('install', (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL.map((url) => new Request(url, { cache: 'reload' })))).then(() => self.skipWaiting())));
 self.addEventListener('activate', (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim())));

@@ -1,5 +1,5 @@
 import { api } from './api';
-import { supabase } from './supabase';
+import { primeRealtime, subscribeRealtimeChannel, supabase } from './supabase';
 
 export async function getMeetingAccess({ roomCode, password }) {
   const access = await api.joinMeeting({ roomCode, password });
@@ -87,22 +87,22 @@ export class MeetingConnection {
 export class SupabaseMeetingConnection extends MeetingConnection {
   constructor(callbacks = {}) { super(callbacks); this.active = false; this.channel = null; this.endValidation = null; }
 
-  async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT' }) {
+  async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT', user }) {
     this.roomId = roomId; this.role = role; this.selfId = crypto.randomUUID(); this.localStream = stream || new MediaStream(); this.iceServers = iceServers.length ? iceServers : defaultIceServers(); this.active = true; this.callbacks.onStatus?.('signaling');
-    const user = await api.me(); this.identity = { peerId: this.selfId, userId: user.id, name: user.name, role, ...(this.presence || {}) };
-    const channel = supabase.channel(`meeting:${roomId}`, { config: { private: true, broadcast: { self: false, ack: true }, presence: { key: this.selfId } } }); this.channel = channel;
-    channel.on('broadcast', { event: 'signal' }, ({ payload }) => this.handleSignal(payload).catch(() => {}));
-    channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
-    channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
-    channel.on('broadcast', { event: 'meeting-ended' }, ({ payload }) => this.handleMeetingEnded(payload));
-    channel.on('presence', { event: 'sync' }, () => this.syncPresence());
-    await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Supabase Realtime no respondió a tiempo.')), 10_000);
-      channel.subscribe(async (status, error) => {
-        if (status === 'SUBSCRIBED') { clearTimeout(timer); await channel.track(this.identity); this.callbacks.onStatus?.('connected'); resolve(); }
-        else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') { clearTimeout(timer); reject(error || new Error('No fue posible conectar con Supabase Realtime.')); }
-      });
-    });
+    const identity = user || await api.me();
+    this.identity = { peerId: this.selfId, userId: identity.id, name: identity.name, role, ...(this.presence || {}) };
+    primeRealtime(identity.id).catch(() => {});
+    this.channel = await subscribeRealtimeChannel(() => {
+      const channel = supabase.channel(`meeting:${roomId}`, { config: { private: true, broadcast: { self: false, ack: false }, presence: { key: this.selfId } } });
+      this.channel = channel;
+      channel.on('broadcast', { event: 'signal' }, ({ payload }) => this.handleSignal(payload).catch(() => {}));
+      channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
+      channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
+      channel.on('broadcast', { event: 'meeting-ended' }, ({ payload }) => this.handleMeetingEnded(payload));
+      channel.on('presence', { event: 'sync' }, () => this.syncPresence());
+      return channel;
+    }, { onSubscribed: (channel) => channel.track(this.identity) });
+    this.callbacks.onStatus?.('connected');
   }
 
   async syncPresence() {

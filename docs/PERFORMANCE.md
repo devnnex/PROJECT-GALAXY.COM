@@ -5,6 +5,9 @@ La migración elimina el cuello de botella principal: el transporte anterior con
 Ahora:
 
 - Presence y Broadcast mantienen un WebSocket persistente con Supabase Realtime.
+- El centro de reuniones precalienta ese WebSocket y recupera automáticamente una partición diaria todavía no preparada.
+- Crear una sala requiere una sola RPC; ya no repite `join_meeting` ni `get_current_user` antes de habilitar medios.
+- Las señales WebRTC usan Broadcast sin confirmación por mensaje; las acciones persistentes mantienen confirmación mediante RPC/PostgreSQL.
 - Mensajes y reacciones hacen una sola RPC transaccional y se propagan por Broadcast.
 - Admisiones usan cambios de Postgres en tiempo real; existe un refresco de respaldo cada 15–20 segundos.
 - Los índices cubren host/fecha, participante/estado, sala/estado y mensaje/fecha.

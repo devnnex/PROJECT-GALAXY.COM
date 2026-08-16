@@ -1,6 +1,7 @@
 -- PROJECT GALAXY · Supabase/PostgreSQL schema
 -- Ejecutar completo en Supabase Dashboard > SQL Editor después de cada actualización del esquema.
--- Es idempotente para objetos y políticas; no borra datos existentes.
+-- Es idempotente para objetos y políticas; conserva los datos de negocio y limpia
+-- únicamente chats de reuniones finalizadas, según la política de retención.
 
 begin;
 
@@ -176,6 +177,22 @@ language sql stable security definer set search_path = public, auth as $$
   select exists(select 1 from public.meeting_participants where meeting_id = p_meeting_id and user_id = auth.uid() and status = 'ADMITTED');
 $$;
 
+-- Mantiene la autorización de canales privados rápida y aislada de las políticas
+-- RLS de las tablas de negocio. También permite precalentar el WebSocket por usuario.
+create or replace function public.can_access_realtime_topic(p_topic text,p_extension text) returns boolean
+language sql stable security definer set search_path=public,auth as $$
+  select p_extension in ('broadcast','presence') and (
+    p_topic='user:'||(select auth.uid())::text
+    or exists(
+      select 1 from public.meeting_participants p
+      where p.user_id=(select auth.uid()) and (
+        (p.status='ADMITTED' and p_topic='meeting:'||p.meeting_id::text)
+        or (p.status<>'DENIED' and p_topic like 'db:participants:'||p.meeting_id::text||':%')
+      )
+    )
+  );
+$$;
+
 create or replace function public.meeting_summary(p_meeting public.meetings, p_user uuid) returns jsonb
 language sql stable set search_path = public as $$
   select jsonb_build_object('id', p_meeting.id, 'meetingId', p_meeting.id, 'title', p_meeting.title,
@@ -187,10 +204,29 @@ $$;
 create or replace function public.get_current_user() returns jsonb
 language sql stable security definer set search_path = public, auth as $$
   select jsonb_build_object('id', p.id, 'name', p.name, 'username', p.username, 'email', u.email,
-    'avatar', p.avatar, 'role', p.role, 'level', p.level, 'status', p.status,
-    'createdAt', p.created_at, 'emailVerified', u.email_confirmed_at is not null)
+    'bio', p.bio, 'role', p.role, 'level', p.level, 'xp', p.xp, 'status', p.status,
+    'createdAt', p.created_at, 'emailVerified', u.email_confirmed_at is not null,
+    'wallet',coalesce((select jsonb_build_object('availableBalance',w.available_balance,'pendingBalance',w.pending_balance,
+      'totalEarned',w.total_earned,'totalSpent',w.total_spent,'currency',w.currency) from public.wallets w where w.user_id=p.id),
+      jsonb_build_object('availableBalance',0,'pendingBalance',0,'totalEarned',0,'totalSpent',0,'currency','USDT')))
   from public.profiles p join auth.users u on u.id = p.id where p.id = public.require_user();
 $$;
+
+create or replace function public.update_profile(p_name text,p_username text,p_bio text default '') returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user(); v_name text:=trim(coalesce(p_name,'')); v_username text:=lower(trim(coalesce(p_username,''))); v_bio text:=trim(coalesce(p_bio,''));
+begin
+  if char_length(v_name) not between 2 and 100 then raise exception 'El nombre debe tener entre 2 y 100 caracteres.' using errcode='P0001'; end if;
+  if v_username !~ '^[a-z0-9_]{3,32}$' then raise exception 'El usuario debe tener entre 3 y 32 caracteres: letras minúsculas, números o guion bajo.' using errcode='P0001'; end if;
+  if char_length(v_bio)>500 then raise exception 'La biografía no puede superar los 500 caracteres.' using errcode='P0001'; end if;
+  begin
+    update public.profiles set name=v_name,username=v_username,bio=v_bio where id=v_user and status='ACTIVE';
+  exception when unique_violation then
+    raise exception 'Ese nombre de usuario ya está en uso.' using errcode='P0001';
+  end;
+  if not found then raise exception 'Tu perfil no está disponible para edición.' using errcode='P0001'; end if;
+  return public.get_current_user();
+end; $$;
 
 create or replace function public.get_bootstrap_data(p_modules text[] default array['user']) returns jsonb
 language sql stable security definer set search_path = public, auth as $$
@@ -199,7 +235,7 @@ $$;
 
 create or replace function public.create_meeting(p_title text, p_password text default '', p_waiting_room boolean default true) returns jsonb
 language plpgsql security definer set search_path = public, auth, extensions as $$
-declare v_user uuid := public.require_user(); v_meeting public.meetings; v_code text;
+declare v_user uuid := public.require_user(); v_meeting public.meetings; v_code text; v_ice jsonb;
 begin
   if char_length(trim(p_title)) not between 1 and 140 then raise exception 'Ingresa un título válido.' using errcode = 'P0001'; end if;
   if coalesce(p_password, '') <> '' and char_length(p_password) < 6 then raise exception 'La contraseña debe tener al menos 6 caracteres.' using errcode = 'P0001'; end if;
@@ -207,7 +243,10 @@ begin
   insert into public.meetings(host_id, room_code, password_hash, title, waiting_room)
   values(v_user, v_code, case when coalesce(p_password, '') = '' then null else crypt(p_password, gen_salt('bf', 10)) end, trim(p_title), coalesce(p_waiting_room, true)) returning * into v_meeting;
   insert into public.meeting_participants(meeting_id, user_id, role, status, joined_at) values(v_meeting.id, v_user, 'HOST', 'ADMITTED', now());
-  return public.meeting_summary(v_meeting, v_user);
+  select value into v_ice from public.app_settings where key='ice_servers';
+  return public.meeting_summary(v_meeting,v_user)||jsonb_build_object(
+    'role','HOST','participantStatus','ADMITTED','iceServers',coalesce(v_ice,'[]'::jsonb),'messages','[]'::jsonb
+  );
 end; $$;
 
 create or replace function public.message_view(p_message public.meeting_messages, p_viewer uuid) returns jsonb
@@ -257,7 +296,7 @@ begin
   values(v_meeting.id,v_user,v_role,v_status,case when v_status='ADMITTED' then now() end,null)
   on conflict(meeting_id,user_id) do update set status=excluded.status, joined_at=coalesce(public.meeting_participants.joined_at,excluded.joined_at), left_at=null;
   select value into v_ice from public.app_settings where key = 'ice_servers';
-  return public.meeting_summary(v_meeting,v_user) || jsonb_build_object('role',v_role,'status',v_status,
+  return public.meeting_summary(v_meeting,v_user) || jsonb_build_object('role',v_role,'participantStatus',v_status,
     'iceServers',coalesce(v_ice,'[]'::jsonb),'messages',case when v_status='ADMITTED' then public.get_meeting_messages(v_meeting.id,100) else '[]'::jsonb end);
 end; $$;
 
@@ -299,7 +338,20 @@ create or replace function public.set_meeting_locked(p_meeting_id uuid,p_locked 
 begin if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=public.require_user()) then raise exception 'Solo el anfitrión puede realizar esta acción.' using errcode='P0001'; end if; update public.meetings set locked=coalesce(p_locked,false) where id=p_meeting_id; return jsonb_build_object('locked',coalesce(p_locked,false)); end; $$;
 
 create or replace function public.end_meeting(p_meeting_id uuid) returns jsonb language plpgsql security definer set search_path=public,auth as $$
-begin if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=public.require_user()) then raise exception 'Solo el anfitrión puede realizar esta acción.' using errcode='P0001'; end if; update public.meetings set status='ENDED',ended_at=now() where id=p_meeting_id and status<>'ENDED'; return jsonb_build_object('meetingId',p_meeting_id,'status','ENDED'); end; $$;
+declare v_deleted_messages integer:=0;
+begin
+  if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=public.require_user()) then raise exception 'Solo el anfitrión puede realizar esta acción.' using errcode='P0001'; end if;
+  update public.meetings set status='ENDED',ended_at=coalesce(ended_at,now()) where id=p_meeting_id;
+  delete from public.meeting_messages where meeting_id=p_meeting_id;
+  get diagnostics v_deleted_messages=row_count;
+  return jsonb_build_object('meetingId',p_meeting_id,'status','ENDED','messagesDeleted',v_deleted_messages);
+end; $$;
+
+-- Aplica la misma política de retención a reuniones finalizadas anteriormente.
+-- Las reacciones asociadas se eliminan por su clave foránea ON DELETE CASCADE.
+delete from public.meeting_messages msg
+using public.meetings meeting
+where msg.meeting_id=meeting.id and meeting.status='ENDED';
 
 create or replace function public.get_community_members(p_query text default '') returns jsonb language sql stable security definer set search_path=public,auth as $$
   select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'username',p.username,'avatar',p.avatar) order by p.name),'[]'::jsonb) from (select * from public.profiles where id<>public.require_user() and status='ACTIVE' and (coalesce(trim(p_query),'')='' or name ilike '%'||trim(p_query)||'%' or username::text ilike '%'||trim(p_query)||'%') order by name limit 100) p;
@@ -320,7 +372,8 @@ create or replace function public.post_meeting_message(p_meeting_id uuid,p_body 
 declare v_user uuid:=public.require_user(); v_message public.meeting_messages;
 begin
   if not public.is_admitted_to_meeting(p_meeting_id) then raise exception 'Aún no has sido admitido.' using errcode='P0001'; end if;
-  if not exists(select 1 from public.meetings where id=p_meeting_id and status='ACTIVE') then raise exception 'La reunión ya terminó.' using errcode='P0001'; end if;
+  perform 1 from public.meetings where id=p_meeting_id and status='ACTIVE' for update;
+  if not found then raise exception 'La reunión ya terminó.' using errcode='P0001'; end if;
   if char_length(trim(coalesce(p_body,''))) not between 1 and 2000 then raise exception 'Escribe un mensaje válido.' using errcode='P0001'; end if;
   if p_reply_to_id is not null and not exists(select 1 from public.meeting_messages where id=p_reply_to_id and meeting_id=p_meeting_id) then raise exception 'El mensaje respondido no pertenece a esta reunión.' using errcode='P0001'; end if;
   if (select count(*)>=20 from public.meeting_messages where sender_id=v_user and created_at>now()-interval '10 seconds') then raise exception 'Has enviado demasiados mensajes. Espera unos segundos.' using errcode='P0001'; end if;
@@ -389,19 +442,11 @@ create policy notifications_owner_read on public.notifications for select to aut
 -- Autoriza canales privados Realtime solo a miembros admitidos de meeting:<uuid>.
 drop policy if exists galaxy_meeting_realtime_read on realtime.messages;
 create policy galaxy_meeting_realtime_read on realtime.messages for select to authenticated using (
-  exists(select 1 from public.meeting_participants p where p.user_id=(select auth.uid())
-    and realtime.messages.extension in ('broadcast','presence') and (
-      (p.status='ADMITTED' and (select realtime.topic())='meeting:'||p.meeting_id::text)
-      or (p.status<>'DENIED' and (select realtime.topic()) like 'db:participants:'||p.meeting_id::text||':%')
-    ))
+  public.can_access_realtime_topic((select realtime.topic()),realtime.messages.extension)
 );
 drop policy if exists galaxy_meeting_realtime_write on realtime.messages;
 create policy galaxy_meeting_realtime_write on realtime.messages for insert to authenticated with check (
-  exists(select 1 from public.meeting_participants p where p.user_id=(select auth.uid())
-    and realtime.messages.extension in ('broadcast','presence') and (
-      (p.status='ADMITTED' and (select realtime.topic())='meeting:'||p.meeting_id::text)
-      or (p.status<>'DENIED' and (select realtime.topic()) like 'db:participants:'||p.meeting_id::text||':%')
-    ))
+  public.can_access_realtime_topic((select realtime.topic()),realtime.messages.extension)
 );
 
 do $$ begin
@@ -412,10 +457,10 @@ revoke all on all tables in schema public from anon;
 revoke usage on schema public from anon;
 alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke execute on functions from public, anon;
-revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.is_admitted_to_meeting(uuid),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon;
+revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon;
 grant usage on schema public to authenticated;
 grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications to authenticated;
-grant execute on function public.get_current_user(),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
-grant execute on function public.is_admitted_to_meeting(uuid) to authenticated;
+grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
+grant execute on function public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text) to authenticated;
 
 commit;

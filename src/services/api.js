@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { authorizeRealtime, supabase } from './supabase';
 
 const parameterNames = Object.freeze({
   modules: 'p_modules', title: 'p_title', password: 'p_password', waitingRoom: 'p_waiting_room',
@@ -47,12 +47,13 @@ export const api = {
     return { user: await currentUser(), session: data.session };
   },
   async register({ name, username, email, password }) {
+    const appUrl = new URL('index.html', new URL(import.meta.env.BASE_URL, globalThis.location.origin)).href;
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(), password,
-      options: { data: { name: name.trim(), username: username.trim().toLowerCase() } },
+      options: { emailRedirectTo: appUrl, data: { name: name.trim(), username: username.trim().toLowerCase() } },
     });
     if (error) throw friendlyError(error);
-    if (!data.session) throw new Error('Cuenta creada. Revisa tu correo para confirmarla y luego inicia sesión.');
+    if (!data.session) return { user: null, session: null, requiresConfirmation: true, email: email.trim() };
     return { user: await currentUser(), session: data.session };
   },
   async logout() {
@@ -62,6 +63,7 @@ export const api = {
   },
   bootstrap: (modules = ['user']) => rpc('get_bootstrap_data', { modules }),
   me: currentUser,
+  updateProfile: (payload) => rpc('update_profile', payload),
   createMeeting: (payload) => rpc('create_meeting', payload),
   joinMeeting: (payload) => rpc('join_meeting', payload),
   getMyMeetings: () => rpc('get_my_meetings'),
@@ -79,9 +81,13 @@ export const api = {
   requestMeetingMute: (payload) => rpc('request_meeting_mute', payload),
   consumeMeetingCommand: (payload) => rpc('consume_meeting_command', payload),
   onMeetingParticipantChange(meetingId, callback) {
-    const channel = supabase.channel(`db:participants:${meetingId}:${crypto.randomUUID()}`, { config: { private: true } })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'meeting_participants', filter: `meeting_id=eq.${meetingId}` }, callback)
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+    let active = true; let channel = null;
+    authorizeRealtime().then(() => {
+      if (!active) return;
+      channel = supabase.channel(`db:participants:${meetingId}:${crypto.randomUUID()}`, { config: { private: true } })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'meeting_participants', filter: `meeting_id=eq.${meetingId}` }, callback)
+        .subscribe();
+    }).catch(() => {});
+    return () => { active = false; if (channel) supabase.removeChannel(channel); };
   },
 };

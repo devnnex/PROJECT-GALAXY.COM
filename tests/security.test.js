@@ -7,6 +7,7 @@ const runtime = read('../src/runtime-config.js');
 const meeting = read('../src/components/MeetingStudio.jsx');
 const schema = read('../supabase/schema.sql');
 const workflow = read('../.github/workflows/deploy-pages.yml');
+const confirmationEmail = read('../supabase/templates/confirmation.html');
 
 describe('Production security guardrails', () => {
   it('enforces a restrictive browser content policy', () => {
@@ -36,5 +37,12 @@ describe('Production security guardrails', () => {
     for (const reference of workflow.matchAll(/uses:\s+([^\s#]+)/g)) {
       expect(reference[1]).toMatch(/@[a-f0-9]{40}$/);
     }
+  });
+
+  it('ships a branded confirmation template without privileged data', () => {
+    expect(confirmationEmail).toContain('{{ .ConfirmationURL }}');
+    expect(confirmationEmail).toContain('PROJECT GALAXY');
+    expect(confirmationEmail).not.toMatch(/supabase|service_role|sb_secret_/i);
+    expect(confirmationEmail).not.toMatch(/<script|https?:\/\/[^"']+\.(?:js|png|jpg|svg)/i);
   });
 });
