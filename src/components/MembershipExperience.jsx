@@ -35,11 +35,12 @@ export function MembershipGate({ section, onChoosePlan }) {
 
 export function MembershipProfileCard({ membership, onRenew }) {
   const active = Boolean(membership?.isActive);
+  const permanent = Boolean(membership?.isLifetime || membership?.status === 'ADMIN');
   const tone = String(membership?.badgeTone || 'VIOLET').toLowerCase();
   return <section className={`membership-profile-card surface tone-${tone} ${active ? 'active' : 'inactive'}`}>
     <div className="membership-profile-heading"><span className="membership-crown"><Crown /></span><div><p className="eyebrow">GALAXY ACCESS</p><h2>{active ? membership.planName : 'Acceso sin activar'}</h2></div><span className="membership-plan-badge">{active ? membership.planCode : 'FREE'}</span></div>
-    {active ? <><p>Tu acceso premium permanece habilitado hasta el vencimiento indicado.</p><MembershipCountdown expiresAt={membership.expiresAt} /><div className="membership-expiry-line"><ShieldCheck /> Vence el {new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short' }).format(new Date(membership.expiresAt))}</div></> : <p>Activa una membresía para entrar a reuniones y sesiones en vivo.</p>}
-    <button className={active ? 'secondary-button' : 'primary-button'} onClick={onRenew}>{active ? 'Renovar o cambiar plan' : 'Activar membresía'} <ArrowRight /></button>
+    {active ? permanent ? <><p>Esta cuenta cuenta con acceso administrativo a toda la plataforma.</p><div className="membership-expiry-line"><ShieldCheck /> Acceso permanente: no requiere pago ni renovación.</div></> : <><p>Tu acceso premium permanece habilitado hasta el vencimiento indicado.</p><MembershipCountdown expiresAt={membership.expiresAt} /><div className="membership-expiry-line"><ShieldCheck /> Vence el {new Intl.DateTimeFormat('es-CO', { dateStyle: 'long', timeStyle: 'short' }).format(new Date(membership.expiresAt))}</div></> : <p>Activa una membresía para entrar a reuniones y sesiones en vivo.</p>}
+    {!permanent && <button className={active ? 'secondary-button' : 'primary-button'} onClick={onRenew}>{active ? 'Renovar o cambiar plan' : 'Activar membresía'} <ArrowRight /></button>}
   </section>;
 }
 
@@ -75,6 +76,12 @@ export function MembershipCheckoutModal({ plans = [], membership, onClose, onAct
   };
 
   const copy = async (value, label) => { await navigator.clipboard.writeText(String(value)); toast(`${label} copiado.`); };
+  const isAdministrator = Boolean(membership?.isLifetime || membership?.status === 'ADMIN');
+  if (isAdministrator) return <div className="modal-backdrop membership-modal-backdrop" onMouseDown={onClose}><section className="membership-checkout glass" role="dialog" aria-modal="true" aria-labelledby="membership-checkout-title" onMouseDown={(event) => event.stopPropagation()}>
+    <button className="icon-button modal-close" onClick={onClose} aria-label="Cerrar"><X /></button>
+    <header><span className="membership-checkout-mark"><Crown /></span><div><p className="eyebrow">PROJECT GALAXY ADMINISTRATION</p><h1 id="membership-checkout-title">Acceso permanente habilitado</h1><p>Tu cuenta administradora tiene acceso completo y no requiere membresía ni pago.</p></div></header>
+    <div className="membership-payment-request"><div className="payment-warning"><ShieldCheck /><p>Las reuniones, sesiones LIVE, chat y pantalla compartida están disponibles para esta cuenta.</p></div><button className="primary-button" onClick={onClose}>Continuar <ArrowRight /></button></div>
+  </section></div>;
   return <div className="modal-backdrop membership-modal-backdrop" onMouseDown={onClose}><section className="membership-checkout glass" role="dialog" aria-modal="true" aria-labelledby="membership-checkout-title" onMouseDown={(event) => event.stopPropagation()}>
     <button className="icon-button modal-close" onClick={onClose} aria-label="Cerrar"><X /></button>
     <header><span className="membership-checkout-mark"><Orbit /></span><div><p className="eyebrow">PROJECT GALAXY MEMBERSHIP</p><h1 id="membership-checkout-title">{order ? 'Completa tu pago' : membership?.isActive ? 'Extiende tu acceso' : 'Activa tu cuenta'}</h1><p>{order ? 'Envía exactamente el importe indicado por la red seleccionada.' : 'Elige la duración que mejor se adapte a tus sesiones.'}</p></div></header>

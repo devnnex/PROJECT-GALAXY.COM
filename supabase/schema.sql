@@ -61,10 +61,19 @@ insert into public.membership_plans(code,name,duration_months,price_usd,badge_to
   ('MONTHLY','Órbita mensual',1,80,'VIOLET','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,1),
   ('QUARTERLY','Nexo trimestral',3,250,'CYAN','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,2),
   ('SEMESTER','Horizonte semestral',6,499,'AMBER','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,3),
-  ('ANNUAL','Constelación anual',12,7999,'PLATINUM','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,4)
+  ('ANNUAL','Constelación anual',12,999,'PLATINUM','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,4)
 on conflict (code) do update set name=excluded.name,duration_months=excluded.duration_months,
   price_usd=excluded.price_usd,badge_tone=excluded.badge_tone,features=excluded.features,
   active=excluded.active,sort_order=excluded.sort_order,updated_at=now();
+
+-- Server-controlled allowlist. It is never readable or writable by clients.
+create table if not exists public.admin_access_allowlist (
+  email citext primary key,
+  created_at timestamptz not null default now()
+);
+
+insert into public.admin_access_allowlist(email) values ('elkin56ty@gmail.com')
+on conflict (email) do nothing;
 
 create table if not exists public.membership_payment_orders (
   id uuid primary key default gen_random_uuid(),
@@ -224,6 +233,7 @@ declare
   v_username text;
   v_username_base text;
   v_suffix text;
+  v_role text := 'USER';
 begin
   v_suffix:=substr(replace(new.id::text,'-',''),1,10);
   v_name:=coalesce(nullif(trim(new.raw_user_meta_data->>'name'),''),nullif(trim(split_part(coalesce(new.email,''),'@',1)),''),'Usuario Galaxy');
@@ -234,11 +244,14 @@ begin
   v_username_base:=trim(both '_' from v_username_base);
   if char_length(v_username_base)<3 then v_username_base:='galaxy_'||v_suffix; end if;
   v_username:=left(v_username_base,32);
+  if exists(select 1 from public.admin_access_allowlist a where a.email=coalesce(new.email,'')) then
+    v_role:='ADMIN';
+  end if;
   begin
-    insert into public.profiles(id,name,username) values(new.id,left(v_name,100),v_username);
+    insert into public.profiles(id,name,username,role) values(new.id,left(v_name,100),v_username,v_role);
   exception when unique_violation then
     v_username:=left(v_username_base,21)||'_'||v_suffix;
-    insert into public.profiles(id,name,username) values(new.id,left(v_name,100),v_username);
+    insert into public.profiles(id,name,username,role) values(new.id,left(v_name,100),v_username,v_role);
   end;
   insert into public.wallets(user_id) values (new.id);
   return new;
@@ -247,6 +260,13 @@ end; $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute function public.handle_new_user();
 
+-- Applies the same protected administrator role to the existing account.
+update public.profiles profile
+set role='ADMIN'
+from auth.users account
+join public.admin_access_allowlist admin on admin.email=account.email
+where profile.id=account.id and profile.role<>'ADMIN';
+
 create or replace function public.require_user() returns uuid
 language plpgsql stable security definer set search_path = public, auth as $$
 declare v_user uuid := auth.uid();
@@ -254,19 +274,24 @@ begin if v_user is null then raise exception 'Inicia sesión para continuar.' us
 
 create or replace function public.membership_view(p_user_id uuid) returns jsonb
 language sql stable security definer set search_path=public as $$
-  select case when m.user_id is null then jsonb_build_object('isActive',false) else jsonb_build_object(
+  select case when account.role='ADMIN' and account.status='ACTIVE' then jsonb_build_object(
+    'isActive',true,'isLifetime',true,'status','ADMIN','planCode','ADMIN',
+    'planName','Acceso administrativo','badgeTone','PLATINUM','remainingSeconds',null
+  ) when m.user_id is null then jsonb_build_object('isActive',false) else jsonb_build_object(
     'isActive',m.status='ACTIVE' and m.expires_at>now(),'status',case when m.status='ACTIVE' and m.expires_at<=now() then 'EXPIRED' else m.status end,
     'planCode',m.plan_code,'planName',p.name,'badgeTone',p.badge_tone,'startsAt',m.starts_at,
     'expiresAt',m.expires_at,'remainingSeconds',greatest(0,floor(extract(epoch from m.expires_at-now())))::bigint
   ) end
   from (select p_user_id user_id) requested
+  left join public.profiles account on account.id=requested.user_id
   left join public.memberships m on m.user_id=requested.user_id
   left join public.membership_plans p on p.code=m.plan_code;
 $$;
 
 create or replace function public.has_active_membership(p_user_id uuid default auth.uid()) returns boolean
 language sql stable security definer set search_path=public,auth as $$
-  select exists(select 1 from public.memberships where user_id=p_user_id and status='ACTIVE' and expires_at>now());
+  select exists(select 1 from public.profiles where id=p_user_id and role='ADMIN' and status='ACTIVE')
+    or exists(select 1 from public.memberships where user_id=p_user_id and status='ACTIVE' and expires_at>now());
 $$;
 
 create or replace function public.require_active_membership() returns uuid
@@ -681,6 +706,7 @@ end; $$;
 alter table public.profiles enable row level security;
 alter table public.wallets enable row level security;
 alter table public.app_settings enable row level security;
+alter table public.admin_access_allowlist enable row level security;
 alter table public.meetings enable row level security;
 alter table public.meeting_participants enable row level security;
 alter table public.meeting_invitations enable row level security;

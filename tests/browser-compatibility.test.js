@@ -6,6 +6,8 @@ const main = read('../src/main.jsx');
 const compatibility = read('../src/browser-compat.css');
 const html = read('../app.html');
 const vite = read('../vite.config.js');
+const root = read('../index.html');
+const redirect = read('../redirect.js');
 
 describe('Cross-browser visual contract', () => {
   it('self-hosts the real product fonts at every used weight', () => {
@@ -33,5 +35,11 @@ describe('Cross-browser visual contract', () => {
   it('ships JavaScript and CSS compatible with Safari 14+', () => {
     expect(vite).toContain("target: ['es2020', 'safari14']");
     expect(vite).toContain("cssTarget: 'safari14'");
+  });
+
+  it('keeps the root entry usable through Live Server', () => {
+    expect(vite).toContain("base: command === 'build' ? './' : '/'");
+    expect(root).toContain('./redirect.js');
+    expect(redirect).toContain("new URL('./dist/index.html', window.location.href)");
   });
 });

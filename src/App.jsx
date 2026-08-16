@@ -146,7 +146,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
   useEffect(() => { reloadMembership().catch(() => {}); const timer = setInterval(() => setMembershipClock(Date.now()), 30_000); return () => clearInterval(timer); }, [user.id]);
   const membership = membershipCenter.membership || user.membership || { isActive: false };
-  const membershipActive = Boolean(membership.isActive && membership.expiresAt && new Date(membership.expiresAt).getTime() > membershipClock);
+  const membershipActive = Boolean(membership.isActive && (membership.isLifetime || membership.status === 'ADMIN' || (membership.expiresAt && new Date(membership.expiresAt).getTime() > membershipClock)));
   const openMembership = () => { setSelectedProduct(products.find((product) => product.kind === 'membership')); navigate('marketplace'); };
   const membershipActivated = async (confirmed) => {
     setActivatedMembership(confirmed); setSelectedProduct(null);

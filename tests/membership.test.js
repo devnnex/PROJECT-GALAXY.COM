@@ -14,7 +14,7 @@ describe('verified Galaxy memberships', () => {
     expect(schema).toContain("('MONTHLY','Órbita mensual',1,80");
     expect(schema).toContain("('QUARTERLY','Nexo trimestral',3,250");
     expect(schema).toContain("('SEMESTER','Horizonte semestral',6,499");
-    expect(schema).toContain("('ANNUAL','Constelación anual',12,7999");
+    expect(schema).toContain("('ANNUAL','Constelación anual',12,999");
   });
 
   it('enforces membership in PostgreSQL and realtime, not only React', () => {
@@ -25,6 +25,15 @@ describe('verified Galaxy memberships', () => {
     expect(schema).toContain('alter table public.memberships enable row level security');
     expect(app).toContain('membershipActive ? <MeetingStudio');
     expect(app).toContain('membershipActive ? <LivePage');
+  });
+
+  it('gives the protected administrator permanent server-side access without payment', () => {
+    expect(schema).toContain("insert into public.admin_access_allowlist(email) values ('elkin56ty@gmail.com')");
+    expect(schema).toContain("role='ADMIN' and status='ACTIVE'");
+    expect(schema).toContain("'isLifetime',true,'status','ADMIN'");
+    expect(app).toContain("membership.isLifetime || membership.status === 'ADMIN'");
+    expect(experience).toContain('Acceso permanente habilitado');
+    expect(paymentFunction).toContain('Administrator accounts already have permanent access.');
   });
 
   it('activates only a complete, correctly matched final provider payment', () => {

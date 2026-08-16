@@ -84,6 +84,9 @@ Deno.serve(async (request) => {
     }
 
     if (input?.action !== 'create') return json(request, { error: 'Unsupported payment action.' }, 400);
+    const { data: profile, error: profileError } = await admin.from('profiles').select('role,status').eq('id', authData.user.id).single();
+    if (profileError || !profile) return json(request, { error: 'Account profile not found.' }, 404);
+    if (profile.status === 'ACTIVE' && profile.role === 'ADMIN') return json(request, { error: 'Administrator accounts already have permanent access.' }, 403);
     const planCode = String(input.planCode || '').toUpperCase();
     const network = String(input.network || '').toUpperCase() as keyof typeof NETWORKS;
     if (!NETWORKS[network]) return json(request, { error: 'Select TRC20 or ERC20.' }, 400);

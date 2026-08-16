@@ -32,9 +32,9 @@ Los planes configurados son:
 - `MONTHLY`: USD 80 por 1 mes.
 - `QUARTERLY`: USD 250 por 3 meses.
 - `SEMESTER`: USD 499 por 6 meses.
-- `ANNUAL`: USD 7.999 por 12 meses.
+- `ANNUAL`: USD 999 por 12 meses.
 
-El precio anual reproduce literalmente el importe solicitado. Confírmalo antes de aceptar pagos reales, porque es considerablemente mayor que los demás planes.
+El precio anual reproduce el importe solicitado. Confírmalo antes de aceptar pagos reales.
 
 La integración usa NOWPayments para generar una dirección única por orden en `USDTTRC20` o `USDTERC20`. La aplicación nunca contiene la API key, el secreto IPN, una clave `service_role` ni la dirección privada de liquidación. Configura en NOWPayments las wallets de retiro correspondientes, crea una API key y genera un **IPN Secret**; este último se muestra completamente solo al crearlo.
 
