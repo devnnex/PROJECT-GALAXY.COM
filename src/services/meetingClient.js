@@ -49,7 +49,7 @@ export class MeetingConnection {
 
   async createPeer(peerId, initiator) {
     if (this.peers.has(peerId)) return this.peers.get(peerId).pc;
-    const pc = new RTCPeerConnection({ iceServers: this.iceServers }); const remoteStream = new MediaStream();
+    const pc = new RTCPeerConnection({ iceServers: this.iceServers, iceCandidatePoolSize: 10, bundlePolicy: 'max-bundle' }); const remoteStream = new MediaStream();
     if (initiator) {
       const audio = pc.addTransceiver('audio', { direction: 'sendrecv' }); const video = pc.addTransceiver('video', { direction: 'sendrecv' });
       await audio.sender.replaceTrack(this.localStream.getAudioTracks()[0] || null); await video.sender.replaceTrack(this.localStream.getVideoTracks()[0] || null);
@@ -85,6 +85,11 @@ export class MeetingConnection {
       await audioSender?.replaceTrack(this.localStream.getAudioTracks()[0] || null); await videoSender?.replaceTrack(this.localStream.getVideoTracks()[0] || null);
     }
   }
+  updateIceServers(iceServers) {
+    if (!iceServers?.length) return;
+    this.iceServers = iceServers;
+    for (const { pc } of this.peers.values()) pc.setConfiguration({ ...pc.getConfiguration(), iceServers });
+  }
   setPresence(data) { this.presence = { ...this.presence, ...data }; this.sendPresence(); }
   sendPresence() { this.send({ type: 'presence', data: this.presence || {} }); }
   react(emoji) { this.send({ type: 'reaction', emoji }); }
@@ -105,6 +110,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     this.endValidation = null;
     this.connectVersion = 0;
     this.pendingRemovals = new Map();
+    this.iceRefreshTimer = null;
   }
 
   async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT', user }) {
@@ -229,6 +235,15 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
 
   async broadcast(event, payload) { if (this.active && this.channel) await this.channel.send({ type: 'broadcast', event, payload }); }
+  scheduleIceRefresh(expiresIn = 43_200) {
+    clearTimeout(this.iceRefreshTimer);
+    const delay = Math.max(15 * 60_000, (Number(expiresIn) - 600) * 1000);
+    this.iceRefreshTimer = setTimeout(async () => {
+      if (!this.active) return;
+      try { const relay = await api.getTurnCredentials(this.roomId); this.updateIceServers(relay.iceServers); this.scheduleIceRefresh(relay.expiresIn); }
+      catch { this.scheduleIceRefresh(1_500); }
+    }, delay);
+  }
   setPresence(data) {
     this.presence = { ...this.presence, ...data };
     this.identity = { ...this.identity, ...this.presence };
@@ -258,7 +273,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
   endMeeting() { if (this.role === 'HOST') return this.broadcast('meeting-ended', { by: this.identity.name }); return undefined; }
   disconnect() {
-    this.active = false; this.connectVersion += 1; this.pendingRemovals.forEach((timer) => clearTimeout(timer)); this.pendingRemovals.clear(); this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
+    this.active = false; this.connectVersion += 1; clearTimeout(this.iceRefreshTimer); this.iceRefreshTimer = null; this.pendingRemovals.forEach((timer) => clearTimeout(timer)); this.pendingRemovals.clear(); this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
     if (this.channel) { this.channel.untrack(); supabase.removeChannel(this.channel); } this.channel = null; this.callbacks.onStatus?.('disconnected');
   }
 }

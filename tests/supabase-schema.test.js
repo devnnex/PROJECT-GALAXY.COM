@@ -85,7 +85,8 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toMatch(/const created = await api\.createMeeting\(form\);[\s\S]*await connectAccess\(created\)/);
     expect(meetingStudio).not.toMatch(/const created = await api\.createMeeting\(form\);[\s\S]{0,180}enterMeeting/);
     expect(meetingClient).toContain('ack: false');
-    expect(meetingStudio).toContain('iceServers: normalized.iceServers, user });');
+    expect(meetingStudio).toContain('const relay = await api.getTurnCredentials(normalized.meetingId)');
+    expect(meetingStudio).toContain('iceServers, user });');
     expect(meetingStudio).toContain("(access.participantStatus || access.status) === 'ADMITTED'");
     expect(supabaseClient).toContain('MissingPartition');
     expect(supabaseClient).toContain('subscribeRealtimeChannel');

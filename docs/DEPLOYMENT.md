@@ -12,20 +12,22 @@ Después de esta actualización vuelve a ejecutar `supabase/schema.sql`: la vers
 
 El mismo script habilita las notificaciones accionables de reuniones. Una solicitud de sala de espera abre al anfitrión el modal **Aceptar ingreso / Rechazar**; una invitación abre al destinatario **Aceptar y entrar / Declinar**. La tabla `notifications` se agrega a `supabase_realtime` y el cliente mantiene sondeo de respaldo si el WebSocket se interrumpe.
 
-Para cambiar ICE, actualiza únicamente el valor JSON de `ice_servers`:
+La función `turn-credentials` solicita credenciales efímeras a Cloudflare TURN solo después de validar que la cuenta esté activa y admitida en la reunión. Crea una TURN key en Cloudflare Realtime. Puedes guardar sus datos como secretos de Edge Functions:
 
-```sql
-update public.app_settings
-set value = '[{"urls":"stun:stun.l.google.com:19302"}]'::jsonb,
-    updated_at = now()
-where key = 'ice_servers';
+```powershell
+supabase secrets set CLOUDFLARE_TURN_KEY_ID="TU_TURN_KEY_ID"
+supabase secrets set CLOUDFLARE_TURN_API_TOKEN="TU_TURN_KEY_API_TOKEN"
+supabase secrets set TURN_CREDENTIAL_TTL_SECONDS="43200"
+supabase functions deploy turn-credentials
 ```
 
-Las credenciales TURN estáticas quedan expuestas a cualquier miembro admitido. En producción emite credenciales efímeras desde una Supabase Edge Function o desde el proveedor TURN.
+Alternativamente, ejecuta `supabase/private-secrets.sql` una sola vez en el SQL Editor. Ese archivo usa Supabase Vault, queda ignorado por Git y la función consulta los valores cifrados únicamente mediante `service_role`. Después de ejecutarlo, elimínalo de tu equipo o conserva una copia en un gestor de contraseñas.
 
-## Membresías y pagos USDT
+No guardes credenciales TURN permanentes en `runtime-config.js`. Mientras esos dos secretos no existan, la interfaz indicará **WebRTC sin relay** y las redes móviles o NAT estrictas podrán seguir fallando.
 
-El acceso premium protege **Reuniones** y **En vivo** tanto en React como en PostgreSQL y Realtime. Ejecuta nuevamente `supabase/schema.sql` antes de publicar el frontend: todos los usuarios sin una membresía activa perderán acceso a esas dos secciones, tal como exige el producto.
+## Acceso abierto y pagos USDT manuales
+
+**Reuniones** y **En vivo** están disponibles para cualquier cuenta registrada con estado `ACTIVE`. El acceso se abre tanto en React como en PostgreSQL y Realtime; ejecutar nuevamente `supabase/schema.sql` es obligatorio para aplicar el modo comunidad abierta. Los usuarios suspendidos o eliminados continúan bloqueados.
 
 Los planes configurados son:
 
@@ -34,31 +36,22 @@ Los planes configurados son:
 - `SEMESTER`: USD 499 por 6 meses.
 - `ANNUAL`: USD 999 por 12 meses.
 
-El precio anual reproduce el importe solicitado. Confírmalo antes de aceptar pagos reales.
+El precio anual reproduce el importe solicitado. Los planes se muestran como apoyo opcional y no bloquean funciones de la plataforma.
 
-La integración usa NOWPayments para generar una dirección única por orden en `USDTTRC20` o `USDTERC20`. La aplicación nunca contiene la API key, el secreto IPN, una clave `service_role` ni la dirección privada de liquidación. Configura en NOWPayments las wallets de retiro correspondientes, crea una API key y genera un **IPN Secret**; este último se muestra completamente solo al crearlo.
+La integración envía USDT directamente a las wallets del propietario:
 
-Con Supabase CLI instalado y autenticado:
+- TRC20: `TMuo1PDArFyXDyrdXUhRHt8qtKy94CmLsM`
+- ERC20: `0xbf9402215a700b339c8922d573697d3500abaf33`
 
-```powershell
-supabase login
-supabase link --project-ref xdsqtuubsptpzwadecha
-supabase secrets set NOWPAYMENTS_API_KEY="TU_API_KEY"
-supabase secrets set NOWPAYMENTS_IPN_SECRET="TU_IPN_SECRET"
-supabase secrets set APP_ALLOWED_ORIGINS="https://devnnex.github.io,http://localhost:5173"
-supabase functions deploy membership-payments
-supabase functions deploy nowpayments-webhook --no-verify-jwt
-```
+No se crea una orden ni se consulta la blockchain. Al elegir una red, la interfaz muestra el QR, dirección e importe y solicita enviar el comprobante y hash al administrador. `crypto-payments` no se despliega ni es invocada por el cliente; una integración verificable podrá añadirse posteriormente como un cambio independiente.
 
-Supabase proporciona automáticamente a las funciones `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY`; no las copies al repositorio. El endpoint IPN usado al crear cada pago será:
+## Scanner Power Elite
 
-```text
-https://xdsqtuubsptpzwadecha.supabase.co/functions/v1/nowpayments-webhook
-```
+El SQL crea el bucket privado `premium-downloads`, el producto y la auditoría de descargas. El Scanner se oculta del catálogo para todas las cuentas excepto `elkin56ty@gmail.com`; `scanner-download` repite esa validación en el servidor. El archivo fuente está ignorado por Git para que GitHub Pages nunca lo publique.
 
-La función pública del webhook no acepta activaciones anónimas: exige `x-nowpayments-sig`, verifica HMAC SHA-512 con el secreto IPN y después valida ID de proveedor, UUID de orden, red, moneda, importe completo, ausencia de `parent_payment_id` y estado final `finished`. El cliente también consulta el estado como recuperación si una notificación IPN se retrasa.
+Después de ejecutar el SQL, abre **Storage → premium-downloads** y sube el archivo local `SCANNER-POWER-ELITE.pine` con ese nombre exacto. Confirma que el bucket continúe como **Private**. Despliega `scanner-download`; la función valida el correo propietario y emite una URL firmada por 60 segundos.
 
-Antes de producción realiza el flujo completo con una cuenta de prueba de NOWPayments. No cambies una orden manualmente a `FINISHED` ni concedas escritura de las tablas de membresía al rol `authenticated`. Para una prueba administrativa controlada, crea una orden de prueba a través de la pasarela y permite que el webhook ejecute la activación idempotente.
+El checkout manual no debe presentar un pago como confirmado automáticamente. La entrega de cualquier producto distinto del Scanner queda bajo gestión administrativa hasta integrar nuevamente un procesador verificable.
 
 ## GitHub Pages de producción
 

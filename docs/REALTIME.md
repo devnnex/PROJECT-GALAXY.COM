@@ -14,8 +14,8 @@ El chat existe solamente mientras la reunión está activa. `end_meeting` cambia
 
 La creación del anfitrión utiliza una sola RPC: `create_meeting` devuelve también rol, admisión, ICE y mensajes iniciales. Cámara y micrófono pueden solicitar permiso tan pronto la RPC confirma la sala, mientras la señalización termina de conectarse en segundo plano.
 
-## TURN no viene incluido
+## TURN efímero para redes móviles y NAT restrictivo
 
-Supabase Realtime es señalización, no un relay multimedia TURN. STUN permite descubrir rutas directas, pero ciertos NAT, firewalls corporativos y redes móviles exigen TURN. Alternativas con capa gratuita o bajo costo cambian con el tiempo; evalúa un servicio administrado con credenciales efímeras o despliega coturn en una VM. Nunca guardes una contraseña TURN permanente en `runtime-config.js`.
+Supabase Realtime es señalización, no un relay multimedia TURN. El cliente invoca `turn-credentials`, que valida la cuenta, la reunión y la admisión antes de obtener credenciales temporales de Cloudflare TURN. Las credenciales largas permanecen en Supabase Vault y el navegador recibe únicamente las efímeras. Si la función no está desplegada, la sala muestra **WebRTC sin relay**.
 
 Para más de 4–8 participantes, un mesh P2P multiplica carga de subida y CPU. Usa un SFU especializado para acercarte al comportamiento de Zoom en salas grandes.

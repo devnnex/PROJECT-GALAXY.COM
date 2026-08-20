@@ -1,5 +1,5 @@
-[functions.membership-payments]
+[functions.turn-credentials]
 verify_jwt = true
 
-[functions.nowpayments-webhook]
-verify_jwt = false
+[functions.scanner-download]
+verify_jwt = true

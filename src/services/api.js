@@ -63,9 +63,10 @@ async function currentUser() {
   return rpc('get_current_user');
 }
 
-async function membershipPayment(payload) {
-  const { data, error } = await supabase.functions.invoke('membership-payments', { body: payload });
-  if (error || data?.error) throw new Error('No fue posible conectar con la pasarela segura de pagos. Intenta nuevamente.');
+async function invokeSecure(name, payload, fallback) {
+  const { data, error } = await supabase.functions.invoke(name, { body: payload });
+  if (data?.error) throw new Error(data.error);
+  if (error) throw new Error(fallback);
   return data;
 }
 
@@ -94,9 +95,13 @@ export const api = {
   bootstrap: (modules = ['user']) => rpc('get_bootstrap_data', { modules }),
   me: currentUser,
   updateProfile: (payload) => rpc('update_profile', payload),
-  getMembershipCenter: () => rpc('get_membership_center'),
-  createMembershipPayment: ({ planCode, network }) => membershipPayment({ action: 'create', planCode, network }),
-  refreshMembershipPayment: (orderId) => membershipPayment({ action: 'refresh', orderId }),
+  async getMembershipCenter() {
+    const [membership, commerce] = await Promise.all([rpc('get_membership_center'), rpc('get_crypto_store')]);
+    return { ...membership, products: commerce?.products || [], orders: [...(commerce?.orders || []), ...(membership?.orders || [])]
+      .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt)) };
+  },
+  getTurnCredentials: (meetingId) => invokeSecure('turn-credentials', { meetingId }, 'El relay TURN no está disponible.'),
+  getScannerDownload: () => invokeSecure('scanner-download', {}, 'No fue posible preparar la descarga privada.'),
   createMeeting: (payload) => rpc('create_meeting', payload),
   joinMeeting: (payload) => rpc('join_meeting', payload),
   getMyMeetings: () => rpc('get_my_meetings'),

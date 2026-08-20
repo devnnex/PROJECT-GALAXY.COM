@@ -10,7 +10,7 @@ export const CONFIG = Object.freeze({
   MAX_UPLOAD_SIZE_MB: 25,
   COMMISSION_RATE: null,
   CRYPTO_NETWORKS: {
-    TRC20: { enabled: false, label: 'TRON · TRC20' },
-    ERC20: { enabled: false, label: 'Ethereum · ERC20' },
+    TRC20: { enabled: true, label: 'TRON · TRC20' },
+    ERC20: { enabled: true, label: 'Ethereum · ERC20' },
   },
 });

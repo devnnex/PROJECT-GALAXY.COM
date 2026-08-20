@@ -7,6 +7,7 @@ begin;
 
 create extension if not exists pgcrypto;
 create extension if not exists citext;
+create extension if not exists supabase_vault with schema vault;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -105,6 +106,76 @@ create table if not exists public.memberships (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Direct, on-chain USDT commerce. The browser can read only its own orders;
+-- creation and confirmation are reserved for the crypto-payments Edge Function.
+create table if not exists public.digital_products (
+  code text primary key check (code ~ '^[A-Z0-9_]{3,64}$'),
+  name text not null,
+  description text not null default '',
+  price_usd numeric(12,2) not null check (price_usd > 0),
+  storage_bucket text not null,
+  storage_path text not null,
+  active boolean not null default true,
+  sort_order integer not null default 100,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+insert into public.digital_products(code,name,description,price_usd,storage_bucket,storage_path,sort_order) values
+  ('SCANNER_POWER_ELITE','Scanner Power Elite','Indicador privado para TradingView entregado como archivo Pine Script.',1000,'premium-downloads','SCANNER-POWER-ELITE.pine',1)
+on conflict (code) do update set name=excluded.name,description=excluded.description,price_usd=excluded.price_usd,
+  storage_bucket=excluded.storage_bucket,storage_path=excluded.storage_path,active=true,sort_order=excluded.sort_order,updated_at=now();
+
+create table if not exists public.crypto_payment_orders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  item_type text not null check (item_type in ('MEMBERSHIP','PRODUCT')),
+  plan_code text references public.membership_plans(code) on delete restrict,
+  product_code text references public.digital_products(code) on delete restrict,
+  network text not null check (network in ('TRC20','ERC20')),
+  destination_address text not null,
+  price_usd numeric(12,2) not null check (price_usd > 0),
+  expected_amount numeric(20,6) not null check (expected_amount > 0),
+  tx_hash text,
+  status text not null default 'AWAITING_PAYMENT' check (status in ('AWAITING_PAYMENT','VERIFYING','CONFIRMED','FAILED','EXPIRED')),
+  confirmations integer not null default 0 check (confirmations >= 0),
+  verified_amount numeric(20,6),
+  chain_payload jsonb not null default '{}'::jsonb,
+  expires_at timestamptz not null default (now() + interval '45 minutes'),
+  confirmed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check ((item_type='MEMBERSHIP' and plan_code is not null and product_code is null)
+    or (item_type='PRODUCT' and product_code is not null and plan_code is null))
+);
+
+create unique index if not exists crypto_payment_tx_unique on public.crypto_payment_orders(network,lower(tx_hash)) where tx_hash is not null;
+create unique index if not exists crypto_payment_open_amount_unique on public.crypto_payment_orders(network,destination_address,expected_amount)
+  where status in ('AWAITING_PAYMENT','VERIFYING');
+create index if not exists crypto_payment_user_created_idx on public.crypto_payment_orders(user_id,created_at desc);
+
+create table if not exists public.product_entitlements (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  product_code text not null references public.digital_products(code) on delete restrict,
+  source_order_id uuid not null references public.crypto_payment_orders(id) on delete restrict,
+  granted_at timestamptz not null default now(),
+  revoked_at timestamptz,
+  primary key(user_id,product_code)
+);
+
+create table if not exists public.product_download_audit (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  product_code text not null references public.digital_products(code) on delete restrict,
+  created_at timestamptz not null default now()
+);
+
+alter table public.memberships add column if not exists source_crypto_order_id uuid references public.crypto_payment_orders(id) on delete set null;
+
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
+values('premium-downloads','premium-downloads',false,1048576,array['text/plain','application/octet-stream'])
+on conflict(id) do update set public=false,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
 
 create table if not exists public.meetings (
   id uuid primary key default gen_random_uuid(),
@@ -225,6 +296,10 @@ drop trigger if exists membership_orders_touch_updated_at on public.membership_p
 create trigger membership_orders_touch_updated_at before update on public.membership_payment_orders for each row execute function public.touch_updated_at();
 drop trigger if exists memberships_touch_updated_at on public.memberships;
 create trigger memberships_touch_updated_at before update on public.memberships for each row execute function public.touch_updated_at();
+drop trigger if exists digital_products_touch_updated_at on public.digital_products;
+create trigger digital_products_touch_updated_at before update on public.digital_products for each row execute function public.touch_updated_at();
+drop trigger if exists crypto_payment_orders_touch_updated_at on public.crypto_payment_orders;
+create trigger crypto_payment_orders_touch_updated_at before update on public.crypto_payment_orders for each row execute function public.touch_updated_at();
 
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = '' as $$
@@ -272,6 +347,22 @@ language plpgsql stable security definer set search_path = public, auth as $$
 declare v_user uuid := auth.uid();
 begin if v_user is null then raise exception 'Inicia sesión para continuar.' using errcode = 'P0001'; end if; return v_user; end; $$;
 
+-- Server-only bridge between encrypted Supabase Vault values and the TURN Edge
+-- Function. Execution is granted exclusively to service_role at the end.
+create or replace function public.get_turn_provider_config() returns jsonb
+language sql stable security definer set search_path=public,vault as $$
+  select jsonb_build_object(
+    'keyId',max(decrypted_secret) filter(where name='cloudflare_turn_key_id'),
+    'apiToken',max(decrypted_secret) filter(where name='cloudflare_turn_api_token'),
+    'ttlSeconds',coalesce(
+      nullif(max(decrypted_secret) filter(where name='turn_credential_ttl_seconds'),'')::integer,
+      43200
+    )
+  )
+  from vault.decrypted_secrets
+  where name in ('cloudflare_turn_key_id','cloudflare_turn_api_token','turn_credential_ttl_seconds');
+$$;
+
 create or replace function public.membership_view(p_user_id uuid) returns jsonb
 language sql stable security definer set search_path=public as $$
   select case when account.role='ADMIN' and account.status='ACTIVE' then jsonb_build_object(
@@ -290,8 +381,9 @@ $$;
 
 create or replace function public.has_active_membership(p_user_id uuid default auth.uid()) returns boolean
 language sql stable security definer set search_path=public,auth as $$
-  select exists(select 1 from public.profiles where id=p_user_id and role='ADMIN' and status='ACTIVE')
-    or exists(select 1 from public.memberships where user_id=p_user_id and status='ACTIVE' and expires_at>now());
+  -- Temporary community-open mode: every registered, active account can use
+  -- meetings and LIVE. The legacy function name is retained for RPC compatibility.
+  select exists(select 1 from public.profiles where id=p_user_id and status='ACTIVE');
 $$;
 
 create or replace function public.require_active_membership() returns uuid
@@ -299,7 +391,7 @@ language plpgsql stable security definer set search_path=public,auth as $$
 declare v_user uuid:=public.require_user();
 begin
   if not public.has_active_membership(v_user) then
-    raise exception 'Necesitas una membresía activa para acceder a reuniones y sesiones LIVE.' using errcode='P0001';
+    raise exception 'Tu cuenta debe estar activa para acceder a reuniones y sesiones LIVE.' using errcode='P0001';
   end if;
   return v_user;
 end; $$;
@@ -363,6 +455,76 @@ begin
       actually_paid=greatest(actually_paid,coalesce(p_actually_paid,0)),provider_payload=coalesce(p_payload,'{}'::jsonb) where id=v_order.id;
   end if;
   return public.membership_view(v_order.user_id);
+end; $$;
+
+create or replace function public.get_crypto_store() returns jsonb
+language sql stable security definer set search_path=public,auth as $$
+  with me as (select public.require_user() id)
+  select jsonb_build_object(
+    'products',coalesce((select jsonb_agg(jsonb_build_object(
+      'code',p.code,'name',p.name,'description',p.description,'priceUsd',p.price_usd,
+      'owned',exists(select 1 from public.product_entitlements e where e.user_id=me.id and e.product_code=p.code and e.revoked_at is null)
+    ) order by p.sort_order) from public.digital_products p
+      where p.active and exists(select 1 from public.profiles viewer where viewer.id=me.id and viewer.role='ADMIN' and viewer.status='ACTIVE')),'[]'::jsonb),
+    'orders',coalesce((select jsonb_agg(jsonb_build_object(
+      'id',o.id,'itemType',o.item_type,'itemCode',coalesce(o.plan_code,o.product_code),'network',o.network,
+      'priceUsd',o.price_usd,'payAmount',o.expected_amount,'payCurrency','USDT','payAddress',o.destination_address,
+      'txHash',o.tx_hash,'status',o.status,'confirmations',o.confirmations,'expiresAt',o.expires_at,
+      'confirmedAt',o.confirmed_at,'createdAt',o.created_at
+    ) order by o.created_at desc) from (select * from public.crypto_payment_orders where user_id=me.id order by created_at desc limit 30) o),'[]'::jsonb)
+  ) from me;
+$$;
+
+create or replace function public.confirm_crypto_payment(
+  p_order_id uuid,p_tx_hash text,p_confirmations integer,p_verified_amount numeric,p_payload jsonb default '{}'::jsonb
+) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare
+  v_order public.crypto_payment_orders; v_plan public.membership_plans; v_existing public.memberships;
+  v_start timestamptz; v_expires timestamptz;
+begin
+  if coalesce(auth.role(),'')<>'service_role' then raise exception 'Operación reservada al verificador blockchain.' using errcode='42501'; end if;
+  select * into v_order from public.crypto_payment_orders where id=p_order_id for update;
+  if v_order.id is null then raise exception 'La orden no existe.' using errcode='P0001'; end if;
+  if v_order.status='CONFIRMED' then
+    return jsonb_build_object('orderId',v_order.id,'status','CONFIRMED','membership',public.membership_view(v_order.user_id),
+      'productCode',v_order.product_code,'downloadReady',v_order.product_code is not null);
+  end if;
+  if v_order.expires_at<now() then
+    update public.crypto_payment_orders set status='EXPIRED',chain_payload=coalesce(p_payload,'{}'::jsonb) where id=v_order.id;
+    raise exception 'La orden expiró; crea una nueva antes de pagar.' using errcode='P0001';
+  end if;
+  if coalesce(p_verified_amount,0)<>v_order.expected_amount then raise exception 'El importe recibido no coincide exactamente con la orden.' using errcode='P0001'; end if;
+  if nullif(trim(coalesce(p_tx_hash,'')),'') is null then raise exception 'Falta el hash de la transacción.' using errcode='P0001'; end if;
+
+  update public.crypto_payment_orders set tx_hash=lower(trim(p_tx_hash)),status='CONFIRMED',confirmations=greatest(0,coalesce(p_confirmations,0)),
+    verified_amount=p_verified_amount,confirmed_at=now(),chain_payload=coalesce(p_payload,'{}'::jsonb) where id=v_order.id;
+
+  if v_order.item_type='MEMBERSHIP' then
+    select * into v_plan from public.membership_plans where code=v_order.plan_code and active;
+    if v_plan.code is null then raise exception 'El plan ya no está disponible.' using errcode='P0001'; end if;
+    select * into v_existing from public.memberships where user_id=v_order.user_id for update;
+    v_start:=case when v_existing.status='ACTIVE' and v_existing.expires_at>now() then v_existing.expires_at else now() end;
+    v_expires:=v_start+make_interval(months=>v_plan.duration_months);
+    insert into public.memberships(user_id,plan_code,status,starts_at,expires_at,source_crypto_order_id)
+    values(v_order.user_id,v_plan.code,'ACTIVE',case when v_existing.user_id is null or v_existing.expires_at<=now() then now() else v_existing.starts_at end,v_expires,v_order.id)
+    on conflict(user_id) do update set plan_code=excluded.plan_code,status='ACTIVE',
+      starts_at=case when public.memberships.expires_at>now() then public.memberships.starts_at else now() end,
+      expires_at=excluded.expires_at,source_crypto_order_id=excluded.source_crypto_order_id;
+    insert into public.notifications(user_id,type,title,body,resource_type,resource_id)
+    values(v_order.user_id,'MEMBERSHIP_ACTIVATED','Tu membresía está activa',v_plan.name||' · acceso hasta '||to_char(v_expires,'YYYY-MM-DD'),'CryptoPayment',v_order.id);
+  else
+    insert into public.product_entitlements(user_id,product_code,source_order_id)
+    values(v_order.user_id,v_order.product_code,v_order.id)
+    on conflict(user_id,product_code) do update set source_order_id=excluded.source_order_id,granted_at=now(),revoked_at=null;
+    insert into public.notifications(user_id,type,title,body,resource_type,resource_id)
+    values(v_order.user_id,'PRODUCT_ACTIVATED','Tu Scanner está listo','La descarga privada de Scanner Power Elite fue habilitada.','CryptoPayment',v_order.id);
+  end if;
+  update public.wallets set total_spent=total_spent+v_order.price_usd where user_id=v_order.user_id;
+  return jsonb_build_object('orderId',v_order.id,'status','CONFIRMED','membership',public.membership_view(v_order.user_id),
+    'productCode',v_order.product_code,'downloadReady',v_order.product_code is not null);
+exception when unique_violation then
+  raise exception 'Esta transacción ya fue utilizada en otra orden.' using errcode='P0001';
 end; $$;
 
 create or replace function public.is_admitted_to_meeting(p_meeting_id uuid) returns boolean
@@ -573,7 +735,7 @@ declare v_user uuid:=public.require_active_membership(); v_participant public.me
 begin
   if p_status not in ('ADMITTED','DENIED') then raise exception 'Estado de admisión inválido.' using errcode='P0001'; end if;
   if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=v_user and status='ACTIVE') then raise exception 'Solo el anfitrión puede realizar esta acción.' using errcode='P0001'; end if;
-  if p_status='ADMITTED' and not exists(select 1 from public.meeting_participants where id=p_participant_id and meeting_id=p_meeting_id and public.has_active_membership(user_id)) then raise exception 'La membresía de ese participante no está activa.' using errcode='P0001'; end if;
+  if p_status='ADMITTED' and not exists(select 1 from public.meeting_participants where id=p_participant_id and meeting_id=p_meeting_id and public.has_active_membership(user_id)) then raise exception 'La cuenta de ese participante no está activa.' using errcode='P0001'; end if;
   update public.meeting_participants set status=p_status,joined_at=case when p_status='ADMITTED' then now() else joined_at end,left_at=case when p_status='DENIED' then now() else null end where id=p_participant_id and meeting_id=p_meeting_id returning * into v_participant;
   if v_participant.id is null then raise exception 'No encontramos a ese participante.' using errcode='P0001'; end if;
   update public.notifications set read_at=coalesce(read_at,now()) where user_id=v_user and actor_id=v_participant.user_id
@@ -614,7 +776,7 @@ declare v_host uuid:=public.require_active_membership(); v_profile public.profil
 begin
   if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=v_host and status='ACTIVE') then raise exception 'Solo el anfitrión puede invitar.' using errcode='P0001'; end if;
   select * into v_profile from public.profiles where id=p_user_id and status='ACTIVE'; if v_profile.id is null or p_user_id=v_host then raise exception 'No encontramos a ese usuario activo.' using errcode='P0001'; end if;
-  if not public.has_active_membership(p_user_id) then raise exception 'Ese usuario necesita una membresía activa para recibir invitaciones.' using errcode='P0001'; end if;
+  if not public.has_active_membership(p_user_id) then raise exception 'Ese usuario necesita una cuenta activa para recibir invitaciones.' using errcode='P0001'; end if;
   if exists(select 1 from public.meeting_participants where meeting_id=p_meeting_id and user_id=p_user_id and status='ADMITTED') then
     raise exception 'Ese usuario ya se encuentra dentro de la reunión.' using errcode='P0001';
   end if;
@@ -717,6 +879,10 @@ alter table public.meeting_commands enable row level security;
 alter table public.membership_plans enable row level security;
 alter table public.membership_payment_orders enable row level security;
 alter table public.memberships enable row level security;
+alter table public.digital_products enable row level security;
+alter table public.crypto_payment_orders enable row level security;
+alter table public.product_entitlements enable row level security;
+alter table public.product_download_audit enable row level security;
 
 drop policy if exists profiles_authenticated_read on public.profiles;
 create policy profiles_authenticated_read on public.profiles for select to authenticated using (status='ACTIVE');
@@ -738,6 +904,14 @@ drop policy if exists membership_orders_owner_read on public.membership_payment_
 create policy membership_orders_owner_read on public.membership_payment_orders for select to authenticated using (user_id=auth.uid());
 drop policy if exists memberships_owner_read on public.memberships;
 create policy memberships_owner_read on public.memberships for select to authenticated using (user_id=auth.uid());
+drop policy if exists digital_products_authenticated_read on public.digital_products;
+create policy digital_products_authenticated_read on public.digital_products for select to authenticated using (
+  active and exists(select 1 from public.profiles viewer where viewer.id=auth.uid() and viewer.role='ADMIN' and viewer.status='ACTIVE')
+);
+drop policy if exists crypto_orders_owner_read on public.crypto_payment_orders;
+create policy crypto_orders_owner_read on public.crypto_payment_orders for select to authenticated using (user_id=auth.uid());
+drop policy if exists product_entitlements_owner_read on public.product_entitlements;
+create policy product_entitlements_owner_read on public.product_entitlements for select to authenticated using (user_id=auth.uid() and revoked_at is null);
 
 -- Autoriza canales privados Realtime solo a miembros admitidos de meeting:<uuid>.
 drop policy if exists galaxy_meeting_realtime_read on realtime.messages;
@@ -760,11 +934,13 @@ revoke all on all tables in schema public from anon;
 revoke usage on schema public from anon;
 alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke execute on functions from public, anon;
-revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.membership_view(uuid),public.has_active_membership(uuid),public.require_active_membership(),public.get_membership_center(),public.activate_membership_from_payment(uuid,text,text,numeric,jsonb),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon, authenticated;
+revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.get_turn_provider_config(),public.membership_view(uuid),public.has_active_membership(uuid),public.require_active_membership(),public.get_membership_center(),public.get_crypto_store(),public.activate_membership_from_payment(uuid,text,text,numeric,jsonb),public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon, authenticated;
 grant usage on schema public to authenticated;
-grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications,public.membership_plans,public.membership_payment_orders,public.memberships to authenticated;
-grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.get_membership_center(),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
+grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications,public.membership_plans,public.membership_payment_orders,public.memberships,public.digital_products,public.crypto_payment_orders,public.product_entitlements to authenticated;
+grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.get_membership_center(),public.get_crypto_store(),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.get_community_members(text),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
 grant execute on function public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text) to authenticated;
 grant execute on function public.activate_membership_from_payment(uuid,text,text,numeric,jsonb) to service_role;
+grant execute on function public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb) to service_role;
+grant execute on function public.get_turn_provider_config() to service_role;
 
 commit;

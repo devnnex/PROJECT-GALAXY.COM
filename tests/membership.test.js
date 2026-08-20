@@ -6,72 +6,66 @@ const schema = read('../supabase/schema.sql');
 const app = read('../src/App.jsx');
 const api = read('../src/services/api.js');
 const experience = read('../src/components/MembershipExperience.jsx');
-const paymentFunction = read('../supabase/functions/membership-payments/index.ts');
-const webhook = read('../supabase/functions/nowpayments-webhook/index.ts');
+const paymentConfig = read('../src/payment-config.js');
+const turnFunction = read('../supabase/functions/turn-credentials/index.ts');
+const downloadFunction = read('../supabase/functions/scanner-download/index.ts');
 
-describe('verified Galaxy memberships', () => {
-  it('defines the requested plans and exact prices', () => {
+describe('open Galaxy meetings and manual commerce', () => {
+  it('defines the four membership plans and Scanner product', () => {
     expect(schema).toContain("('MONTHLY','Órbita mensual',1,80");
     expect(schema).toContain("('QUARTERLY','Nexo trimestral',3,250");
     expect(schema).toContain("('SEMESTER','Horizonte semestral',6,499");
     expect(schema).toContain("('ANNUAL','Constelación anual',12,999");
+    expect(schema).toContain("('SCANNER_POWER_ELITE','Scanner Power Elite'");
+    expect(schema).toContain(",1000,'premium-downloads','SCANNER-POWER-ELITE.pine'");
   });
 
-  it('enforces membership in PostgreSQL and realtime, not only React', () => {
+  it('opens meetings and LIVE to every active registered account', () => {
     expect(schema).toContain('function public.require_active_membership()');
     expect(schema).toMatch(/function public\.create_meeting[\s\S]*public\.require_active_membership\(\)/);
     expect(schema).toMatch(/function public\.join_meeting[\s\S]*public\.require_active_membership\(\)/);
-    expect(schema).toContain('public.has_active_membership((select auth.uid())) and exists');
-    expect(schema).toContain('alter table public.memberships enable row level security');
-    expect(app).toContain('membershipActive ? <MeetingStudio');
-    expect(app).toContain('membershipActive ? <LivePage');
+    expect(schema).toContain('Temporary community-open mode');
+    expect(schema).toMatch(/function public\.has_active_membership[\s\S]*status='ACTIVE'/);
+    expect(app).toContain("const membershipActive = user.status === 'ACTIVE'");
+    expect(app).toContain("content = <MeetingStudio");
+    expect(app).toContain("content = <LivePage");
   });
 
-  it('gives the protected administrator permanent server-side access without payment', () => {
+  it('shows direct manual USDT instructions without invoking payment verification', () => {
+    expect(paymentConfig).toContain('TMuo1PDArFyXDyrdXUhRHt8qtKy94CmLsM');
+    expect(paymentConfig).toContain('0xbf9402215a700b339c8922d573697d3500abaf33');
+    expect(paymentConfig).toContain("import trc20Qr from '../USDT-TRC-20.jpeg'");
+    expect(paymentConfig).toContain("import erc20Qr from '../USDT-ERC-20.jpeg'");
+    expect(experience).toContain('Mostrar wallet y QR');
+    expect(experience).toContain('Confirmación manual');
+    expect(experience).not.toContain('api.createCryptoPayment');
+    expect(experience).not.toContain('api.verifyCryptoPayment');
+    expect(api).not.toContain('createCryptoPayment:');
+    expect(api).not.toContain('verifyCryptoPayment:');
+  });
+
+  it('keeps the Scanner private and restricted to the owner account', () => {
+    expect(schema).toContain("values('premium-downloads','premium-downloads',false");
+    expect(app).toContain("const SCANNER_OWNER_EMAIL = 'elkin56ty@gmail.com'");
+    expect(app).toContain("product.kind !== 'scanner' || isScannerOwner(user)");
+    expect(downloadFunction).toContain("toLowerCase() !== 'elkin56ty@gmail.com'");
+    expect(downloadFunction).toContain('createSignedUrl(product.storage_path, 60');
+    expect(experience).toContain('ScannerCheckoutModal');
+    expect(experience).toContain('Descargar SCANNER-POWER-ELITE.pine');
+  });
+
+  it('generates ephemeral TURN credentials only for admitted meeting participants', () => {
+    expect(turnFunction).toContain("supabase.rpc('get_meeting_state'");
+    expect(turnFunction).toContain("requiredEnv('CLOUDFLARE_TURN_KEY_ID')");
+    expect(turnFunction).toContain("requiredEnv('CLOUDFLARE_TURN_API_TOKEN')");
+    expect(turnFunction).toContain('credentials/generate-ice-servers');
+    expect(api).not.toMatch(/CLOUDFLARE_TURN_(?:KEY_ID|API_TOKEN)/);
+  });
+
+  it('keeps permanent administrator identity and labels the checkout as manual', () => {
     expect(schema).toContain("insert into public.admin_access_allowlist(email) values ('elkin56ty@gmail.com')");
-    expect(schema).toContain("role='ADMIN' and status='ACTIVE'");
-    expect(schema).toContain("'isLifetime',true,'status','ADMIN'");
-    expect(app).toContain("membership.isLifetime || membership.status === 'ADMIN'");
     expect(experience).toContain('Acceso permanente habilitado');
-    expect(paymentFunction).toContain('Administrator accounts already have permanent access.');
-  });
-
-  it('activates only a complete, correctly matched final provider payment', () => {
-    expect(schema).toContain("coalesce(auth.role(),'')<>'service_role'");
-    expect(schema).toContain("if v_status='FINISHED' then");
-    expect(schema).toContain("lower(coalesce(p_payload->>'pay_currency',''))<>v_currency");
-    expect(schema).toContain("coalesce(p_payload->>'order_id','')<>v_order.id::text");
-    expect(schema).toContain("nullif(p_payload->>'parent_payment_id','') is not null");
-    expect(schema).toContain('coalesce(p_actually_paid,0)<coalesce(v_order.pay_amount,0)');
-    expect(schema).toContain("grant execute on function public.activate_membership_from_payment");
-    expect(schema).toContain('to service_role;');
-  });
-
-  it('keeps gateway secrets on Edge Functions and validates signed IPN callbacks', () => {
-    expect(paymentFunction).toContain("requiredEnv('NOWPAYMENTS_API_KEY')");
-    expect(paymentFunction).toContain("TRC20: 'usdttrc20'");
-    expect(paymentFunction).toContain("ERC20: 'usdterc20'");
-    expect(webhook).toContain("request.headers.get('x-nowpayments-sig')");
-    expect(webhook).toContain("hash: 'SHA-512'");
-    expect(webhook).toContain("requiredEnv('NOWPAYMENTS_IPN_SECRET')");
-    expect(api).not.toMatch(/NOWPAYMENTS_(?:API_KEY|IPN_SECRET)/);
-  });
-
-  it('shows premium checkout, activation confirmation and expiring profile access', () => {
-    expect(experience).toContain('MembershipCheckoutModal');
-    expect(experience).toContain('MembershipActivationModal');
-    expect(experience).toContain('MembershipProfileCard');
-    expect(experience).toContain('MembershipCountdown');
-    expect(experience).toContain('Envía únicamente USDT por');
-    expect(experience).toContain('Tu membresía está activa.');
-  });
-
-  it('shows all four requested membership prices directly in Marketplace', () => {
-    expect(app).toContain("{ code: 'MONTHLY', name: 'Órbita mensual', duration: '1 mes', price: 80");
-    expect(app).toContain("{ code: 'QUARTERLY', name: 'Nexo trimestral', duration: '3 meses', price: 250");
-    expect(app).toContain("{ code: 'SEMESTER', name: 'Horizonte semestral', duration: '6 meses', price: 499");
-    expect(app).toContain("{ code: 'ANNUAL', name: 'Constelación anual', duration: '12 meses', price: 999");
-    expect(app).toContain('<MembershipMarketplaceCards');
-    expect(experience).toContain('initialPlanCode');
+    expect(experience).toContain('Pago directo y confirmación manual');
+    expect(experience).not.toContain('HASH DE LA TRANSACCIÓN');
   });
 });

@@ -31,4 +31,8 @@ El artefacto público está minificado, no incluye sourcemaps ni archivos fuente
 
 Supabase Realtime Broadcast/Presence entrega señalización WebRTC, presencia, manos levantadas, emoji, chat y moderación sin el polling de Apps Script. PostgreSQL persiste salas, admisiones, invitaciones, mensajes y reacciones.
 
-Supabase no incluye TURN. El SQL deja `ice_servers` configurado con STUN; para redes restrictivas agrega credenciales TURN de corta duración mediante un proveedor TURN o una Edge Function. Consulta [tiempo real](docs/REALTIME.md).
+Supabase no incluye TURN. La Edge Function `turn-credentials` entrega credenciales efímeras de Cloudflare TURN a participantes admitidos, lo que cubre redes móviles y NAT restrictivos una vez configurados los secretos. Todas las cuentas registradas con estado activo pueden crear o entrar a reuniones; la sala de espera y la admisión siguen siendo obligatorias cuando el anfitrión las habilita. Consulta [tiempo real](docs/REALTIME.md) y [despliegue](docs/DEPLOYMENT.md).
+
+## Pagos y Scanner
+
+El checkout muestra la wallet y el QR de USDT TRC20/ERC20 seleccionados. La confirmación es manual y no controla el acceso a reuniones o LIVE. Scanner Power Elite está oculto para todas las cuentas excepto `elkin56ty@gmail.com`; su descarga se valida nuevamente en `scanner-download` y utiliza una URL firmada de 60 segundos desde el bucket privado `premium-downloads`. El archivo `.pine` está excluido de Git.

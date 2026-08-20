@@ -1,4 +1,5 @@
 .secure-pill.connected { color: #9dd9b8; border-color: rgba(92, 198, 143, .25); }
+.secure-pill.relay-missing { color:#e4b669; border-color:rgba(228,182,105,.3); }
 .secure-pill.signaling { color: #d7b47c; }
 .video-grid { position: absolute; inset: 12px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .video-surface { position: relative; min-height: 180px; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: radial-gradient(circle, rgba(93, 55, 151, .14), #0c0a0f 65%); transition: border-color .18s, box-shadow .18s; }
