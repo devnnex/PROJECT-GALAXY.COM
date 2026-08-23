@@ -20,7 +20,7 @@
     "react-dom": "latest"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^6.0.5",
+    "@vitejs/plugin-react": "^6.1.0",
     "vite": "^8.2.1",
     "vitest": "latest"
   }
