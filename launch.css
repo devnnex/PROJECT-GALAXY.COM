@@ -1,0 +1,5 @@
+html,body{height:100%;margin:0;background:#08070b;color:#f5f2fb;font-family:system-ui,sans-serif}
+body{display:grid;place-items:center}.launch{display:grid;justify-items:center;gap:16px;text-align:center}
+.orbit{width:38px;height:38px;border:1px solid #8b5cf6;border-radius:50%;position:relative;animation:spin 1.8s linear infinite}
+.orbit:after{content:"";position:absolute;width:7px;height:7px;border-radius:50%;background:#b99aff;top:-4px;left:15px;box-shadow:0 0 12px #8b5cf6}
+p{font-size:11px;letter-spacing:.15em;color:#8f899c}a{color:#b99aff}@keyframes spin{to{transform:rotate(360deg)}}

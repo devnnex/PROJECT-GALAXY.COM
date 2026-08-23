@@ -1,0 +1,5 @@
+[functions.turn-credentials]
+verify_jwt = true
+
+[functions.scanner-download]
+verify_jwt = true

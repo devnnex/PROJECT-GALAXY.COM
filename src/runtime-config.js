@@ -1,0 +1,4 @@
+window.GALAXY_RUNTIME_CONFIG = {
+  SUPABASE_URL: 'https://xdsqtuubsptpzwadecha.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhkc3F0dXVic3B0cHp3YWRlY2hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NjQ0MjgsImV4cCI6MjEwMjQ0MDQyOH0.KAoFXQ3cIk8TW4zfVGrg860GNOErOtcyPVcwh0jpPx0',
+};

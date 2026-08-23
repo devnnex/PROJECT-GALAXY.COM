@@ -1,0 +1,12 @@
+node_modules/
+.env
+.DS_Store
+*.log
+artifacts/
+
+# Paid source product: upload it to the private Supabase Storage bucket instead.
+SCANNER-POWER-ELITE.pine
+
+# One-time production secrets for Supabase Vault. Never publish this file.
+supabase/private-secrets.sql
+supabase/.temp/
