@@ -517,6 +517,15 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const restartMeeting = async (item) => { if (!confirm(`¿Reiniciar “${item.title}”? Los participantes anteriores tendrán que volver a ser invitados o admitidos.`)) return; setBusy(true); try { const restarted = await api.restartMeeting({ meetingId: item.meetingId || item.id }); setMeetings((items) => [restarted, ...items.filter((current) => current.id !== item.id)]); await connectAccess(restarted); toast('Reunión reiniciada. Solo tú conservaste el acceso de anfitrión.'); } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); } };
   const removeEndedMeeting = async (item) => { const warning = item.host ? `¿Eliminar definitivamente “${item.title}” y todos sus registros de reunión?` : `¿Quitar “${item.title}” de tu historial?`; if (!confirm(warning)) return; setBusy(true); try { const result = await api.removeEndedMeeting({ meetingId: item.meetingId || item.id }); setMeetings((items) => items.filter((current) => current.id !== item.id)); toast(result.scope === 'GLOBAL' ? 'Reunión eliminada definitivamente.' : 'Reunión retirada de tu historial.'); } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); } };
 
+  useEffect(() => {
+    if (!joined || !meeting?.scheduledEndsAt) return undefined;
+    const remaining = new Date(meeting.scheduledEndsAt).getTime() - Date.now();
+    const closeScheduledSession = async () => { await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); toast('La franja programada de esta reunión terminó.', 'info'); };
+    if (remaining <= 0) { closeScheduledSession(); return undefined; }
+    const timer = setTimeout(closeScheduledSession, Math.min(remaining, 2_147_000_000));
+    return () => clearTimeout(timer);
+  }, [joined, meeting?.scheduledEndsAt]);
+
   const remotePresentationEntry = Object.entries(remoteStreams).find(([peerId, stream]) => participants.find((item) => item.peerId === peerId)?.sharing && stream.getVideoTracks().some((track) => track.readyState === 'live'));
   const currentPresentationOwner = sharing ? connection.current?.selfId || null : remotePresentationEntry?.[0] || null;
   useEffect(() => {

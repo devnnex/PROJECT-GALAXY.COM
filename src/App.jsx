@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Activity, ArrowRight, Bell, Bookmark, Boxes, Check, ChevronDown, CircleDollarSign,
+  Activity, ArrowRight, Bell, Bookmark, Boxes, CalendarDays, Check, ChevronDown, CircleDollarSign,
   Clock3, Compass, Copy, CreditCard, Eye, Heart, Home, KeyRound, LayoutGrid, LockKeyhole,
   LogOut, Menu, MessageCircle, Mic2, MoreHorizontal, Orbit, Package, Play, Plus, Radio,
   Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, TrendingUp, User,
@@ -13,6 +13,7 @@ import { manualPayment, PAYMENT_CONTACT_EMAIL, PAYMENT_NETWORKS } from './paymen
 import NeuralCanvas from './components/NeuralCanvas';
 import AuthGate from './components/AuthGate';
 import MeetingStudio from './components/MeetingStudio';
+import CalendarPage from './components/CalendarPage';
 import ConstellationAvatar from './components/ConstellationAvatar';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
 
@@ -22,7 +23,7 @@ const catalogFor = () => products;
 
 const navigation = [
   ['dashboard', 'Inicio', Home], ['discover', 'Descubrir', Compass], ['marketplace', 'Marketplace', ShoppingBag],
-  ['live', 'En vivo', Radio], ['meetings', 'Reuniones', Video], ['messages', 'Mensajes', MessageCircle],
+  ['live', 'En vivo', Radio], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['messages', 'Mensajes', MessageCircle],
   ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['profile', 'Perfil', User],
 ];
 
@@ -247,12 +248,13 @@ function AppShell({ user, onUserChange, onLogout }) {
   else if (page === 'marketplace') content = <Marketplace onOpen={setSelectedProduct} user={user} />;
   else if (page === 'live') content = <LivePage toast={toast} />;
   else if (page === 'meetings') content = null;
+  else if (page === 'calendar') content = <CalendarPage toast={toast} onJoin={(request) => { setJoinRequest(request); navigate('meetings'); }} />;
   else if (page === 'messages') content = <MessagesPage toast={toast} />;
   else if (page === 'wallet') content = <WalletPage user={user} />;
   else if (page === 'orders') content = <MembershipOrdersPage orders={membershipCenter.orders} onRefresh={() => reloadMembership().catch((error) => toast(error.message, 'error'))} />;
   else content = <ProfilePage user={user} toast={toast} onUserChange={onUserChange} navigate={navigate} membership={membership} />;
   return <div className="app-shell">
-    <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{navigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{label === 'Mensajes' && <i>3</i>}{!membershipActive && ['live', 'meetings'].includes(id) && <LockKeyhole className="premium-nav-lock" />}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><div><strong>{user.name}</strong><span>{membership.planCode || 'COMMUNITY'} · LVL {user.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> Cerrar sesión</button></div></aside>
+    <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{navigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{label === 'Mensajes' && <i>3</i>}{!membershipActive && ['live', 'meetings', 'calendar'].includes(id) && <LockKeyhole className="premium-nav-lock" />}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><div><strong>{user.name}</strong><span>{membership.planCode || 'COMMUNITY'} · LVL {user.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> Cerrar sesión</button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
     <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>Buscar en Galaxy</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>Notificaciones</h3><span>{unread} nuevas</span></div>{notificationItems.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}><Bell /></span><div><strong>{notice.title}</strong><small>{notice.body || notice.meetingTitle || 'Actividad de tu cuenta'}</small></div></button>)}{!notificationItems.length && <p className="notifications-empty">No tienes notificaciones nuevas.</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>Marcar como revisadas</button></div>}</header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={user} joinRequest={joinRequest} onSessionChange={setMeetingSession} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
     {meetingSession.active && page !== 'meetings' && <div className="background-meeting-bar glass"><button className="background-meeting-main" onClick={() => navigate('meetings')}><span className="meeting-live-dot" /><span><strong>{meetingSession.title || 'Reunión en curso'}</strong><small>{meetingSession.waiting ? 'Esperando admisión' : 'Audio y conexión activos en segundo plano'}</small></span></button>{meetingSession.audioBlocked && <button className="background-audio-button" title="Activar sonido" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /></button>}<button className="secondary-button" onClick={() => navigate('meetings')}>Volver</button></div>}

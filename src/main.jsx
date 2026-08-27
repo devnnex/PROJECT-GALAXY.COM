@@ -10,6 +10,7 @@ import '@fontsource/manrope/latin-600.css';
 import './styles.css';
 import './crop.css';
 import './meeting-live.css';
+import './calendar.css';
 import './membership.css';
 import './browser-compat.css';
 

@@ -103,6 +103,8 @@ export const api = {
   getTurnCredentials: (meetingId) => invokeSecure('turn-credentials', { meetingId }, 'El relay TURN no está disponible.'),
   getScannerDownload: () => invokeSecure('scanner-download', {}, 'No fue posible preparar la descarga privada.'),
   createMeeting: (payload) => rpc('create_meeting', payload),
+  getCalendarEvents: (payload) => rpc('get_calendar_events', payload),
+  createCalendarEvent: (payload) => rpc('create_calendar_event', payload),
   joinMeeting: (payload) => rpc('join_meeting', payload),
   getMyMeetings: () => rpc('get_my_meetings'),
   getMyNotifications: (limit = 30) => rpc('get_my_notifications', { limit }),
