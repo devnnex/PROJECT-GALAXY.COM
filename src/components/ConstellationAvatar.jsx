@@ -1,4 +1,5 @@
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
+import { CONFIG } from '../config';
 
 const PALETTES = [
   ['#c8adff', '#6f46c7'], ['#9ed8ff', '#3d68c8'], ['#ffb8df', '#9a437d'],
@@ -36,12 +37,27 @@ export function createConstellation(seed) {
   };
 }
 
-export default function ConstellationAvatar({ seed, name = 'Usuario', className = '' }) {
+function profileAvatarUrl(value) {
+  const avatar = String(value || '').trim();
+  if (!avatar) return '';
+  if (avatar.startsWith('blob:')) return avatar;
+  const [path, version = ''] = avatar.split('?');
+  if (!CONFIG.SUPABASE_URL || !/^[0-9a-f-]{36}\/profile$/i.test(path)) return '';
+  const encodedPath = path.split('/').map(encodeURIComponent).join('/');
+  return `${CONFIG.SUPABASE_URL}/storage/v1/object/public/profile-avatars/${encodedPath}${version ? `?${version}` : ''}`;
+}
+
+export default function ConstellationAvatar({ seed, name = 'Usuario', className = '', src = '' }) {
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const constellation = useMemo(() => createConstellation(seed || name), [seed, name]);
+  const imageUrl = useMemo(() => profileAvatarUrl(src), [src]); const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => { setImageFailed(false); }, [imageUrl]);
   const lines = constellation.points.map((point) => `${point.x},${point.y}`).join(' ');
   const gradientId = `galaxy-avatar-${instanceId}`;
   const glowId = `galaxy-glow-${instanceId}`;
+  if (imageUrl && !imageFailed) return <span className={`constellation-avatar profile-photo ${className}`.trim()} role="img" aria-label={`Foto de perfil de ${name}`}>
+    <img src={imageUrl} alt="" onError={() => setImageFailed(true)} draggable="false" />
+  </span>;
   return <span
     className={`constellation-avatar ${className}`.trim()}
     style={{ '--constellation-light': constellation.palette[0], '--constellation-deep': constellation.palette[1] }}

@@ -8,9 +8,11 @@ const meetingClient = readFileSync(new URL('../src/services/meetingClient.js', i
 const supabaseClient = readFileSync(new URL('../src/services/supabase.js', import.meta.url), 'utf8');
 const meetingStyles = readFileSync(new URL('../src/meeting-live.css', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+const avatar = readFileSync(new URL('../src/components/ConstellationAvatar.jsx', import.meta.url), 'utf8');
+const appHtml = readFileSync(new URL('../app.html', import.meta.url), 'utf8');
 
 const publicRpc = [
-  'get_current_user', 'update_profile', 'get_bootstrap_data', 'create_meeting', 'join_meeting', 'get_my_meetings',
+  'get_current_user', 'update_profile', 'update_profile_avatar', 'get_bootstrap_data', 'create_meeting', 'join_meeting', 'get_my_meetings',
   'get_meeting_state', 'admit_meeting_participant', 'deny_meeting_participant', 'set_meeting_locked',
   'restart_meeting', 'remove_ended_meeting',
   'end_meeting', 'get_community_members', 'get_meeting_invite_candidates', 'mark_meeting_invitation_seen',
@@ -187,14 +189,27 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('api.removeEndedMeeting');
   });
 
-  it('persists editable profile information without accepting an avatar upload', () => {
+  it('persists editable profile information and secures user-owned avatar uploads', () => {
     expect(schema).toContain('function public.update_profile(p_name text,p_username text,p_bio text');
+    expect(schema).toContain('function public.update_profile_avatar(p_avatar text)');
+    expect(schema).toContain("values('profile-avatars','profile-avatars',true,5242880");
+    expect(schema).toContain("name=auth.uid()::text||'/profile'");
+    expect(schema).toContain("bucket_id='profile-avatars'");
+    expect(schema).toContain("'avatar',p.avatar");
     expect(schema).toContain("'bio', p.bio");
     expect(schema).toContain("'xp', p.xp");
     expect(schema).toContain("'wallet',coalesce");
     expect(api).toContain("updateProfile: (payload) => rpc('update_profile', payload)");
+    expect(api).toContain("rpc('update_profile_avatar'");
+    expect(api).toContain("PROFILE_AVATAR_MAX_BYTES = 5 * 1024 * 1024");
+    expect(api).toContain("upsert: true");
     expect(app).toContain('api.updateProfile(values)');
-    expect(app).not.toMatch(/type=["']file["']/i);
+    expect(app).toMatch(/type=["']file["']/i);
+    expect(app).toContain('api.uploadProfileAvatar');
+    expect(app).toContain('api.removeProfileAvatar');
+    expect(avatar).toContain('/storage/v1/object/public/profile-avatars/');
+    expect(avatar).toContain('onError={() => setImageFailed(true)}');
+    expect(appHtml).toContain("img-src 'self' data: blob: https://xdsqtuubsptpzwadecha.supabase.co");
     expect(app).not.toContain('1,840 XP');
     expect(app).not.toContain('Nivel 12');
   });

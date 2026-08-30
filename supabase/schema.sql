@@ -177,6 +177,12 @@ insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values('premium-downloads','premium-downloads',false,1048576,array['text/plain','application/octet-stream'])
 on conflict(id) do update set public=false,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
 
+-- Public delivery is intentional for profile pictures, while Storage RLS below
+-- restricts each authenticated account to its single deterministic object.
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
+values('profile-avatars','profile-avatars',true,5242880,array['image/jpeg','image/png','image/webp'])
+on conflict(id) do update set public=true,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
+
 create table if not exists public.meetings (
   id uuid primary key default gen_random_uuid(),
   host_id uuid not null references public.profiles(id) on delete restrict,
@@ -706,7 +712,7 @@ $$;
 create or replace function public.get_current_user() returns jsonb
 language sql stable security definer set search_path = public, auth as $$
   select jsonb_build_object('id', p.id, 'name', p.name, 'username', p.username, 'email', u.email,
-    'bio', p.bio, 'role', p.role, 'level', p.level, 'xp', p.xp, 'status', p.status,
+    'avatar',p.avatar,'bio', p.bio, 'role', p.role, 'level', p.level, 'xp', p.xp, 'status', p.status,
     'createdAt', p.created_at, 'emailVerified', u.email_confirmed_at is not null,
     'membership',public.membership_view(p.id),
     'wallet',coalesce((select jsonb_build_object('availableBalance',w.available_balance,'pendingBalance',w.pending_balance,
@@ -719,7 +725,7 @@ create or replace function public.get_admin_users() returns jsonb
 language sql stable security definer set search_path=public,auth as $$
   with admin as (select public.require_admin() id)
   select coalesce(jsonb_agg(jsonb_build_object(
-    'id',p.id,'name',p.name,'username',p.username,'email',u.email,'role',p.role,'status',p.status,
+    'id',p.id,'name',p.name,'username',p.username,'email',u.email,'avatar',p.avatar,'role',p.role,'status',p.status,
     'createdAt',p.created_at,'lastSeenAt',s.last_seen_at,'sessionActive',s.active_session_id is not null and s.last_seen_at>now()-interval '75 seconds'
   ) order by case when p.role='ADMIN' then 0 else 1 end,p.created_at desc),'[]'::jsonb)
   from public.profiles p join auth.users u on u.id=p.id cross join admin
@@ -752,6 +758,25 @@ begin
     raise exception 'Ese nombre de usuario ya está en uso.' using errcode='P0001';
   end;
   if not found then raise exception 'Tu perfil no está disponible para edición.' using errcode='P0001'; end if;
+  return public.get_current_user();
+end; $$;
+
+create or replace function public.update_profile_avatar(p_avatar text) returns jsonb
+language plpgsql security definer set search_path=public,auth,storage as $$
+declare
+  v_user uuid:=public.require_user(); v_avatar text:=trim(coalesce(p_avatar,'')); v_object_name text;
+begin
+  if v_avatar<>'' and v_avatar !~ ('^'||v_user::text||'/profile\?v=[0-9]{13}$') then
+    raise exception 'La ruta de la foto de perfil no es valida.' using errcode='P0001';
+  end if;
+  v_object_name:=split_part(v_avatar,'?',1);
+  if v_avatar<>'' and not exists(
+    select 1 from storage.objects where bucket_id='profile-avatars' and name=v_object_name
+  ) then
+    raise exception 'Primero debes subir una imagen valida.' using errcode='P0001';
+  end if;
+  update public.profiles set avatar=v_avatar where id=v_user and status='ACTIVE';
+  if not found then raise exception 'Tu perfil no esta disponible para edicion.' using errcode='P0001'; end if;
   return public.get_current_user();
 end; $$;
 
@@ -1305,6 +1330,25 @@ create policy crypto_orders_owner_read on public.crypto_payment_orders for selec
 drop policy if exists product_entitlements_owner_read on public.product_entitlements;
 create policy product_entitlements_owner_read on public.product_entitlements for select to authenticated using (user_id=auth.uid() and revoked_at is null);
 
+drop policy if exists profile_avatars_owner_read on storage.objects;
+create policy profile_avatars_owner_read on storage.objects for select to authenticated using (
+  bucket_id='profile-avatars' and name=auth.uid()::text||'/profile' and public.is_current_session_valid()
+);
+drop policy if exists profile_avatars_owner_insert on storage.objects;
+create policy profile_avatars_owner_insert on storage.objects for insert to authenticated with check (
+  bucket_id='profile-avatars' and name=auth.uid()::text||'/profile' and public.is_current_session_valid()
+);
+drop policy if exists profile_avatars_owner_update on storage.objects;
+create policy profile_avatars_owner_update on storage.objects for update to authenticated using (
+  bucket_id='profile-avatars' and name=auth.uid()::text||'/profile' and public.is_current_session_valid()
+) with check (
+  bucket_id='profile-avatars' and name=auth.uid()::text||'/profile' and public.is_current_session_valid()
+);
+drop policy if exists profile_avatars_owner_delete on storage.objects;
+create policy profile_avatars_owner_delete on storage.objects for delete to authenticated using (
+  bucket_id='profile-avatars' and name=auth.uid()::text||'/profile' and public.is_current_session_valid()
+);
+
 -- Autoriza canales privados Realtime solo a miembros admitidos de meeting:<uuid>.
 drop policy if exists galaxy_meeting_realtime_read on realtime.messages;
 create policy galaxy_meeting_realtime_read on realtime.messages for select to authenticated using (
@@ -1326,10 +1370,10 @@ revoke all on all tables in schema public from anon;
 revoke usage on schema public from anon;
 alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke execute on functions from public, anon;
-revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.get_turn_provider_config(),public.membership_view(uuid),public.has_active_membership(uuid),public.require_active_membership(),public.get_membership_center(),public.get_crypto_store(),public.activate_membership_from_payment(uuid,text,text,numeric,jsonb),public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon, authenticated;
+revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.get_turn_provider_config(),public.membership_view(uuid),public.has_active_membership(uuid),public.require_active_membership(),public.get_membership_center(),public.get_crypto_store(),public.activate_membership_from_payment(uuid,text,text,numeric,jsonb),public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.update_profile_avatar(text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon, authenticated;
 grant usage on schema public to authenticated;
 grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications,public.membership_plans,public.membership_payment_orders,public.memberships,public.digital_products,public.crypto_payment_orders,public.product_entitlements to authenticated;
-grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.get_bootstrap_data(text[]),public.get_membership_center(),public.get_crypto_store(),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
+grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.update_profile_avatar(text),public.get_bootstrap_data(text[]),public.get_membership_center(),public.get_crypto_store(),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
 grant execute on function public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text) to authenticated;
 grant execute on function public.activate_membership_from_payment(uuid,text,text,numeric,jsonb) to service_role;
 grant execute on function public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb) to service_role;

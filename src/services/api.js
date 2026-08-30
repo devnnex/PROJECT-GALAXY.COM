@@ -8,8 +8,12 @@ const parameterNames = Object.freeze({
   commandId: 'p_command_id', notificationId: 'p_notification_id', invitationId: 'p_invitation_id',
   status: 'p_status', token: 'p_token', active: 'p_active', from: 'p_from', to: 'p_to',
   description: 'p_description', kind: 'p_kind', startsAt: 'p_starts_at', endsAt: 'p_ends_at',
-  recurrence: 'p_recurrence', repeatUntil: 'p_repeat_until',
+  recurrence: 'p_recurrence', repeatUntil: 'p_repeat_until', avatar: 'p_avatar',
 });
+
+const PROFILE_AVATAR_BUCKET = 'profile-avatars';
+const PROFILE_AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const PROFILE_AVATAR_MAX_BYTES = 5 * 1024 * 1024;
 
 function friendlyError(error) {
   if (!error) return new Error('La solicitud no pudo completarse.');
@@ -111,6 +115,26 @@ export const api = {
   bootstrap: (modules = ['user']) => rpc('get_bootstrap_data', { modules }),
   me: currentUser,
   updateProfile: (payload) => rpc('update_profile', payload),
+  async uploadProfileAvatar(file) {
+    if (!globalThis.File || !(file instanceof globalThis.File) || !PROFILE_AVATAR_TYPES.has(file.type)) throw new Error('Selecciona una imagen JPG, PNG o WebP.');
+    if (!file.size || file.size > PROFILE_AVATAR_MAX_BYTES) throw new Error('La foto de perfil debe pesar como máximo 5 MB.');
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !data.session?.user?.id) throw new Error('Tu sesión expiró. Inicia sesión nuevamente.');
+    const objectPath = `${data.session.user.id}/profile`;
+    const { error } = await supabase.storage.from(PROFILE_AVATAR_BUCKET).upload(objectPath, file, {
+      upsert: true, contentType: file.type, cacheControl: '60',
+    });
+    if (error) throw new Error('No fue posible subir la foto. Verifica el formato, el tamaño y vuelve a intentarlo.');
+    return rpc('update_profile_avatar', { avatar: `${objectPath}?v=${Date.now()}` });
+  },
+  async removeProfileAvatar() {
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !data.session?.user?.id) throw new Error('Tu sesión expiró. Inicia sesión nuevamente.');
+    const objectPath = `${data.session.user.id}/profile`;
+    const { error } = await supabase.storage.from(PROFILE_AVATAR_BUCKET).remove([objectPath]);
+    if (error) throw new Error('No fue posible eliminar la foto de perfil. Intenta nuevamente.');
+    return rpc('update_profile_avatar', { avatar: '' });
+  },
   async getMembershipCenter() {
     const [membership, commerce] = await Promise.all([rpc('get_membership_center'), rpc('get_crypto_store')]);
     return { ...membership, products: commerce?.products || [], orders: [...(commerce?.orders || []), ...(membership?.orders || [])]
