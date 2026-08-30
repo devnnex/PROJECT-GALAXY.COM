@@ -684,11 +684,12 @@ language sql stable security definer set search_path = public, auth as $$
 $$;
 
 -- Mantiene la autorización de canales privados rápida y aislada de las políticas
--- RLS de las tablas de negocio. También permite precalentar el WebSocket por usuario.
+-- RLS de negocio. La presencia comunitaria expone solo qué cuentas están conectadas.
 create or replace function public.can_access_realtime_topic(p_topic text,p_extension text) returns boolean
 language sql stable security definer set search_path=public,auth as $$
   select public.is_current_session_valid() and p_extension in ('broadcast','presence') and (
     p_topic='user:'||(select auth.uid())::text
+    or (p_topic='community:online' and p_extension='presence' and public.has_active_membership((select auth.uid())))
     or p_topic like 'db:notifications:'||(select auth.uid())::text||':%'
     or (public.has_active_membership((select auth.uid())) and exists(
       select 1 from public.meeting_participants p

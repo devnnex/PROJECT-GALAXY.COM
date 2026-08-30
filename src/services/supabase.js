@@ -18,6 +18,7 @@ export const supabase = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_K
 
 const realtimeRetryDelays = [0, 250, 700, 1500];
 let realtimePrime = null;
+const onlineUserListeners = new Set();
 
 const wait = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 const errorText = (error) => [error?.message, error?.code, error?.reason, String(error || '')].filter(Boolean).join(' ');
@@ -33,6 +34,26 @@ function publicRealtimeError(error) {
     return new Error('Estamos preparando el canal seguro de la reunión. Intenta nuevamente en unos segundos.');
   }
   return new Error('No fue posible abrir el canal seguro de la reunión. Comprueba tu conexión e inténtalo nuevamente.');
+}
+
+function readOnlineUserIds(channel = realtimePrime?.channel) {
+  const userIds = new Set();
+  for (const presences of Object.values(channel?.presenceState?.() || {})) {
+    for (const presence of presences) if (presence?.userId) userIds.add(presence.userId);
+  }
+  return userIds;
+}
+
+function notifyOnlineUsers(channel = realtimePrime?.channel) {
+  const userIds = readOnlineUserIds(channel);
+  onlineUserListeners.forEach((listener) => listener(new Set(userIds)));
+}
+
+export function onOnlineUsersChange(callback) {
+  if (typeof callback !== 'function') return () => {};
+  onlineUserListeners.add(callback);
+  callback(readOnlineUserIds());
+  return () => onlineUserListeners.delete(callback);
 }
 
 export async function authorizeRealtime() {
@@ -86,11 +107,21 @@ export function primeRealtime(userId) {
   if (realtimePrime?.channel) supabase.removeChannel(realtimePrime.channel).catch(() => {});
   const state = { userId, channel: null, closed: false, promise: null };
   state.promise = subscribeRealtimeChannel(
-    () => supabase.channel(`user:${userId}`, { config: { private: true, broadcast: { self: false, ack: false } } }),
-    { timeoutMs: 3500 },
+    () => {
+      const channel = supabase.channel('community:online', {
+        config: { private: true, broadcast: { self: false, ack: false }, presence: { key: userId } },
+      });
+      channel.on('presence', { event: 'sync' }, () => notifyOnlineUsers(channel));
+      return channel;
+    },
+    {
+      timeoutMs: 3500,
+      onSubscribed: (channel) => channel.track({ userId, onlineAt: new Date().toISOString() }),
+    },
   ).then(async (channel) => {
     state.channel = channel;
     if (state.closed) { await supabase.removeChannel(channel).catch(() => {}); return null; }
+    notifyOnlineUsers(channel);
     return channel;
   }).catch((error) => {
     if (realtimePrime === state) realtimePrime = null;
@@ -103,6 +134,10 @@ export function primeRealtime(userId) {
 export function releaseRealtimePrime(userId) {
   if (!realtimePrime || realtimePrime.userId !== userId) return;
   realtimePrime.closed = true;
-  if (realtimePrime.channel) supabase.removeChannel(realtimePrime.channel).catch(() => {});
+  if (realtimePrime.channel) {
+    realtimePrime.channel.untrack().catch(() => {});
+    supabase.removeChannel(realtimePrime.channel).catch(() => {});
+  }
   realtimePrime = null;
+  notifyOnlineUsers(null);
 }

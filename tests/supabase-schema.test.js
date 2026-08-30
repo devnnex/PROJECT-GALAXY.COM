@@ -37,8 +37,22 @@ describe('Supabase contract', () => {
     expect(schema).toContain('function public.can_access_realtime_topic');
     expect(schema).toContain("p_extension in ('broadcast','presence')");
     expect(schema).toContain("p_topic='user:'||(select auth.uid())::text");
+    expect(schema).toContain("p_topic='community:online' and p_extension='presence'");
     expect(schema).toContain('public.can_access_realtime_topic((select realtime.topic()),realtime.messages.extension)');
     expect(api).toContain("config: { private: true }");
+  });
+
+  it('shows true online presence and supports secure batch invitations', () => {
+    expect(supabaseClient).toContain("supabase.channel('community:online'");
+    expect(supabaseClient).toContain('presence: { key: userId }');
+    expect(supabaseClient).toContain("channel.track({ userId, onlineAt:");
+    expect(supabaseClient).toContain('export function onOnlineUsersChange(callback)');
+    expect(meetingStudio).toContain('onlineUserIds.has(member.id)');
+    expect(meetingStudio).toContain('Promise.allSettled(selectedMembers.map');
+    expect(meetingStudio).toContain('onInviteMany={inviteMany}');
+    expect(meetingStudio).toContain('className="invite-online-dot"');
+    expect(meetingStyles).toContain('.invite-avatar-shell.online:before');
+    expect(meetingStyles).toContain('flex: 0 0 48px!important');
   });
 
   it('delivers actionable meeting notifications to both sides', () => {
