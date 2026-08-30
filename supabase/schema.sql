@@ -252,11 +252,23 @@ create table if not exists public.calendar_events (
   kind text not null default 'MEETING' check (kind in ('MEETING','EVENT')),
   starts_at timestamptz not null,
   ends_at timestamptz not null check (ends_at > starts_at),
-  recurrence_group uuid,
+  series_id uuid,
   created_at timestamptz not null default now()
 );
 
 alter table public.meetings add column if not exists scheduled_ends_at timestamptz;
+-- The calendar table predates this consolidated schema and uses series_id for
+-- weekly recurrences. CREATE TABLE IF NOT EXISTS does not add missing columns,
+-- so keep the original column explicit for existing and fresh projects.
+alter table public.calendar_events add column if not exists series_id uuid;
+do $$ begin
+  if exists(
+    select 1 from information_schema.columns
+    where table_schema='public' and table_name='calendar_events' and column_name='recurrence_group'
+  ) then
+    execute 'update public.calendar_events set series_id=coalesce(series_id,recurrence_group) where recurrence_group is not null';
+  end if;
+end $$;
 create index if not exists calendar_events_range_idx on public.calendar_events(starts_at,ends_at);
 create index if not exists meeting_share_links_meeting_idx on public.meeting_share_links(meeting_id,created_at desc);
 
@@ -859,7 +871,7 @@ begin
   perform public.cleanup_old_calendar_events();
   select coalesce(jsonb_agg(jsonb_build_object(
     'id',e.id,'title',e.title,'description',e.description,'kind',e.kind,
-    'startsAt',e.starts_at,'endsAt',e.ends_at,'recurring',e.recurrence_group is not null,
+    'startsAt',e.starts_at,'endsAt',e.ends_at,'recurring',e.series_id is not null,
     'roomCode',m.room_code,'status',case when e.ends_at<=now() then 'FINISHED' else 'ACTIVE' end
   ) order by e.starts_at),'[]'::jsonb) into v_events
   from public.calendar_events e left join public.meetings m on m.id=e.meeting_id
@@ -904,7 +916,7 @@ begin
       insert into public.meeting_participants(meeting_id,user_id,role,status,joined_at)
       values(v_meeting_id,v_admin,'HOST','ADMITTED',null);
     end if;
-    insert into public.calendar_events(meeting_id,created_by,title,description,kind,starts_at,ends_at,recurrence_group)
+    insert into public.calendar_events(meeting_id,created_by,title,description,kind,starts_at,ends_at,series_id)
     values(v_meeting_id,v_admin,trim(p_title),trim(coalesce(p_description,'')),p_kind,v_start,v_end,v_group);
     v_count:=v_count+1;
     exit when p_recurrence='NONE' or (v_start+interval '7 days')::date>p_repeat_until or v_count>=53;
