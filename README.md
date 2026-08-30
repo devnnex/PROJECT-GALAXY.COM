@@ -41,7 +41,7 @@ Cada cuenta regular admite una sola sesión Supabase. Si aparece otra sesión de
 
 Los enlaces compartidos usan un token aleatorio almacenado solo como hash y nunca incluyen la contraseña de la sala. Tras autenticar o registrar al invitado, el servidor canjea el token y completa el ingreso. Las reuniones finalizadas pueden quitarse de **Mis reuniones**; su entrada de calendario se conserva siete días y luego se limpia automáticamente.
 
-Al compartir pantalla desde la cuenta administrativa, el flujo obliga a definir al menos una zona de privacidad. Las zonas se dibujan en un canvas antes de enviar el video WebRTC, por lo que los asistentes no pueden retirar la cobertura desde la interfaz receptora.
+La cuenta administrativa conserva todas las opciones normales para compartir pantalla y dispone además de una opción voluntaria de cobertura de datos. Cuando se elige, las zonas se dibujan en un canvas antes de enviar el video WebRTC, por lo que los asistentes no pueden retirar la cobertura desde la interfaz receptora.
 
 ## Pagos y Scanner
 

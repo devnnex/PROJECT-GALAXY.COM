@@ -36,9 +36,12 @@ describe('Galaxy owner and member access controls', () => {
     expect(app).toContain('api.redeemMeetingShareLink(inviteToken)');
   });
 
-  it('burns mandatory owner privacy masks into the shared canvas', () => {
+  it('offers optional owner privacy masks while preserving normal sharing', () => {
     expect(meeting).toContain('function PrivacyMaskEditor');
-    expect(meeting).toContain("user.role === 'ADMIN'");
+    expect(meeting).toContain("capture(false, true)");
+    expect(meeting).toContain('Pantalla, ventana o pestaña');
+    expect(meeting).toContain('Área personalizada');
+    expect(meeting).toContain('PRIVACIDAD OPCIONAL');
     expect(meeting).toContain("ctx.fillStyle = '#05040a'");
     expect(meeting).toContain('canvas.captureStream(24)');
     expect(meeting).toContain('Los participantes no pueden ocultarlas ni retirarlas.');
