@@ -21,16 +21,15 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(schema).toContain(",650,'premium-downloads','SCANNER-POWER-ELITE.pine'");
   });
 
-  it('opens meetings and LIVE to every active registered account', () => {
+  it('limits regular accounts to meetings, calendar and profile', () => {
     expect(schema).toContain('function public.require_active_membership()');
-    expect(schema).toMatch(/function public\.create_meeting[\s\S]*public\.require_active_membership\(\)/);
+    expect(schema).toMatch(/function public\.create_meeting[\s\S]*public\.require_admin\(\)/);
     expect(schema).toMatch(/function public\.join_meeting[\s\S]*public\.require_active_membership\(\)/);
-    expect(schema).toContain('Temporary community-open mode');
     expect(schema).toMatch(/function public\.has_active_membership[\s\S]*status='ACTIVE'/);
-    expect(app).toContain("const membershipActive = user.status === 'ACTIVE'");
-    expect(app).toContain('<MeetingStudio toast={toast} user={user} joinRequest={joinRequest} onSessionChange={setMeetingSession} />');
+    expect(app).toContain("['meetings', 'calendar', 'profile'].includes(id)");
+    expect(app).toContain('availableNavigation = isAdmin ? navigation : memberNavigation');
+    expect(app).toContain('canCreate={isAdmin}');
     expect(app).toContain("page === 'meetings' ? 'active' : 'background'");
-    expect(app).toContain("content = <LivePage");
   });
 
   it('shows direct manual USDT instructions without invoking payment verification', () => {

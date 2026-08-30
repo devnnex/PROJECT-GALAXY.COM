@@ -196,6 +196,28 @@ async function createSharedAudioMixer(displayStream, microphoneStream) {
   };
 }
 
+function PrivacyMaskEditor({ stream, initialMasks, onConfirm, onCancel }) {
+  const videoRef = useRef(null); const stageRef = useRef(null); const drag = useRef(null);
+  const defaultMasks = [{ id: 'names-bottom', x: 0, y: 86, w: 100, h: 14 }];
+  const [masks, setMasks] = useState(Array.isArray(initialMasks) && initialMasks.length ? initialMasks : defaultMasks);
+  useEffect(() => { if (videoRef.current) videoRef.current.srcObject = stream; }, [stream]);
+  const start = (event, id, mode) => { const rect = stageRef.current.getBoundingClientRect(); const mask = masks.find((item) => item.id === id); drag.current = { id, mode, clientX: event.clientX, clientY: event.clientY, rect, ...mask }; event.currentTarget.setPointerCapture(event.pointerId); };
+  const move = (event) => {
+    const state = drag.current; if (!state) return; const dx = (event.clientX - state.clientX) / state.rect.width * 100; const dy = (event.clientY - state.clientY) / state.rect.height * 100;
+    setMasks((items) => items.map((item) => item.id !== state.id ? item : state.mode === 'resize'
+      ? { ...item, w: Math.max(8, Math.min(100 - state.x, state.w + dx)), h: Math.max(4, Math.min(100 - state.y, state.h + dy)) }
+      : { ...item, x: Math.max(0, Math.min(100 - state.w, state.x + dx)), y: Math.max(0, Math.min(100 - state.h, state.y + dy)) }));
+  };
+  const addMask = () => setMasks((items) => items.length >= 8 ? items : [...items, { id: crypto.randomUUID(), x: 25, y: 40, w: 50, h: 10 }]);
+  return <div className="modal-backdrop"><div className="crop-modal privacy-mask-modal glass" role="dialog" aria-modal="true">
+    <div className="modal-title"><div><p className="eyebrow">PRIVACIDAD OBLIGATORIA</p><h2>Cubre nombres y datos privados</h2></div><button className="icon-button" onClick={onCancel}><X /></button></div>
+    <p className="muted">Las franjas se integran en los píxeles del video antes de transmitir. Los participantes no pueden ocultarlas ni retirarlas.</p>
+    <div className="crop-stage privacy-mask-stage" ref={stageRef}><video ref={videoRef} autoPlay muted playsInline />{masks.map((mask) => <div className="privacy-redaction" key={mask.id} style={{ left: `${mask.x}%`, top: `${mask.y}%`, width: `${mask.w}%`, height: `${mask.h}%` }} onPointerDown={(event) => start(event, mask.id, 'move')} onPointerMove={move} onPointerUp={() => { drag.current = null; }}><span>DATOS PROTEGIDOS</span><i onPointerDown={(event) => { event.stopPropagation(); start(event, mask.id, 'resize'); }} onPointerMove={move} onPointerUp={() => { drag.current = null; }} /></div>)}</div>
+    <div className="privacy-mask-actions"><button className="secondary-button" onClick={addMask} disabled={masks.length >= 8}><Plus /> Agregar cobertura</button><small>{masks.length} zona{masks.length === 1 ? '' : 's'} permanente{masks.length === 1 ? '' : 's'} en esta transmisión</small></div>
+    <div className="modal-actions"><button className="secondary-button" onClick={onCancel}>Cancelar</button><button className="primary-button" onClick={() => onConfirm(masks)}><ShieldCheck /> Compartir con privacidad</button></div>
+  </div></div>;
+}
+
 function CropEditor({ stream, initialCrop, onConfirm, onCancel }) {
   const videoRef = useRef(null); const stageRef = useRef(null); const drag = useRef(null);
   const [crop, setCrop] = useState(initialCrop || { x: 12, y: 12, w: 64, h: 62 });
@@ -210,12 +232,12 @@ function CropEditor({ stream, initialCrop, onConfirm, onCancel }) {
   </div></div>;
 }
 
-function MeetingLobby({ busy, meetings, initialCode, onCreate, onJoin, onResume, onRestart, onRemove }) {
-  const [tab, setTab] = useState(initialCode ? 'join' : 'create');
+function MeetingLobby({ busy, meetings, initialCode, onCreate, onJoin, onResume, onRestart, onRemove, canCreate }) {
+  const [tab, setTab] = useState(initialCode || !canCreate ? 'join' : 'create');
   const [create, setCreate] = useState({ title: '', password: '', waitingRoom: true });
   const [join, setJoin] = useState({ roomCode: initialCode, password: '' });
   return <div className="meeting-lobby">
-    <section className="meeting-lobby-card surface"><p className="eyebrow">MEETING CENTER</p><h1>Reuniones privadas para tu comunidad</h1><p>Crea una sala persistente o entra con el código de una invitación.</p><div className="meeting-lobby-tabs"><button className={tab === 'create' ? 'active' : ''} onClick={() => setTab('create')}><Plus /> Crear reunión</button><button className={tab === 'join' ? 'active' : ''} onClick={() => setTab('join')}><LogIn /> Unirse</button></div>
+    <section className="meeting-lobby-card surface"><p className="eyebrow">MEETING CENTER</p><h1>Reuniones privadas para tu comunidad</h1><p>{canCreate ? 'Crea una sala persistente o entra con el código de una invitación.' : 'Entra con el código o abre un enlace de invitación compartido por el administrador.'}</p><div className="meeting-lobby-tabs">{canCreate && <button className={tab === 'create' ? 'active' : ''} onClick={() => setTab('create')}><Plus /> Crear reunión</button>}<button className={tab === 'join' ? 'active' : ''} onClick={() => setTab('join')}><LogIn /> Unirse</button></div>
       {tab === 'create' ? <form onSubmit={(event) => { event.preventDefault(); onCreate(create); }}><label>Título<input required value={create.title} onChange={(event) => setCreate({ ...create, title: event.target.value })} placeholder="Reunión de equipo" /></label><label>Contraseña opcional<input type="password" minLength="6" value={create.password} onChange={(event) => setCreate({ ...create, password: event.target.value })} placeholder="Mínimo 6 caracteres" /></label><label className="meeting-check"><input type="checkbox" checked={create.waitingRoom} onChange={(event) => setCreate({ ...create, waitingRoom: event.target.checked })} /><span><strong>Sala de espera</strong><small>El anfitrión admite a cada participante.</small></span></label><button className="primary-button" disabled={busy}><VideoSurfaceIcon /> {busy ? 'Creando…' : 'Crear e iniciar'}</button></form>
         : <form onSubmit={(event) => { event.preventDefault(); onJoin(join); }}><label>Código de reunión<input required value={join.roomCode} onChange={(event) => setJoin({ ...join, roomCode: event.target.value.toUpperCase() })} placeholder="ABCD-1234" /></label><label>Contraseña, si aplica<input type="password" value={join.password} onChange={(event) => setJoin({ ...join, password: event.target.value })} /></label><button className="primary-button" disabled={busy}><LogIn /> {busy ? 'Conectando…' : 'Entrar a la reunión'}</button></form>}
     </section>
@@ -247,14 +269,14 @@ function InvitePanel({ members, onInvite, onClose }) {
   })}{!members.length && <p className="muted">No hay otros usuarios registrados todavía.</p>}</div></div></div>;
 }
 
-export default function MeetingStudio({ toast, user, joinRequest, onSessionChange }) {
-  const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`; const mediaKey = `galaxy_meeting_media_${user.id}`;
+export default function MeetingStudio({ toast, user, joinRequest, onSessionChange, canCreate = false }) {
+  const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`; const mediaKey = `galaxy_meeting_media_${user.id}`; const maskKey = `galaxy_privacy_masks_${user.id}`;
   const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null);
   const collaborationGrants = useRef(new Map()); const collaborationRequestTimes = useRef(new Map()); const presentationOwner = useRef(null); const cursorTimer = useRef(null); const requestTimer = useRef(null);
   const annotationStrokesRef = useRef([]);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
-  const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } });
+  const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [privacySource, setPrivacySource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } }); const [savedMasks, setSavedMasks] = useState(() => { try { return JSON.parse(localStorage.getItem(maskKey) || 'null'); } catch { return null; } });
   const [mic, setMic] = useState(false); const [camera, setCamera] = useState(false); const [joined, setJoined] = useState(false); const [status, setStatus] = useState('offline'); const [relayReady, setRelayReady] = useState(null);
   const [participants, setParticipants] = useState([]); const [remoteStreams, setRemoteStreams] = useState({}); const [peerStates, setPeerStates] = useState({});
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
@@ -438,7 +460,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const stopShare = async () => {
     const owner = connection.current?.selfId;
     if (sharingRef.current && owner) connection.current?.collaborate('collab-reset', { presenterPeerId: owner });
-    sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; sharingRef.current = null; presentationOwner.current = null; setSharing(null); setCropSource(null); saveMediaPreferences({ sharing: false }); resetCollaboration(); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false });
+    sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; sharingRef.current = null; presentationOwner.current = null; setSharing(null); setCropSource(null); setPrivacySource(null); saveMediaPreferences({ sharing: false }); resetCollaboration(); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false });
   };
   const publishShare = async (stream) => { sharingRef.current = stream; presentationOwner.current = connection.current?.selfId || null; resetCollaboration(); setSharing(stream); saveMediaPreferences({ sharing: true }); await connection.current?.setLocalStream(await sharedLocalStream(stream)); connection.current?.setPresence({ sharing: true }); };
   const capture = async (custom = false) => {
@@ -448,7 +470,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       stream.getVideoTracks()[0]?.applyConstraints({ frameRate: { ideal: 20, max: 30 } }).catch(() => {});
       sourceStream.current = stream; stream.getVideoTracks()[0].addEventListener('ended', stopShare, { once: true });
-      if (custom) setCropSource(stream); else { await publishShare(stream); toast(stream.getAudioTracks().length ? 'Pantalla, micrófono y audio disponible mezclados correctamente.' : 'Pantalla y micrófono compartidos. El audio interno depende de la fuente y del navegador.', 'info'); }
+      if (user.role === 'ADMIN') setPrivacySource(stream);
+      else if (custom) setCropSource(stream); else { await publishShare(stream); toast(stream.getAudioTracks().length ? 'Pantalla, micrófono y audio disponible mezclados correctamente.' : 'Pantalla y micrófono compartidos. El audio interno depende de la fuente y del navegador.', 'info'); }
     } catch (error) { if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') toast(error.message, 'error'); }
   };
   const shareRearCamera = async () => {
@@ -475,6 +498,27 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       };
       draw(); const processed = canvas.captureStream(24); setCropSource(null); await publishShare(processed); toast(sourceStream.current?.getAudioTracks().length ? 'Área y sonido compartidos por WebRTC.' : 'Área compartida sin sonido. El navegador no entregó audio de la fuente seleccionada.', 'info');
     } catch (error) { await stopShare(); toast(error.message || 'No fue posible compartir el área seleccionada.', 'error'); }
+  };
+  const confirmPrivacyMasks = async (masks) => {
+    try {
+      localStorage.setItem(maskKey, JSON.stringify(masks)); setSavedMasks(masks);
+      const video = document.createElement('video'); video.srcObject = privacySource; video.muted = true; video.playsInline = true;
+      await video.play(); await waitForVideoMetadata(video);
+      const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx || typeof canvas.captureStream !== 'function') throw new Error('Tu navegador no permite aplicar la protección visual antes de compartir.');
+      const draw = () => {
+        const scale = Math.min(1, 1280 / video.videoWidth); const width = Math.max(2, Math.round(video.videoWidth * scale)); const height = Math.max(2, Math.round(video.videoHeight * scale));
+        if (canvas.width !== width || canvas.height !== height) { canvas.width = width; canvas.height = height; }
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        for (const mask of masks) {
+          const x = canvas.width * mask.x / 100; const y = canvas.height * mask.y / 100; const w = canvas.width * mask.w / 100; const h = canvas.height * mask.h / 100;
+          ctx.fillStyle = '#05040a'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#7f52c8'; ctx.lineWidth = Math.max(2, canvas.width / 640); ctx.strokeRect(x, y, w, h);
+        }
+        renderLoop.current = requestAnimationFrame(draw);
+      };
+      draw(); const protectedStream = canvas.captureStream(24); setPrivacySource(null); await publishShare(protectedStream);
+      toast('Pantalla compartida con las zonas privadas integradas en el video.', 'info');
+    } catch (error) { await stopShare(); toast(error.message || 'No fue posible aplicar la protección visual.', 'error'); }
   };
   const toggleHand = () => { const next = !handRaised; setHandRaised(next); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised: next, speaking: localSpeaking }); };
   const react = (emoji) => { connection.current?.react(emoji); showReaction({ emoji }); setReactionMenu(false); };
@@ -507,7 +551,14 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const speakingChanged = useCallback((speaking) => { setLocalSpeaking(speaking); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised, speaking }); }, [mic, camera, sharing, handRaised]);
   const sendChat = async (body) => { try { const message = await api.postMeetingMessage({ meetingId: meeting.meetingId, body, replyToId: replyTo?.id || '' }); mergeMessage(message); connection.current?.chat(message); setReplyTo(null); } catch (error) { toast(error.message, 'error'); } };
   const reactToMessage = async (message, emoji) => { try { const update = await api.reactToMeetingMessage({ meetingId: meeting.meetingId, messageId: message.id, emoji }); applyChatReaction(update); connection.current?.reactToChat(update); } catch (error) { toast(error.message, 'error'); } };
-  const copyInvite = async () => { const url = new URL(location.href); url.pathname = url.pathname.replace(/\/dist\/index\.html$/, '/'); url.search = ''; url.hash = ''; url.searchParams.set('meeting', meeting.roomCode); await navigator.clipboard.writeText(`${meeting.title}\nCódigo: ${meeting.roomCode}\n${url.href}`); toast('Invitación copiada.'); };
+  const copyInvite = async () => {
+    try {
+      const link = await api.createMeetingShareLink(meeting.meetingId); const url = new URL(location.href);
+      url.pathname = url.pathname.replace(/\/dist\/index\.html$/, '/'); url.search = ''; url.hash = ''; url.searchParams.set('invite', link.token);
+      await navigator.clipboard.writeText(`${meeting.title}\n${url.href}`);
+      toast('Enlace seguro copiado. El invitado deberá usar su propia cuenta.');
+    } catch (error) { toast(error.message, 'error'); }
+  };
   const openInvites = async () => { setInviteOpen(true); try { setMembers(await api.getMeetingInviteCandidates(meeting.meetingId)); } catch (error) { toast(error.message, 'error'); } };
   const invite = async (member) => { try { const result = await api.inviteToMeeting({ meetingId: meeting.meetingId, userId: member.id }); setMembers((items) => items.map((item) => item.id === member.id ? { ...item, invitationId: result.id, invitationStatus: result.status, invitationSeenAt: result.seenAt || null, invitationRespondedAt: null, inviteCount: result.inviteCount } : item)); toast(member.invitationStatus === 'DECLINED' ? `${member.name} recibió nuevamente el modal de invitación.` : `${member.name} recibió la invitación.`); } catch (error) { toast(error.message, 'error'); } };
   const admission = async (participant, admit) => { try { await api[admit ? 'admitMeetingParticipant' : 'denyMeetingParticipant']({ meetingId: meeting.meetingId, participantId: participant.id }); setWaitingParticipants((items) => items.filter((item) => item.id !== participant.id)); toast(admit ? `${participant.name} puede entrar.` : `${participant.name} fue rechazado.`); } catch (error) { toast(error.message, 'error'); } };
@@ -536,7 +587,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     return () => clearTimeout(timer);
   }, [currentPresentationOwner]);
 
-  if (!meeting) return <MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} onRestart={restartMeeting} onRemove={removeEndedMeeting} />;
+  if (!meeting) return <MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} onRestart={restartMeeting} onRemove={removeEndedMeeting} canCreate={canCreate} />;
   if (waiting) return <div className="meeting-waiting surface"><span className="waiting-orbit" /><p className="eyebrow">SALA DE ESPERA</p><h1>{meeting.title}</h1><p>El anfitrión recibió tu solicitud. Esta pantalla entrará automáticamente cuando te admita.</p><strong>{meeting.roomCode}</strong><button className="secondary-button" onClick={() => disconnect(true)}>Cancelar</button></div>;
 
   const remoteEntries = Object.entries(remoteStreams); const isHost = meeting.role === 'HOST';
@@ -556,7 +607,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       </div>
       <aside className="meeting-side"><div className="meeting-side-tabs"><button className={sideTab === 'people' ? 'active' : ''} onClick={() => setSideTab('people')}><Users /> Personas <span>{participants.length + 1}</span></button><button className={sideTab === 'chat' ? 'active' : ''} onClick={() => setSideTab('chat')}><MessageCircle /> Chat <span>{messages.length}</span></button></div>{sideTab === 'people' ? <><div className="people-list"><div className={`person ${localSpeaking ? 'speaking' : ''}`}><ConstellationAvatar className="avatar avatar-sm" seed={user.id} name={user.name} /><span>{user.name} · Tú {isHost && <small>Anfitrión</small>} {handRaised && '✋'}</span><AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} />{mic ? <Mic /> : <MicOff />}</div>{participants.map((peer) => <div className={`person ${peer.speaking ? 'speaking' : ''}`} key={peer.peerId}><ConstellationAvatar className="avatar avatar-sm" seed={peer.userId || peer.peerId} name={peer.name} /><span>{peer.name} {peer.handRaised && '✋'}<small>{peer.role === 'HOST' ? 'Anfitrión' : peerStates[peer.peerId] === 'connected' ? 'Audio P2P conectado' : 'Enlazando medios'}</small></span><AudioMeter stream={remoteStreams[peer.peerId]} enabled={peer.mic} />{isHost && peer.role !== 'HOST' && peer.mic ? <button className="host-mute" title="Silenciar participante" onClick={() => connection.current?.mutePeer(peer.peerId)}><MicOff /></button> : peer.mic ? <Mic /> : <MicOff />}</div>)}</div>{isHost && waitingParticipants.length > 0 && <div className="waiting-list"><p className="eyebrow">ESPERANDO ({waitingParticipants.length})</p>{waitingParticipants.map((item) => <div className="person" key={item.id}><ConstellationAvatar className="avatar avatar-sm" seed={item.userId} name={item.name} /><span>{item.name}<small>@{item.username}</small></span><button title="Admitir" onClick={() => admission(item, true)}><Check /></button><button title="Rechazar" onClick={() => admission(item, false)}><X /></button></div>)}</div>}<div className="meeting-side-footer"><button className="secondary-button" onClick={copyInvite}><Copy /> Copiar invitación</button>{isHost && <button className="secondary-button" onClick={toggleLock}>{meeting.locked ? <Unlock /> : <Lock />} {meeting.locked ? 'Desbloquear' : 'Bloquear sala'}</button>}</div></> : <ChatPanel messages={messages} user={user} replyTo={replyTo} setReplyTo={setReplyTo} onSend={sendChat} onReact={reactToMessage} />}</aside>
     </div>
-    <div className="control-dock glass"><button className={mic ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('audio')}>{mic ? <Mic /> : <MicOff />}<AudioMeter stream={media} enabled={mic} /><span>{mic ? 'Silenciar' : 'Activar audio'}</span></button><button className={camera ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('video')}>{camera ? <Camera /> : <CameraOff />}<span>{camera ? 'Apagar cámara' : 'Iniciar video'}</span></button><div className="share-wrap"><button className={sharing ? 'active' : ''} disabled={!joined} onClick={() => sharing ? stopShare() : setShareMenu(!shareMenu)}><MonitorUp /><span>{sharing ? 'Detener' : 'Compartir'}</span></button>{shareMenu && <div className="share-menu glass"><button onClick={() => capture(false)}><MonitorUp />Pantalla, ventana o pestaña<span>{navigator.mediaDevices?.getDisplayMedia ? 'Selector seguro del navegador' : 'No disponible en este navegador móvil'}</span></button><button onClick={() => capture(true)} disabled={!navigator.mediaDevices?.getDisplayMedia}><span className="crop-icon" />Área personalizada<span>{savedCrop ? 'Reutilizar el recorte guardado' : 'Captura autorizada + recorte local'}</span></button><button onClick={shareRearCamera}><Camera />Cámara trasera o documento<span>Alternativa compatible con móviles y tablets</span></button></div>}</div><button className={handRaised ? 'active' : ''} disabled={!joined} onClick={toggleHand}><Hand /><span>{handRaised ? 'Bajar mano' : 'Alzar mano'}</span></button><div className="reaction-wrap"><button disabled={!joined} onClick={() => setReactionMenu(!reactionMenu)}><SmilePlus /><span>Reaccionar</span></button>{reactionMenu && <div className="reaction-menu glass">{EMOJIS.map((emoji) => <button key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}</div><button className="leave-control" onClick={leave}><PhoneOff /><span>Salir</span></button>{isHost && <button className="end-control" onClick={endMeeting}><X /><span>Finalizar</span></button>}</div>
-    {cropSource && <CropEditor stream={cropSource} initialCrop={savedCrop} onConfirm={confirmCrop} onCancel={stopShare} />}{inviteOpen && <InvitePanel members={members} onInvite={invite} onClose={() => setInviteOpen(false)} />}<CollaborationRequestModal request={collaborationRequest} onRespond={respondCollaboration} />
+    <div className="control-dock glass"><button className={mic ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('audio')}>{mic ? <Mic /> : <MicOff />}<AudioMeter stream={media} enabled={mic} /><span>{mic ? 'Silenciar' : 'Activar audio'}</span></button><button className={camera ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('video')}>{camera ? <Camera /> : <CameraOff />}<span>{camera ? 'Apagar cámara' : 'Iniciar video'}</span></button><div className="share-wrap"><button className={sharing ? 'active' : ''} disabled={!joined} onClick={() => sharing ? stopShare() : setShareMenu(!shareMenu)}><MonitorUp /><span>{sharing ? 'Detener' : 'Compartir'}</span></button>{shareMenu && <div className="share-menu glass"><button onClick={() => capture(false)}><MonitorUp />{user.role === 'ADMIN' ? 'Pantalla con privacidad' : 'Pantalla, ventana o pestaña'}<span>{navigator.mediaDevices?.getDisplayMedia ? user.role === 'ADMIN' ? 'Cobertura de nombres obligatoria' : 'Selector seguro del navegador' : 'No disponible en este navegador móvil'}</span></button>{user.role !== 'ADMIN' && <button onClick={() => capture(true)} disabled={!navigator.mediaDevices?.getDisplayMedia}><span className="crop-icon" />Área personalizada<span>{savedCrop ? 'Reutilizar el recorte guardado' : 'Captura autorizada + recorte local'}</span></button>}<button onClick={shareRearCamera}><Camera />Cámara trasera o documento<span>Alternativa compatible con móviles y tablets</span></button></div>}</div><button className={handRaised ? 'active' : ''} disabled={!joined} onClick={toggleHand}><Hand /><span>{handRaised ? 'Bajar mano' : 'Alzar mano'}</span></button><div className="reaction-wrap"><button disabled={!joined} onClick={() => setReactionMenu(!reactionMenu)}><SmilePlus /><span>Reaccionar</span></button>{reactionMenu && <div className="reaction-menu glass">{EMOJIS.map((emoji) => <button key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}</div><button className="leave-control" onClick={leave}><PhoneOff /><span>Salir</span></button>{isHost && <button className="end-control" onClick={endMeeting}><X /><span>Finalizar</span></button>}</div>
+    {cropSource && <CropEditor stream={cropSource} initialCrop={savedCrop} onConfirm={confirmCrop} onCancel={stopShare} />}{privacySource && <PrivacyMaskEditor stream={privacySource} initialMasks={savedMasks} onConfirm={confirmPrivacyMasks} onCancel={stopShare} />}{inviteOpen && <InvitePanel members={members} onInvite={invite} onClose={() => setInviteOpen(false)} />}<CollaborationRequestModal request={collaborationRequest} onRespond={respondCollaboration} />
   </section>;
 }

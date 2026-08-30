@@ -24,8 +24,9 @@ const catalogFor = () => products;
 const navigation = [
   ['dashboard', 'Inicio', Home], ['discover', 'Descubrir', Compass], ['marketplace', 'Marketplace', ShoppingBag],
   ['live', 'En vivo', Radio], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['messages', 'Mensajes', MessageCircle],
-  ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['profile', 'Perfil', User],
+  ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['users', 'Usuarios', Users], ['profile', 'Perfil', User],
 ];
+const memberNavigation = navigation.filter(([id]) => ['meetings', 'calendar', 'profile'].includes(id));
 
 const membershipMarketplacePlans = [
   { code: 'MONTHLY', name: 'Órbita mensual', duration: '1 mes', price: 80, tone: 'violet', note: 'Acceso flexible' },
@@ -152,9 +153,32 @@ function ProfilePage({ user, toast, onUserChange, navigate, membership }) {
   const save = async (values) => { const updated = await api.updateProfile(values); onUserChange(updated); toast('Tu perfil se actualizó correctamente.'); };
   return <div className="page-stack"><div className="profile-cover"><NeuralCanvas compact /><ConstellationAvatar className="profile-avatar" seed={user.id} name={user.name} /></div><header className="profile-head"><div><h1>{user.name}</h1><p>@{user.username} · Nivel {level}</p><p className={`profile-bio ${user.bio ? '' : 'muted'}`}>{user.bio || 'Aún no has agregado una biografía.'}</p></div><button className="secondary-button" onClick={() => setEditing(true)}><Settings /> Editar perfil</button></header><MembershipProfileCard membership={membership || user.membership} onRenew={() => navigate('marketplace')} /><div className="profile-stats"><div><strong>{level}</strong><span>Nivel real</span></div><div><strong>{xp}</strong><span>XP acumulados</span></div><div><strong>{memberSince}</strong><span>Miembro desde</span></div><div><strong>{user.status === 'ACTIVE' ? 'Activa' : user.status}</strong><span>Estado de cuenta</span></div></div><div className="dashboard-grid profile-data-grid"><section className="surface"><div className="section-title"><div><p className="eyebrow">PROGRESO REAL</p><h2>Trayectoria</h2></div></div><div className="profile-level-value"><span>NIVEL</span><strong>{level}</strong></div><p>{xp} XP registrados en tu cuenta.</p>{xp === 0 && <p className="muted">Tu trayectoria comienza aquí. El progreso aparecerá cuando existan acciones verificadas que otorguen XP.</p>}</section><section className="surface constellation-card"><div className="section-title"><div><p className="eyebrow">IDENTIDAD VISUAL</p><h2>Tu constelación</h2></div></div><ConstellationAvatar seed={user.id} name={user.name} /><p>Esta constelación se deriva de tu identidad y permanece diferente para cada usuario, sin almacenar fotografías.</p></section></div>{editing && <ProfileEditor user={user} onClose={() => setEditing(false)} onSaved={save} />}</div>;
 }
+
+function AdminUsersPage({ toast }) {
+  const [users, setUsers] = useState([]); const [loading, setLoading] = useState(true); const [busyId, setBusyId] = useState('');
+  const load = async () => { setLoading(true); try { setUsers(await api.getAdminUsers()); } catch (error) { toast(error.message, 'error'); } finally { setLoading(false); } };
+  useEffect(() => { load(); }, []);
+  const toggle = async (account) => {
+    const active = account.status !== 'ACTIVE'; setBusyId(account.id);
+    try {
+      const result = await api.setUserAccess({ userId: account.id, active });
+      setUsers((items) => items.map((item) => item.id === account.id ? { ...item, status: result.status } : item));
+      toast(active ? `${account.name} ya puede acceder.` : `Acceso suspendido para ${account.name}.`);
+    } catch (error) { toast(error.message, 'error'); } finally { setBusyId(''); }
+  };
+  return <div className="page-stack admin-users-page"><header className="page-header"><div><p className="eyebrow">CONTROL DE ACCESO</p><h1>Usuarios</h1><p>Activa o suspende cuentas y revisa si mantienen una sesión vigente.</p></div><button className="secondary-button" onClick={load} disabled={loading}>Actualizar</button></header>
+    <section className="surface admin-users-table"><div className="table-head"><span>USUARIO</span><span>ROL</span><span>SESIÓN</span><span>ACCESO</span><span>CONTROL</span></div>
+      {users.map((account) => <div className={`admin-user-row ${account.status !== 'ACTIVE' ? 'suspended' : ''}`} key={account.id}><span className="admin-user-identity"><ConstellationAvatar className="avatar avatar-sm" seed={account.id} name={account.name} /><span><strong>{account.name}</strong><small>{account.email}</small></span></span><span>{account.role === 'ADMIN' ? 'Administrador' : 'Miembro'}</span><span>{account.role === 'ADMIN' ? 'Sin límite' : account.sessionActive ? 'Activa' : 'Cerrada'}</span><span className={`account-state ${account.status.toLowerCase()}`}>{account.status === 'ACTIVE' ? 'Permitido' : 'Suspendido'}</span><label className="access-toggle"><input type="checkbox" checked={account.status === 'ACTIVE'} disabled={account.role === 'ADMIN' || busyId === account.id} onChange={() => toggle(account)} /><span /><em>{account.role === 'ADMIN' ? 'Protegido' : account.status === 'ACTIVE' ? 'Quitar acceso' : 'Dar acceso'}</em></label></div>)}
+      {!loading && !users.length && <EmptyState icon={Users} title="No hay usuarios" text="Las cuentas registradas aparecerán aquí." />}
+    </section></div>;
+}
+
+function BlockedAccess({ user, onLogout }) {
+  return <main className="blocked-access"><div className="blocked-interface" aria-hidden="true"><aside><Brand /><span /><span /><span /></aside><section><header /><div /><div /><div /></section></div><section className="blocked-card glass" role="alert"><span className="blocked-icon"><LockKeyhole /></span><p className="eyebrow">ACCESO SUSPENDIDO</p><h1>No puedes acceder a PROJECT GALAXY.</h1><p>Tu cuenta <strong>{user.email}</strong> está temporalmente bloqueada. Por favor, comunícate con nosotros en la comunidad para revisar tu acceso.</p><button className="secondary-button" onClick={onLogout}><LogOut /> Cerrar sesión</button></section></main>;
+}
 function EmptyState({ icon: Icon, title, text }) { return <div className="empty-state"><span><Icon /></span><h3>{title}</h3><p>{text}</p></div>; }
 
-function CommandPalette({ onClose, navigate }) { const [query, setQuery] = useState(''); const options = navigation.filter(([, label]) => label.toLowerCase().includes(query.toLowerCase())); return <div className="modal-backdrop command-backdrop" onMouseDown={onClose}><div className="command-palette glass" onMouseDown={(e) => e.stopPropagation()}><label><Search /><input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="¿A dónde quieres ir?" /><kbd>ESC</kbd></label><p className="eyebrow">NAVEGACIÓN</p>{options.map(([id, label, Icon]) => <button key={id} onClick={() => { navigate(id); onClose(); }}><Icon /><span>{label}</span><ArrowRight /></button>)}</div></div>; }
+function CommandPalette({ onClose, navigate, items }) { const [query, setQuery] = useState(''); const options = items.filter(([, label]) => label.toLowerCase().includes(query.toLowerCase())); return <div className="modal-backdrop command-backdrop" onMouseDown={onClose}><div className="command-palette glass" onMouseDown={(e) => e.stopPropagation()}><label><Search /><input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder="¿A dónde quieres ir?" /><kbd>ESC</kbd></label><p className="eyebrow">NAVEGACIÓN</p>{options.map(([id, label, Icon]) => <button key={id} onClick={() => { navigate(id); onClose(); }}><Icon /><span>{label}</span><ArrowRight /></button>)}</div></div>; }
 
 function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose }) {
   if (!notice) return null;
@@ -174,17 +198,29 @@ function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose })
 }
 
 function AppShell({ user, onUserChange, onLogout }) {
-  const [page, setPage] = useState(() => new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : 'dashboard'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null);
+  const isAdmin = user.role === 'ADMIN'; const availableNavigation = isAdmin ? navigation : memberNavigation;
+  const inviteToken = new URLSearchParams(location.search).get('invite') || '';
+  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null);
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [notificationItems, setNotificationItems] = useState([]); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const [membershipCenter, setMembershipCenter] = useState({ membership: user.membership || { isActive: false }, plans: [], orders: [] });
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
-  const navigate = (id) => { setPage(id); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
+  const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
   const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
-  useEffect(() => { reloadMembership().catch(() => {}); }, [user.id]);
+  useEffect(() => { if (isAdmin) reloadMembership().catch(() => {}); }, [user.id, isAdmin]);
   const membership = membershipCenter.membership || user.membership || { isActive: false };
-  const membershipActive = user.status === 'ACTIVE';
+  useEffect(() => {
+    if (!inviteToken) return;
+    let active = true;
+    api.redeemMeetingShareLink(inviteToken).then((access) => {
+      if (!active) return;
+      setJoinRequest({ roomCode: access.roomCode, id: `invite-${Date.now()}` }); setPage('meetings');
+      const clean = new URL(location.href); clean.searchParams.delete('invite'); history.replaceState({}, '', clean.href);
+      toast('Invitación validada. Entrando a la reunión…');
+    }).catch((error) => { if (active) toast(error.message, 'error'); });
+    return () => { active = false; };
+  }, [inviteToken]);
   const actionableNotice = (notice) => notice?.meetingStatus === 'ACTIVE' && ((notice.type === 'MEETING_JOIN_REQUEST' && notice.participantId) || (notice.type === 'MEETING_INVITE' && notice.invitationId && notice.invitationStatus === 'PENDING'));
   const reloadNotifications = async () => { try { setNotificationItems(await api.getMyNotifications()); } catch {} };
   useEffect(() => {
@@ -241,7 +277,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     setNotices(false);
     try { await api.markAllNotificationsRead(); } catch (error) { toast(error.message, 'error'); reloadNotifications(); }
   };
-  const activeLabel = navigation.find(([id]) => id === page)?.[1] || 'Inicio';
+  const activeLabel = availableNavigation.find(([id]) => id === page)?.[1] || 'Reuniones';
   let content;
   if (page === 'dashboard') content = <Dashboard user={user} navigate={navigate} openProduct={setSelectedProduct} />;
   else if (page === 'discover') content = <FeedPage toast={toast} />;
@@ -252,14 +288,15 @@ function AppShell({ user, onUserChange, onLogout }) {
   else if (page === 'messages') content = <MessagesPage toast={toast} />;
   else if (page === 'wallet') content = <WalletPage user={user} />;
   else if (page === 'orders') content = <MembershipOrdersPage orders={membershipCenter.orders} onRefresh={() => reloadMembership().catch((error) => toast(error.message, 'error'))} />;
+  else if (page === 'users' && isAdmin) content = <AdminUsersPage toast={toast} />;
   else content = <ProfilePage user={user} toast={toast} onUserChange={onUserChange} navigate={navigate} membership={membership} />;
   return <div className="app-shell">
-    <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{navigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{label === 'Mensajes' && <i>3</i>}{!membershipActive && ['live', 'meetings', 'calendar'].includes(id) && <LockKeyhole className="premium-nav-lock" />}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><div><strong>{user.name}</strong><span>{membership.planCode || 'COMMUNITY'} · LVL {user.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> Cerrar sesión</button></div></aside>
+    <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{availableNavigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{label === 'Mensajes' && <i>3</i>}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><div><strong>{user.name}</strong><span>{isAdmin ? 'ADMIN' : 'COMUNIDAD'} · LVL {user.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> Cerrar sesión</button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
-    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>Buscar en Galaxy</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>Notificaciones</h3><span>{unread} nuevas</span></div>{notificationItems.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}><Bell /></span><div><strong>{notice.title}</strong><small>{notice.body || notice.meetingTitle || 'Actividad de tu cuenta'}</small></div></button>)}{!notificationItems.length && <p className="notifications-empty">No tienes notificaciones nuevas.</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>Marcar como revisadas</button></div>}</header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={user} joinRequest={joinRequest} onSessionChange={setMeetingSession} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
+    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>Buscar en Galaxy</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>Notificaciones</h3><span>{unread} nuevas</span></div>{notificationItems.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}><Bell /></span><div><strong>{notice.title}</strong><small>{notice.body || notice.meetingTitle || 'Actividad de tu cuenta'}</small></div></button>)}{!notificationItems.length && <p className="notifications-empty">No tienes notificaciones nuevas.</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>Marcar como revisadas</button></div>}</header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={user} joinRequest={joinRequest} onSessionChange={setMeetingSession} canCreate={isAdmin} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
     {meetingSession.active && page !== 'meetings' && <div className="background-meeting-bar glass"><button className="background-meeting-main" onClick={() => navigate('meetings')}><span className="meeting-live-dot" /><span><strong>{meetingSession.title || 'Reunión en curso'}</strong><small>{meetingSession.waiting ? 'Esperando admisión' : 'Audio y conexión activos en segundo plano'}</small></span></button>{meetingSession.audioBlocked && <button className="background-audio-button" title="Activar sonido" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /></button>}<button className="secondary-button" onClick={() => navigate('meetings')}>Volver</button></div>}
-    <nav className="bottom-nav">{navigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span>{!membershipActive && ['live', 'meetings'].includes(id) && <LockKeyhole className="premium-nav-lock" />}</button>)}</nav>
-    {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} />}
+    <nav className="bottom-nav">{availableNavigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>
+    {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} items={availableNavigation} />}
     <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} toast={toast} membershipCenter={membershipCenter} user={user} />
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
     <Toast item={toastItem} />
@@ -267,11 +304,34 @@ function AppShell({ user, onUserChange, onLogout }) {
 }
 
 export default function App() {
-  const [view, setView] = useState('landing'); const [user, setUser] = useState(null); const [ready, setReady] = useState(false);
-  useEffect(() => { api.me().then((found) => { if (found) { setUser(found); setView('app'); } }).finally(() => setReady(true)); }, []);
-  const logout = async () => { await api.logout(); setUser(null); setView('landing'); };
+  const sharedIntent = useMemo(() => { const params = new URLSearchParams(location.search); return params.has('invite') || params.has('meeting'); }, []);
+  const [view, setView] = useState(sharedIntent ? 'auth' : 'landing'); const [user, setUser] = useState(null); const [ready, setReady] = useState(false); const [sessionError, setSessionError] = useState('');
+  useEffect(() => {
+    api.me().then(async (found) => {
+      if (!found) return;
+      if (sharedIntent && isScannerOwner(found)) {
+        await api.logout().catch(() => {}); setSessionError('Por seguridad, el enlace compartido requiere que el invitado inicie sesión con su propia cuenta.'); setView('auth'); return;
+      }
+      setUser(found); setView('app');
+    }).catch((error) => { setSessionError(error.message); setView('auth'); }).finally(() => setReady(true));
+  }, [sharedIntent]);
+  useEffect(() => {
+    if (!user) return undefined;
+    let active = true;
+    const check = async () => {
+      try {
+        const state = await api.heartbeatSession();
+        if (active && state?.accountStatus && state.accountStatus !== user.status) setUser((current) => current ? { ...current, status: state.accountStatus } : current);
+      } catch (error) {
+        if (!active) return; setUser(null); setSessionError(error.message); setView('auth');
+      }
+    };
+    const timer = setInterval(check, 15_000); return () => { active = false; clearInterval(timer); };
+  }, [user?.id, user?.status]);
+  const logout = async () => { await api.logout(); setUser(null); setSessionError(''); setView(sharedIntent ? 'auth' : 'landing'); };
   if (!ready) return <div className="boot-screen"><span className="neural-loader"><i /><i /><i /></span><p>ALINEANDO SISTEMAS</p></div>;
   if (view === 'landing') return <Landing onEnter={() => setView('auth')} />;
-  if (view === 'auth' && !user) return <AuthGate onBack={() => setView('landing')} onAuthenticated={(current) => { setUser(current); setView('app'); }} />;
+  if (view === 'auth' && !user) return <><AuthGate onBack={() => setView(sharedIntent ? 'auth' : 'landing')} onAuthenticated={(current) => { setSessionError(''); setUser(current); setView('app'); }} />{sessionError && <div className="auth-session-alert" role="alert">{sessionError}</div>}</>;
+  if (user?.status !== 'ACTIVE') return <BlockedAccess user={user} onLogout={logout} />;
   return <AppShell user={user} onUserChange={setUser} onLogout={logout} />;
 }

@@ -221,6 +221,45 @@ create table if not exists public.meeting_invitations (
 alter table public.meeting_invitations add column if not exists seen_at timestamptz;
 alter table public.meeting_invitations add column if not exists invite_count integer not null default 1 check (invite_count >= 1);
 
+-- A share URL contains only a random, one-way token. It never exposes the room
+-- password and is redeemed only after Supabase Auth has identified the guest.
+create table if not exists public.meeting_share_links (
+  id uuid primary key default gen_random_uuid(),
+  meeting_id uuid not null references public.meetings(id) on delete cascade,
+  created_by uuid not null references public.profiles(id) on delete cascade,
+  token_hash bytea not null unique,
+  expires_at timestamptz not null default (now() + interval '7 days'),
+  revoked_at timestamptz,
+  created_at timestamptz not null default now()
+);
+
+-- One active authentication session per regular account. ADMIN is deliberately
+-- exempt so the owner cannot lock himself out while operating the platform.
+create table if not exists public.user_session_state (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  active_session_id uuid,
+  last_seen_at timestamptz,
+  conflict_until timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.calendar_events (
+  id uuid primary key default gen_random_uuid(),
+  meeting_id uuid references public.meetings(id) on delete set null,
+  created_by uuid not null references public.profiles(id) on delete restrict,
+  title text not null check (char_length(title) between 1 and 140),
+  description text not null default '' check (char_length(description) <= 800),
+  kind text not null default 'MEETING' check (kind in ('MEETING','EVENT')),
+  starts_at timestamptz not null,
+  ends_at timestamptz not null check (ends_at > starts_at),
+  recurrence_group uuid,
+  created_at timestamptz not null default now()
+);
+
+alter table public.meetings add column if not exists scheduled_ends_at timestamptz;
+create index if not exists calendar_events_range_idx on public.calendar_events(starts_at,ends_at);
+create index if not exists meeting_share_links_meeting_idx on public.meeting_share_links(meeting_id,created_at desc);
+
 create table if not exists public.meeting_messages (
   id uuid primary key default gen_random_uuid(),
   meeting_id uuid not null references public.meetings(id) on delete cascade,
@@ -350,6 +389,96 @@ create or replace function public.require_user() returns uuid
 language plpgsql stable security definer set search_path = public, auth as $$
 declare v_user uuid := auth.uid();
 begin if v_user is null then raise exception 'Inicia sesión para continuar.' using errcode = 'P0001'; end if; return v_user; end; $$;
+
+create or replace function public.claim_user_session() returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare
+  v_user uuid:=auth.uid(); v_session uuid:=nullif(auth.jwt()->>'session_id','')::uuid;
+  v_state public.user_session_state; v_profile public.profiles;
+begin
+  if v_user is null or v_session is null then raise exception 'Inicia sesion para continuar.' using errcode='P0001'; end if;
+  select * into v_profile from public.profiles where id=v_user;
+  if v_profile.id is null then raise exception 'Tu perfil no esta disponible.' using errcode='P0001'; end if;
+  if v_profile.role='ADMIN' then
+    return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status,'singleSessionExempt',true);
+  end if;
+  insert into public.user_session_state(user_id) values(v_user) on conflict(user_id) do nothing;
+  select * into v_state from public.user_session_state where user_id=v_user for update;
+  if v_state.conflict_until is not null and v_state.conflict_until>now() then
+    return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',v_state.conflict_until);
+  end if;
+  if v_state.active_session_id is null or v_state.active_session_id=v_session
+    or v_state.last_seen_at is null or v_state.last_seen_at<now()-interval '75 seconds' then
+    update public.user_session_state set active_session_id=v_session,last_seen_at=now(),conflict_until=null,updated_at=now() where user_id=v_user;
+    return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status,'singleSessionExempt',false);
+  end if;
+  update public.user_session_state set active_session_id=null,last_seen_at=null,
+    conflict_until=now()+interval '30 seconds',updated_at=now() where user_id=v_user;
+  return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',now()+interval '30 seconds');
+end; $$;
+
+create or replace function public.heartbeat_user_session() returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare
+  v_user uuid:=auth.uid(); v_session uuid:=nullif(auth.jwt()->>'session_id','')::uuid;
+  v_state public.user_session_state; v_profile public.profiles;
+begin
+  if v_user is null or v_session is null then raise exception 'Inicia sesion para continuar.' using errcode='P0001'; end if;
+  select * into v_profile from public.profiles where id=v_user;
+  if v_profile.role='ADMIN' then return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status); end if;
+  select * into v_state from public.user_session_state where user_id=v_user for update;
+  if v_state.conflict_until is not null and v_state.conflict_until>now() then
+    return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',v_state.conflict_until);
+  end if;
+  if v_state.active_session_id is distinct from v_session then
+    return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status);
+  end if;
+  update public.user_session_state set last_seen_at=now(),updated_at=now() where user_id=v_user;
+  return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status);
+end; $$;
+
+create or replace function public.release_user_session() returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_user uuid:=auth.uid(); v_session uuid:=nullif(auth.jwt()->>'session_id','')::uuid;
+begin
+  update public.user_session_state set active_session_id=null,last_seen_at=null,updated_at=now()
+  where user_id=v_user and active_session_id=v_session;
+  return jsonb_build_object('released',found);
+end; $$;
+
+create or replace function public.require_user() returns uuid
+language plpgsql stable security definer set search_path=public,auth as $$
+declare
+  v_user uuid:=auth.uid(); v_session uuid:=nullif(auth.jwt()->>'session_id','')::uuid;
+  v_role text; v_valid boolean;
+begin
+  if v_user is null then raise exception 'Inicia sesion para continuar.' using errcode='P0001'; end if;
+  select role into v_role from public.profiles where id=v_user;
+  if v_role='ADMIN' then return v_user; end if;
+  select active_session_id=v_session and (conflict_until is null or conflict_until<=now()) into v_valid
+  from public.user_session_state where user_id=v_user;
+  if not coalesce(v_valid,false) then raise exception 'GALAXY_DUPLICATE_SESSION' using errcode='P0001'; end if;
+  return v_user;
+end; $$;
+
+create or replace function public.require_admin() returns uuid
+language plpgsql stable security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user();
+begin
+  if not exists(select 1 from public.profiles where id=v_user and role='ADMIN' and status='ACTIVE') then
+    raise exception 'Esta accion esta reservada al administrador.' using errcode='42501';
+  end if;
+  return v_user;
+end; $$;
+
+create or replace function public.is_current_session_valid() returns boolean
+language sql stable security definer set search_path=public,auth as $$
+  select exists(select 1 from public.profiles p where p.id=auth.uid() and p.role='ADMIN') or exists(
+    select 1 from public.user_session_state s where s.user_id=auth.uid()
+      and s.active_session_id=nullif(auth.jwt()->>'session_id','')::uuid
+      and (s.conflict_until is null or s.conflict_until<=now())
+  );
+$$;
 
 -- Server-only bridge between encrypted Supabase Vault values and the TURN Edge
 -- Function. Execution is granted exclusively to service_role at the end.
@@ -540,7 +669,7 @@ $$;
 -- RLS de las tablas de negocio. También permite precalentar el WebSocket por usuario.
 create or replace function public.can_access_realtime_topic(p_topic text,p_extension text) returns boolean
 language sql stable security definer set search_path=public,auth as $$
-  select p_extension in ('broadcast','presence') and (
+  select public.is_current_session_valid() and p_extension in ('broadcast','presence') and (
     p_topic='user:'||(select auth.uid())::text
     or p_topic like 'db:notifications:'||(select auth.uid())::text||':%'
     or (public.has_active_membership((select auth.uid())) and exists(
@@ -558,7 +687,8 @@ language sql stable set search_path = public as $$
   select jsonb_build_object('id', p_meeting.id, 'meetingId', p_meeting.id, 'title', p_meeting.title,
     'roomCode', p_meeting.room_code, 'status', p_meeting.status, 'waitingRoom', p_meeting.waiting_room,
     'locked', p_meeting.locked, 'host', p_meeting.host_id = p_user, 'hostId', p_meeting.host_id,
-    'startsAt', p_meeting.starts_at, 'endedAt', p_meeting.ended_at);
+    'startsAt', p_meeting.starts_at, 'endedAt', p_meeting.ended_at,
+    'scheduledEndsAt',p_meeting.scheduled_ends_at);
 $$;
 
 create or replace function public.get_current_user() returns jsonb
@@ -572,6 +702,30 @@ language sql stable security definer set search_path = public, auth as $$
       jsonb_build_object('availableBalance',0,'pendingBalance',0,'totalEarned',0,'totalSpent',0,'currency','USDT')))
   from public.profiles p join auth.users u on u.id = p.id where p.id = public.require_user();
 $$;
+
+create or replace function public.get_admin_users() returns jsonb
+language sql stable security definer set search_path=public,auth as $$
+  with admin as (select public.require_admin() id)
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',p.id,'name',p.name,'username',p.username,'email',u.email,'role',p.role,'status',p.status,
+    'createdAt',p.created_at,'lastSeenAt',s.last_seen_at,'sessionActive',s.active_session_id is not null and s.last_seen_at>now()-interval '75 seconds'
+  ) order by case when p.role='ADMIN' then 0 else 1 end,p.created_at desc),'[]'::jsonb)
+  from public.profiles p join auth.users u on u.id=p.id cross join admin
+  left join public.user_session_state s on s.user_id=p.id
+  where p.status<>'DELETED';
+$$;
+
+create or replace function public.set_user_access(p_user_id uuid,p_active boolean) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_admin uuid:=public.require_admin(); v_profile public.profiles;
+begin
+  if p_user_id=v_admin then raise exception 'No puedes bloquear tu propia cuenta administrativa.' using errcode='P0001'; end if;
+  select * into v_profile from public.profiles where id=p_user_id for update;
+  if v_profile.id is null or v_profile.role='ADMIN' then raise exception 'No puedes modificar esa cuenta.' using errcode='P0001'; end if;
+  update public.profiles set status=case when coalesce(p_active,false) then 'ACTIVE' else 'SUSPENDED' end
+  where id=p_user_id returning * into v_profile;
+  return jsonb_build_object('id',v_profile.id,'status',v_profile.status,'active',v_profile.status='ACTIVE');
+end; $$;
 
 create or replace function public.update_profile(p_name text,p_username text,p_bio text default '') returns jsonb
 language plpgsql security definer set search_path=public,auth as $$
@@ -639,7 +793,7 @@ end; $$;
 
 create or replace function public.create_meeting(p_title text, p_password text default '', p_waiting_room boolean default true) returns jsonb
 language plpgsql security definer set search_path = public, auth, extensions as $$
-declare v_user uuid := public.require_active_membership(); v_meeting public.meetings; v_code text; v_ice jsonb;
+declare v_user uuid := public.require_admin(); v_meeting public.meetings; v_code text; v_ice jsonb;
 begin
   if char_length(trim(p_title)) not between 1 and 140 then raise exception 'Ingresa un título válido.' using errcode = 'P0001'; end if;
   if coalesce(p_password, '') <> '' and char_length(p_password) < 6 then raise exception 'La contraseña debe tener al menos 6 caracteres.' using errcode = 'P0001'; end if;
@@ -651,6 +805,105 @@ begin
   return public.meeting_summary(v_meeting,v_user)||jsonb_build_object(
     'role','HOST','participantStatus','ADMITTED','iceServers',coalesce(v_ice,'[]'::jsonb),'messages','[]'::jsonb
   );
+end; $$;
+
+create or replace function public.create_meeting_share_link(p_meeting_id uuid) returns jsonb
+language plpgsql security definer set search_path=public,auth,extensions as $$
+declare v_admin uuid:=public.require_admin(); v_token text; v_meeting public.meetings;
+begin
+  select * into v_meeting from public.meetings where id=p_meeting_id and host_id=v_admin and status='ACTIVE';
+  if v_meeting.id is null then raise exception 'Solo puedes compartir una reunion activa que hayas creado.' using errcode='P0001'; end if;
+  delete from public.meeting_share_links where expires_at<=now() or revoked_at is not null;
+  v_token:=encode(gen_random_bytes(32),'hex');
+  insert into public.meeting_share_links(meeting_id,created_by,token_hash,expires_at)
+  values(v_meeting.id,v_admin,digest(v_token,'sha256'),least(now()+interval '7 days',coalesce(v_meeting.scheduled_ends_at,now()+interval '7 days')));
+  return jsonb_build_object('token',v_token,'expiresAt',least(now()+interval '7 days',coalesce(v_meeting.scheduled_ends_at,now()+interval '7 days')));
+end; $$;
+
+create or replace function public.redeem_meeting_share_link(p_token text) returns jsonb
+language plpgsql security definer set search_path=public,auth,extensions as $$
+declare v_user uuid:=public.require_active_membership(); v_link public.meeting_share_links; v_meeting public.meetings; v_ice jsonb;
+begin
+  if coalesce(p_token,'') !~ '^[0-9a-f]{64}$' then raise exception 'El enlace de invitacion no es valido.' using errcode='P0001'; end if;
+  select l.* into v_link from public.meeting_share_links l
+  where l.token_hash=digest(lower(p_token),'sha256') and l.revoked_at is null and l.expires_at>now() for update;
+  if v_link.id is null then raise exception 'El enlace de invitacion expiro o fue revocado.' using errcode='P0001'; end if;
+  select * into v_meeting from public.meetings where id=v_link.meeting_id and status='ACTIVE';
+  if v_meeting.id is null or (v_meeting.scheduled_ends_at is not null and v_meeting.scheduled_ends_at<=now()) then
+    raise exception 'La reunion ya no esta disponible.' using errcode='P0001';
+  end if;
+  insert into public.meeting_participants(meeting_id,user_id,role,status,joined_at,left_at)
+  values(v_meeting.id,v_user,'PARTICIPANT','ADMITTED',now(),null)
+  on conflict(meeting_id,user_id) do update set status='ADMITTED',joined_at=coalesce(public.meeting_participants.joined_at,now()),left_at=null;
+  select value into v_ice from public.app_settings where key='ice_servers';
+  return public.meeting_summary(v_meeting,v_user)||jsonb_build_object(
+    'role','PARTICIPANT','participantStatus','ADMITTED','iceServers',coalesce(v_ice,'[]'::jsonb),
+    'messages',public.get_meeting_messages(v_meeting.id,100));
+end; $$;
+
+create or replace function public.cleanup_old_calendar_events() returns integer
+language plpgsql security definer set search_path=public as $$
+declare v_count integer:=0;
+begin
+  update public.meetings set status='ENDED',ended_at=coalesce(ended_at,scheduled_ends_at)
+  where status='ACTIVE' and scheduled_ends_at is not null and scheduled_ends_at<=now();
+  delete from public.calendar_events where ends_at<now()-interval '7 days';
+  get diagnostics v_count=row_count;
+  return v_count;
+end; $$;
+
+create or replace function public.get_calendar_events(p_from timestamptz,p_to timestamptz) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_active_membership(); v_events jsonb;
+begin
+  perform public.cleanup_old_calendar_events();
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',e.id,'title',e.title,'description',e.description,'kind',e.kind,
+    'startsAt',e.starts_at,'endsAt',e.ends_at,'recurring',e.recurrence_group is not null,
+    'roomCode',m.room_code,'status',case when e.ends_at<=now() then 'FINISHED' else 'ACTIVE' end
+  ) order by e.starts_at),'[]'::jsonb) into v_events
+  from public.calendar_events e left join public.meetings m on m.id=e.meeting_id
+  where e.starts_at<least(p_to,p_from+interval '62 days') and e.ends_at>p_from
+    and e.ends_at>=now()-interval '7 days';
+  return jsonb_build_object('events',v_events,'serverNow',now(),
+    'canManage',exists(select 1 from public.profiles where id=v_user and role='ADMIN' and status='ACTIVE'));
+end; $$;
+
+create or replace function public.create_calendar_event(
+  p_title text,p_description text,p_kind text,p_starts_at timestamptz,p_ends_at timestamptz,
+  p_recurrence text default 'NONE',p_repeat_until date default null
+) returns jsonb language plpgsql security definer set search_path=public,auth,extensions as $$
+declare
+  v_admin uuid:=public.require_admin(); v_start timestamptz:=p_starts_at; v_end timestamptz:=p_ends_at;
+  v_group uuid:=case when p_recurrence='WEEKLY' then gen_random_uuid() else null end;
+  v_meeting_id uuid; v_code text; v_count integer:=0;
+begin
+  if char_length(trim(coalesce(p_title,''))) not between 1 and 140 then raise exception 'Ingresa un titulo valido.' using errcode='P0001'; end if;
+  if char_length(coalesce(p_description,''))>800 then raise exception 'La descripcion es demasiado larga.' using errcode='P0001'; end if;
+  if p_kind not in ('MEETING','EVENT') or p_recurrence not in ('NONE','WEEKLY') then raise exception 'La programacion no es valida.' using errcode='P0001'; end if;
+  if p_ends_at<=p_starts_at or p_starts_at<now()-interval '5 minutes' then raise exception 'Revisa las horas de inicio y final.' using errcode='P0001'; end if;
+  if p_recurrence='WEEKLY' and (p_repeat_until is null or p_repeat_until<p_starts_at::date or p_repeat_until>p_starts_at::date+364) then
+    raise exception 'La repeticion semanal debe terminar dentro de los proximos 12 meses.' using errcode='P0001';
+  end if;
+  loop
+    v_meeting_id:=null;
+    if p_kind='MEETING' then
+      loop
+        v_code:=upper(substr(encode(gen_random_bytes(4),'hex'),1,4)||'-'||substr(encode(gen_random_bytes(4),'hex'),1,4));
+        exit when not exists(select 1 from public.meetings where room_code=v_code);
+      end loop;
+      insert into public.meetings(host_id,room_code,title,waiting_room,status,starts_at,scheduled_ends_at)
+      values(v_admin,v_code,trim(p_title),false,'ACTIVE',v_start,v_end) returning id into v_meeting_id;
+      insert into public.meeting_participants(meeting_id,user_id,role,status,joined_at)
+      values(v_meeting_id,v_admin,'HOST','ADMITTED',null);
+    end if;
+    insert into public.calendar_events(meeting_id,created_by,title,description,kind,starts_at,ends_at,recurrence_group)
+    values(v_meeting_id,v_admin,trim(p_title),trim(coalesce(p_description,'')),p_kind,v_start,v_end,v_group);
+    v_count:=v_count+1;
+    exit when p_recurrence='NONE' or (v_start+interval '7 days')::date>p_repeat_until or v_count>=53;
+    v_start:=v_start+interval '7 days'; v_end:=v_end+interval '7 days';
+  end loop;
+  return jsonb_build_object('created',v_count);
 end; $$;
 
 create or replace function public.message_view(p_message public.meeting_messages, p_viewer uuid) returns jsonb
@@ -689,6 +942,9 @@ language plpgsql security definer set search_path = public, auth, extensions as 
 declare v_user uuid := public.require_active_membership(); v_meeting public.meetings; v_member public.meeting_participants; v_status text; v_role text; v_ice jsonb;
 begin
   select * into v_meeting from public.meetings where room_code = upper(trim(p_room_code));
+  if v_meeting.scheduled_ends_at is not null and (v_meeting.starts_at>now() or v_meeting.scheduled_ends_at<=now()) then
+    raise exception 'La reunion programada no esta disponible en este momento.' using errcode='P0001';
+  end if;
   if v_meeting.id is null or v_meeting.status = 'ENDED' then raise exception 'La sala no existe o ya terminó.' using errcode = 'P0001'; end if;
   select * into v_member from public.meeting_participants where meeting_id = v_meeting.id and user_id = v_user;
   if v_meeting.host_id <> v_user and v_meeting.locked then raise exception 'La sala está bloqueada por el anfitrión.' using errcode = 'P0001'; end if;
@@ -715,12 +971,19 @@ begin
 end; $$;
 
 create or replace function public.get_my_meetings() returns jsonb
-language sql stable security definer set search_path = public, auth as $$
-  with me as (select public.require_active_membership() id), visible as (
-    select m as meeting, m.updated_at activity_at, me.id as user_id from public.meetings m cross join me
-    left join public.meeting_participants p on p.meeting_id=m.id and p.user_id=me.id
-    where m.host_id=me.id or (p.user_id=me.id and p.status<>'DENIED') order by m.updated_at desc limit 40)
-  select coalesce(jsonb_agg(public.meeting_summary(meeting, user_id) order by activity_at desc),'[]'::jsonb) from visible;
+language plpgsql security definer set search_path = public, auth as $$
+declare v_user uuid:=public.require_active_membership(); v_result jsonb;
+begin
+  perform public.cleanup_old_calendar_events();
+  select coalesce(jsonb_agg(public.meeting_summary(visible.meeting,v_user) order by visible.activity_at desc),'[]'::jsonb)
+  into v_result from (
+    select m meeting,m.updated_at activity_at from public.meetings m
+    left join public.meeting_participants p on p.meeting_id=m.id and p.user_id=v_user
+    where m.host_id=v_user or (p.user_id=v_user and p.status<>'DENIED')
+    order by m.updated_at desc limit 40
+  ) visible;
+  return v_result;
+end;
 $$;
 
 create or replace function public.get_meeting_state(p_meeting_id uuid) returns jsonb
@@ -979,6 +1242,9 @@ alter table public.meeting_messages enable row level security;
 alter table public.meeting_message_reactions enable row level security;
 alter table public.notifications enable row level security;
 alter table public.meeting_commands enable row level security;
+alter table public.meeting_share_links enable row level security;
+alter table public.user_session_state enable row level security;
+alter table public.calendar_events enable row level security;
 alter table public.membership_plans enable row level security;
 alter table public.membership_payment_orders enable row level security;
 alter table public.memberships enable row level security;
@@ -988,11 +1254,15 @@ alter table public.product_entitlements enable row level security;
 alter table public.product_download_audit enable row level security;
 
 drop policy if exists profiles_authenticated_read on public.profiles;
-create policy profiles_authenticated_read on public.profiles for select to authenticated using (status='ACTIVE');
+create policy profiles_authenticated_read on public.profiles for select to authenticated using (status='ACTIVE' and public.is_current_session_valid());
+drop policy if exists calendar_events_active_read on public.calendar_events;
+create policy calendar_events_active_read on public.calendar_events for select to authenticated using (
+  ends_at>=now()-interval '7 days' and exists(select 1 from public.profiles viewer where viewer.id=auth.uid() and viewer.status='ACTIVE')
+);
 drop policy if exists wallets_owner_read on public.wallets;
 create policy wallets_owner_read on public.wallets for select to authenticated using (user_id=auth.uid());
 drop policy if exists meetings_member_read on public.meetings;
-create policy meetings_member_read on public.meetings for select to authenticated using (host_id=auth.uid() or public.is_admitted_to_meeting(id));
+create policy meetings_member_read on public.meetings for select to authenticated using (public.is_current_session_valid() and (host_id=auth.uid() or public.is_admitted_to_meeting(id)));
 drop policy if exists participants_related_read on public.meeting_participants;
 create policy participants_related_read on public.meeting_participants for select to authenticated using (user_id=auth.uid() or exists(select 1 from public.meetings m where m.id=meeting_id and m.host_id=auth.uid()));
 drop policy if exists messages_member_read on public.meeting_messages;
@@ -1045,5 +1315,18 @@ grant execute on function public.is_admitted_to_meeting(uuid),public.can_access_
 grant execute on function public.activate_membership_from_payment(uuid,text,text,numeric,jsonb) to service_role;
 grant execute on function public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb) to service_role;
 grant execute on function public.get_turn_provider_config() to service_role;
+
+revoke execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),
+  public.require_admin(),public.is_current_session_valid(),public.get_admin_users(),public.set_user_access(uuid,boolean),
+  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),
+  public.cleanup_old_calendar_events(),public.get_calendar_events(timestamptz,timestamptz),
+  public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date)
+from public,anon,authenticated;
+grant execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),public.is_current_session_valid(),
+  public.get_admin_users(),public.set_user_access(uuid,boolean),
+  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),
+  public.get_calendar_events(timestamptz,timestamptz),
+  public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date)
+to authenticated;
 
 commit;

@@ -6,7 +6,9 @@ const parameterNames = Object.freeze({
   locked: 'p_locked', query: 'p_query', userId: 'p_user_id', limit: 'p_limit',
   body: 'p_body', replyToId: 'p_reply_to_id', messageId: 'p_message_id', emoji: 'p_emoji',
   commandId: 'p_command_id', notificationId: 'p_notification_id', invitationId: 'p_invitation_id',
-  status: 'p_status',
+  status: 'p_status', token: 'p_token', active: 'p_active', from: 'p_from', to: 'p_to',
+  description: 'p_description', kind: 'p_kind', startsAt: 'p_starts_at', endsAt: 'p_ends_at',
+  recurrence: 'p_recurrence', repeatUntil: 'p_repeat_until',
 });
 
 function friendlyError(error) {
@@ -41,6 +43,9 @@ function friendlyError(error) {
   if (code === 'unexpected_failure' || /database error.*(saving|creating).*user/i.test(message)) {
     return new Error('No pudimos crear el perfil en este momento. El administrador debe revisar el registro de Auth.');
   }
+  if (message === 'GALAXY_DUPLICATE_SESSION') {
+    return new Error('Esta cuenta se abrió en más de un navegador o dispositivo. Cerramos ambas sesiones por seguridad.');
+  }
   if (error.code === 'P0001') return new Error(error.message);
   return new Error('No fue posible completar la solicitud. Intenta nuevamente.');
 }
@@ -60,6 +65,11 @@ async function rpc(name, payload = {}) {
 async function currentUser() {
   const { data: authData, error: authError } = await supabase.auth.getSession();
   if (authError || !authData.session) return null;
+  const sessionState = await rpc('claim_user_session');
+  if (sessionState?.status === 'DUPLICATE') {
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+    throw new Error('Esta cuenta se abriÃ³ en mÃ¡s de un navegador o dispositivo. Cerramos ambas sesiones por seguridad.');
+  }
   return rpc('get_current_user');
 }
 
@@ -78,16 +88,22 @@ export const api = {
     return { user: await currentUser(), session: data.session };
   },
   async register({ name, username, email, password }) {
-    const appUrl = new URL('index.html', new URL(import.meta.env.BASE_URL, globalThis.location.origin)).href;
+    const appUrl = new URL('index.html', new URL(import.meta.env.BASE_URL, globalThis.location.origin));
+    const currentParams = new URLSearchParams(globalThis.location.search);
+    for (const key of ['invite', 'meeting']) {
+      const value = currentParams.get(key);
+      if (value) appUrl.searchParams.set(key, value);
+    }
     const { data, error } = await supabase.auth.signUp({
       email: email.trim(), password,
-      options: { emailRedirectTo: appUrl, data: { name: name.trim(), username: username.trim().toLowerCase() } },
+      options: { emailRedirectTo: appUrl.href, data: { name: name.trim(), username: username.trim().toLowerCase() } },
     });
     if (error) throw friendlyError(error);
     if (!data.session) return { user: null, session: null, requiresConfirmation: true, email: email.trim() };
     return { user: await currentUser(), session: data.session };
   },
   async logout() {
+    await rpc('release_user_session').catch(() => {});
     const { error } = await supabase.auth.signOut();
     if (error) throw friendlyError(error);
     return { loggedOut: true };
@@ -103,6 +119,8 @@ export const api = {
   getTurnCredentials: (meetingId) => invokeSecure('turn-credentials', { meetingId }, 'El relay TURN no está disponible.'),
   getScannerDownload: () => invokeSecure('scanner-download', {}, 'No fue posible preparar la descarga privada.'),
   createMeeting: (payload) => rpc('create_meeting', payload),
+  createMeetingShareLink: (meetingId) => rpc('create_meeting_share_link', { meetingId }),
+  redeemMeetingShareLink: (token) => rpc('redeem_meeting_share_link', { token }),
   getCalendarEvents: (payload) => rpc('get_calendar_events', payload),
   createCalendarEvent: (payload) => rpc('create_calendar_event', payload),
   joinMeeting: (payload) => rpc('join_meeting', payload),
@@ -117,6 +135,8 @@ export const api = {
   endMeeting: (payload) => rpc('end_meeting', payload),
   restartMeeting: (payload) => rpc('restart_meeting', payload),
   removeEndedMeeting: (payload) => rpc('remove_ended_meeting', payload),
+  getAdminUsers: () => rpc('get_admin_users'),
+  setUserAccess: (payload) => rpc('set_user_access', payload),
   getCommunityMembers: (query = '') => rpc('get_community_members', { query }),
   getMeetingInviteCandidates: (meetingId, query = '') => rpc('get_meeting_invite_candidates', { meetingId, query }),
   markMeetingInvitationSeen: (invitationId) => rpc('mark_meeting_invitation_seen', { invitationId }),
@@ -128,6 +148,14 @@ export const api = {
   reactToMeetingMessage: (payload) => rpc('react_to_meeting_message', payload),
   requestMeetingMute: (payload) => rpc('request_meeting_mute', payload),
   consumeMeetingCommand: (payload) => rpc('consume_meeting_command', payload),
+  async heartbeatSession() {
+    const state = await rpc('heartbeat_user_session');
+    if (state?.status === 'DUPLICATE') {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+      throw new Error('Esta cuenta se abriÃ³ en mÃ¡s de un navegador o dispositivo. Cerramos ambas sesiones por seguridad.');
+    }
+    return state;
+  },
   onMeetingParticipantChange(meetingId, callback) {
     let active = true; let channel = null;
     authorizeRealtime().then(() => {

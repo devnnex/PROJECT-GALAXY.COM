@@ -31,7 +31,17 @@ El artefacto público está minificado, no incluye sourcemaps ni archivos fuente
 
 Supabase Realtime Broadcast/Presence entrega señalización WebRTC, presencia, manos levantadas, emoji, chat y moderación sin el polling de Apps Script. PostgreSQL persiste salas, admisiones, invitaciones, mensajes y reacciones.
 
-Supabase no incluye TURN. La Edge Function `turn-credentials` entrega credenciales efímeras de Cloudflare TURN a participantes admitidos, lo que cubre redes móviles y NAT restrictivos una vez configurados los secretos. Todas las cuentas registradas con estado activo pueden crear o entrar a reuniones; la sala de espera y la admisión siguen siendo obligatorias cuando el anfitrión las habilita. Consulta [tiempo real](docs/REALTIME.md) y [despliegue](docs/DEPLOYMENT.md).
+Supabase no incluye TURN. La Edge Function `turn-credentials` entrega credenciales efímeras de Cloudflare TURN a participantes admitidos, lo que cubre redes móviles y NAT restrictivos una vez configurados los secretos. Solo el administrador puede crear reuniones; las cuentas activas pueden entrar mediante invitación, código o calendario. Consulta [tiempo real](docs/REALTIME.md) y [despliegue](docs/DEPLOYMENT.md).
+
+## Acceso y administración
+
+`elkin56ty@gmail.com` es la identidad administrativa protegida por la allowlist del servidor. Las demás cuentas solo ven Reuniones, Calendario y Perfil; pueden entrar, aceptar o rechazar invitaciones, pero no crear salas ni eventos. La sección **Usuarios** permite al administrador suspender y reactivar cuentas. Una cuenta suspendida conserva una pantalla informativa bloqueada, mientras las RPC operativas rechazan su acceso.
+
+Cada cuenta regular admite una sola sesión Supabase. Si aparece otra sesión de navegador o dispositivo mientras la primera sigue activa, ambas se invalidan y la cuenta puede volver a entrar tras la ventana de seguridad de 30 segundos. El administrador está exento para evitar un bloqueo operativo.
+
+Los enlaces compartidos usan un token aleatorio almacenado solo como hash y nunca incluyen la contraseña de la sala. Tras autenticar o registrar al invitado, el servidor canjea el token y completa el ingreso. Las reuniones finalizadas pueden quitarse de **Mis reuniones**; su entrada de calendario se conserva siete días y luego se limpia automáticamente.
+
+Al compartir pantalla desde la cuenta administrativa, el flujo obliga a definir al menos una zona de privacidad. Las zonas se dibujan en un canvas antes de enviar el video WebRTC, por lo que los asistentes no pueden retirar la cobertura desde la interfaz receptora.
 
 ## Pagos y Scanner
 

@@ -123,3 +123,10 @@
   .meeting-audio-unlock { bottom: 58px; }
   .background-meeting-bar { left: 8px; right: 8px; bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; }.background-meeting-bar > .secondary-button { display: none; }
 }
+
+.privacy-mask-stage { position: relative; touch-action: none; }
+.privacy-redaction { position: absolute; z-index: 4; min-width: 8%; min-height: 4%; display: grid; place-items: center; overflow: visible; cursor: move; border: 2px solid #9d72eb; background: repeating-linear-gradient(135deg,#05040a 0,#05040a 9px,#100c18 9px,#100c18 18px); box-shadow: 0 0 0 1px rgba(0,0,0,.75),0 7px 24px rgba(0,0,0,.5); color: #cdb7f7; font: 700 8px 'Manrope'; letter-spacing: .13em; }
+.privacy-redaction i { position: absolute; right: -7px; bottom: -7px; width: 15px; height: 15px; border: 2px solid #271a36; border-radius: 3px; background: #b28af8; cursor: nwse-resize; }
+.privacy-mask-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
+.privacy-mask-actions small { color: #7e7586; font-size: 9px; }
+.privacy-mask-modal { width: min(920px,calc(100vw - 24px)); }
