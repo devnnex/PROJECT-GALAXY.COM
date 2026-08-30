@@ -165,6 +165,15 @@ describe('Supabase contract', () => {
     expect(schema).toMatch(/delete from public\.meeting_messages msg\s+using public\.meetings meeting\s+where msg\.meeting_id=meeting\.id and meeting\.status='ENDED'/);
   });
 
+  it('announces newly raised hands and lets emojis become part of chat messages', () => {
+    expect(meetingStudio).toContain('SpeechSynthesisUtterance');
+    expect(meetingStudio).toContain('tiene una pregunta.');
+    expect(meetingStudio).toContain('participantHandStates.current.get(peer.peerId) === false');
+    expect(meetingStudio).toContain('insertEmoji');
+    expect(meetingStudio).toContain('message-emoji-picker');
+    expect(meetingStyles).toContain('.message-emoji-picker');
+  });
+
   it('lets only the creator restart and safely remove ended meeting history', () => {
     expect(schema).toMatch(/function public\.restart_meeting[\s\S]*v_meeting\.host_id<>v_user[\s\S]*Solo quien creó la reunión puede reiniciarla/);
     expect(schema).toMatch(/function public\.restart_meeting[\s\S]*v_meeting\.status<>'ENDED'/);

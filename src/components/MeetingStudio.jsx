@@ -6,6 +6,18 @@ import { primeRealtime, releaseRealtimePrime } from '../services/supabase';
 import ConstellationAvatar from './ConstellationAvatar';
 
 const EMOJIS = ['👍', '👏', '❤️', '😂', '🎉', '🔥'];
+const MESSAGE_EMOJIS = [...EMOJIS, '😊', '🙏', '🤔', '✅', '🚀', '💡'];
+
+function announceRaisedHand(name) {
+  const synthesis = globalThis.speechSynthesis; const Utterance = globalThis.SpeechSynthesisUtterance;
+  if (!synthesis || typeof Utterance !== 'function') return;
+  const participantName = String(name || 'Un participante').replace(/\s+/g, ' ').trim().slice(0, 100) || 'Un participante';
+  const announcement = new Utterance(`${participantName} tiene una pregunta.`);
+  announcement.lang = 'es-CO'; announcement.rate = .96; announcement.pitch = 1; announcement.volume = .9;
+  const spanishVoice = synthesis.getVoices?.().find((voice) => /^es(?:-|_)/i.test(voice.lang));
+  if (spanishVoice) announcement.voice = spanishVoice;
+  synthesis.speak(announcement);
+}
 
 function AudioMeter({ stream, enabled = true, onSpeakingChange, label = 'Nivel de voz' }) {
   const [level, setLevel] = useState(0); const speakingRef = useRef(false);
@@ -254,10 +266,16 @@ function MeetingLobby({ busy, meetings, initialCode, onCreate, onJoin, onResume,
 function VideoSurfaceIcon() { return <Users />; }
 
 function ChatPanel({ messages, user, replyTo, setReplyTo, onSend, onReact }) {
-  const [body, setBody] = useState(''); const endRef = useRef(null);
+  const [body, setBody] = useState(''); const [emojiOpen, setEmojiOpen] = useState(false); const endRef = useRef(null); const inputRef = useRef(null);
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length]);
   const byId = Object.fromEntries(messages.map((item) => [item.id, item]));
-  return <div className="meeting-chat-panel"><div className="meeting-chat-scroll">{messages.length ? messages.map((message) => { const reply = byId[message.replyToId]; return <article className={`meeting-message ${message.senderId === user.id ? 'mine' : ''}`} key={message.id}>{reply && <div className="message-reply-preview"><Reply /> <span><strong>{reply.senderName}</strong>{reply.body}</span></div>}<header><strong>{message.senderId === user.id ? 'Tú' : message.senderName}</strong><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></header><p>{message.body}</p><div className="message-actions"><button onClick={() => setReplyTo(message)}><Reply /> Responder</button>{EMOJIS.slice(0, 3).map((emoji) => <button className="quick-reaction" key={emoji} onClick={() => onReact(message, emoji)}>{emoji}</button>)}</div>{Boolean(message.reactions?.length) && <div className="message-reactions">{message.reactions.map((reaction) => <button className={reaction.mine ? 'mine' : ''} key={reaction.emoji} onClick={() => onReact(message, reaction.emoji)}>{reaction.emoji} {reaction.count}</button>)}</div>}</article>; }) : <div className="chat-empty"><MessageCircle /><p>El chat comienza aquí.</p></div>}<div ref={endRef} /></div>{replyTo && <div className="replying"><Reply /><span>Respondiendo a <strong>{replyTo.senderName}</strong></span><button onClick={() => setReplyTo(null)}><X /></button></div>}<form className="meeting-message-form" onSubmit={async (event) => { event.preventDefault(); const sent = body.trim(); if (!sent) return; setBody(''); await onSend(sent); }}><input value={body} onChange={(event) => setBody(event.target.value)} maxLength="2000" placeholder="Escribe un mensaje…" /><button className="icon-button" aria-label="Enviar"><Send /></button></form></div>;
+  const insertEmoji = (emoji) => {
+    const input = inputRef.current; const start = input?.selectionStart ?? body.length; const end = input?.selectionEnd ?? start;
+    const next = `${body.slice(0, start)}${emoji}${body.slice(end)}`.slice(0, 2000); const caret = Math.min(start + emoji.length, next.length);
+    setBody(next); setEmojiOpen(false);
+    requestAnimationFrame(() => { input?.focus(); input?.setSelectionRange(caret, caret); });
+  };
+  return <div className="meeting-chat-panel"><div className="meeting-chat-scroll">{messages.length ? messages.map((message) => { const reply = byId[message.replyToId]; return <article className={`meeting-message ${message.senderId === user.id ? 'mine' : ''}`} key={message.id}>{reply && <div className="message-reply-preview"><Reply /> <span><strong>{reply.senderName}</strong>{reply.body}</span></div>}<header><strong>{message.senderId === user.id ? 'Tú' : message.senderName}</strong><time>{new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time></header><p>{message.body}</p><div className="message-actions"><button onClick={() => setReplyTo(message)}><Reply /> Responder</button>{EMOJIS.slice(0, 3).map((emoji) => <button className="quick-reaction" key={emoji} onClick={() => onReact(message, emoji)}>{emoji}</button>)}</div>{Boolean(message.reactions?.length) && <div className="message-reactions">{message.reactions.map((reaction) => <button className={reaction.mine ? 'mine' : ''} key={reaction.emoji} onClick={() => onReact(message, reaction.emoji)}>{reaction.emoji} {reaction.count}</button>)}</div>}</article>; }) : <div className="chat-empty"><MessageCircle /><p>El chat comienza aquí.</p></div>}<div ref={endRef} /></div>{replyTo && <div className="replying"><Reply /><span>Respondiendo a <strong>{replyTo.senderName}</strong></span><button onClick={() => setReplyTo(null)}><X /></button></div>}<form className="meeting-message-form" onSubmit={async (event) => { event.preventDefault(); const sent = body.trim(); if (!sent) return; setBody(''); setEmojiOpen(false); await onSend(sent); }}><div className="message-compose-field"><input ref={inputRef} value={body} onChange={(event) => setBody(event.target.value)} maxLength="2000" placeholder="Escribe un mensaje…" /><button className={`message-emoji-trigger ${emojiOpen ? 'active' : ''}`} type="button" aria-label="Agregar emoji al mensaje" aria-expanded={emojiOpen} onClick={() => setEmojiOpen((open) => !open)}><SmilePlus /></button>{emojiOpen && <div className="message-emoji-picker" role="group" aria-label="Emojis para el mensaje">{MESSAGE_EMOJIS.map((emoji) => <button type="button" aria-label={`Agregar ${emoji}`} key={emoji} onClick={() => insertEmoji(emoji)}>{emoji}</button>)}</div>}</div><button className="icon-button" aria-label="Enviar"><Send /></button></form></div>;
 }
 
 function InvitePanel({ members, onInvite, onClose }) {
@@ -273,6 +291,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`; const mediaKey = `galaxy_meeting_media_${user.id}`; const maskKey = `galaxy_privacy_masks_${user.id}`;
   const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null);
   const collaborationGrants = useRef(new Map()); const collaborationRequestTimes = useRef(new Map()); const presentationOwner = useRef(null); const cursorTimer = useRef(null); const requestTimer = useRef(null);
+  const participantHandStates = useRef(new Map()); const participantSnapshotReady = useRef(false);
   const annotationStrokesRef = useRef([]);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
@@ -365,7 +384,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
 
   const stopMedia = () => { mediaRef.current.getTracks().forEach((track) => track.stop()); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
-  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
+  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
   useEffect(() => {
     const epoch = ++lifecycleEpoch.current;
     return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); };
@@ -383,11 +402,17 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (normalized.participantStatus !== 'ADMITTED') { resumeMediaRequested.current = resumeMediaRequested.current || restoreMedia; setWaiting(true); setStatus('waiting'); return true; }
     let activeMedia = { mic, camera };
     if (restoreMedia || resumeMediaRequested.current) { activeMedia = await restoreMediaPreferences(); resumeMediaRequested.current = false; }
-    setWaiting(false); setJoined(true); setStatus('signaling'); connection.current?.disconnect();
+    setWaiting(false); setJoined(true); setStatus('signaling'); connection.current?.disconnect(); participantHandStates.current.clear(); participantSnapshotReady.current = false;
     const isCurrent = (client) => expectedEpoch === lifecycleEpoch.current && sequence === connectSequence.current && connection.current === client;
     let client;
     client = new SupabaseMeetingConnection({
-      onStatus: (value) => { if (isCurrent(client)) setStatus(value); }, onParticipants: (value) => { if (isCurrent(client)) setParticipants(value); },
+      onStatus: (value) => { if (isCurrent(client)) setStatus(value); }, onParticipants: (value) => {
+        if (!isCurrent(client)) return;
+        if (participantSnapshotReady.current) for (const peer of value) {
+          if (peer.handRaised && participantHandStates.current.get(peer.peerId) === false) announceRaisedHand(peer.name);
+        }
+        participantHandStates.current = new Map(value.map((peer) => [peer.peerId, Boolean(peer.handRaised)])); participantSnapshotReady.current = true; setParticipants(value);
+      },
       onRemoteStream: (peerId, stream) => { if (isCurrent(client)) setRemoteStreams((current) => { const next = { ...current }; if (stream) next[peerId] = stream; else delete next[peerId]; return next; }); },
       onPeerState: (peerId, state) => { if (isCurrent(client)) setPeerStates((current) => ({ ...current, [peerId]: state })); }, onReaction: (value) => { if (isCurrent(client)) showReaction(value); }, onChat: (value) => { if (isCurrent(client)) mergeMessage(value); },
       onChatHistory: (history) => { if (isCurrent(client)) history.forEach(mergeMessage); }, onChatReaction: (value) => { if (isCurrent(client)) applyChatReaction(value); },
@@ -520,7 +545,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       toast('Pantalla compartida con las zonas privadas integradas en el video.', 'info');
     } catch (error) { await stopShare(); toast(error.message || 'No fue posible aplicar la protección visual.', 'error'); }
   };
-  const toggleHand = () => { const next = !handRaised; setHandRaised(next); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised: next, speaking: localSpeaking }); };
+  const toggleHand = () => { const next = !handRaised; setHandRaised(next); if (next) announceRaisedHand(user.name); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised: next, speaking: localSpeaking }); };
   const react = (emoji) => { connection.current?.react(emoji); showReaction({ emoji }); setReactionMenu(false); };
   const requestCollaboration = (mode, presenterPeerId) => {
     if (!presenterPeerId || requestedCollaboration) return;
