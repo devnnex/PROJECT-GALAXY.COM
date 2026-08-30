@@ -50,6 +50,9 @@ describe('Galaxy owner and member access controls', () => {
   it('retains calendar history for seven days independently from meeting history', () => {
     expect(schema).toContain('meeting_id uuid references public.meetings(id) on delete set null');
     expect(schema).toContain("delete from public.calendar_events where ends_at<now()-interval '7 days'");
+    expect(schema).toContain('drop function if exists public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date)');
+    expect(schema).toMatch(/function public\.create_calendar_event\(\s*p_title text,p_description text,p_starts_at timestamptz,p_ends_at timestamptz,p_kind text/);
+    expect(schema).not.toContain('public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date)\n  to authenticated');
     expect(schema).toContain('function public.remove_ended_meeting');
     expect(meeting).toContain('api.removeEndedMeeting');
   });

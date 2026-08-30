@@ -869,8 +869,12 @@ begin
     'canManage',exists(select 1 from public.profiles where id=v_user and role='ADMIN' and status='ACTIVE'));
 end; $$;
 
+-- Preserve the original RPC signature. A previous revision placed p_kind
+-- before the timestamps, which created a second overload instead of replacing
+-- the existing function and made PostgREST return PGRST203 for named calls.
+drop function if exists public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date);
 create or replace function public.create_calendar_event(
-  p_title text,p_description text,p_kind text,p_starts_at timestamptz,p_ends_at timestamptz,
+  p_title text,p_description text,p_starts_at timestamptz,p_ends_at timestamptz,p_kind text,
   p_recurrence text default 'NONE',p_repeat_until date default null
 ) returns jsonb language plpgsql security definer set search_path=public,auth,extensions as $$
 declare
@@ -1320,13 +1324,13 @@ revoke execute on function public.claim_user_session(),public.heartbeat_user_ses
   public.require_admin(),public.is_current_session_valid(),public.get_admin_users(),public.set_user_access(uuid,boolean),
   public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),
   public.cleanup_old_calendar_events(),public.get_calendar_events(timestamptz,timestamptz),
-  public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date)
+  public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
 from public,anon,authenticated;
 grant execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),public.is_current_session_valid(),
   public.get_admin_users(),public.set_user_access(uuid,boolean),
   public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),
   public.get_calendar_events(timestamptz,timestamptz),
-  public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date)
+  public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
 to authenticated;
 
 commit;
