@@ -872,7 +872,10 @@ end; $$;
 -- Preserve the original RPC signature. A previous revision placed p_kind
 -- before the timestamps, which created a second overload instead of replacing
 -- the existing function and made PostgREST return PGRST203 for named calls.
+-- Drop both definitions first because PostgreSQL cannot change an existing
+-- function's parameter defaults with CREATE OR REPLACE (SQLSTATE 42P13).
 drop function if exists public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date);
+drop function if exists public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date);
 create or replace function public.create_calendar_event(
   p_title text,p_description text,p_starts_at timestamptz,p_ends_at timestamptz,p_kind text,
   p_recurrence text default 'NONE',p_repeat_until date default null
