@@ -135,6 +135,21 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('.meeting-route.background { display: none; }');
   });
 
+  it('supports floating meetings, mobile chat, natural self preview and the shared money rocket', () => {
+    expect(meetingStudio).toContain('video.requestPictureInPicture');
+    expect(meetingStudio).toContain("document.addEventListener('visibilitychange'");
+    expect(meetingStudio).toContain("video.webkitSetPresentationMode('picture-in-picture')");
+    expect(meetingStudio).toContain('createMeetingPipPlaceholder');
+    expect(meetingStudio).toContain('className={`mobile-chat-fab');
+    expect(meetingStyles).toContain('.meeting-page.mobile-panel-open .meeting-side');
+    expect(meetingStudio).toContain('muted mirrored speaking={localSpeaking}');
+    expect(meetingStyles).toContain('.video-surface.mirrored video:not(.audio-only)');
+    expect(meetingStudio).toContain("MONEY_ROCKET_REACTION = 'MONEY_ROCKET'");
+    expect(meetingClient).toContain("'MONEY_ROCKET'");
+    expect(meetingClient).toContain('isLiveReaction(message.emoji)');
+    expect(meetingStyles).toContain('@keyframes moneyRocketFlight');
+  });
+
   it('restores an active meeting and its safe collaboration state after a reload', () => {
     expect(meetingStudio).toContain('galaxy_active_meeting_');
     expect(meetingStudio).toContain('galaxy_meeting_media_');

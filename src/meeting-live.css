@@ -8,6 +8,7 @@
 .video-surface.presentation .video-name { display: none; }
 .video-surface.speaking, .people-list .person.speaking { border-color: rgba(148, 102, 239, .75); box-shadow: inset 0 0 0 1px rgba(148, 102, 239, .14), 0 0 22px rgba(113, 66, 202, .12); }
 .video-surface video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.video-surface.mirrored video:not(.audio-only) { transform: scaleX(-1); }
 .video-surface video.audio-only { opacity: 0; pointer-events: none; }
 .video-surface video::-webkit-media-controls, .video-surface video::-webkit-media-controls-start-playback-button { display: none!important; -webkit-appearance: none; }
 .remote-audio { position: absolute; width: 1px; height: 1px; left: -2px; bottom: 0; opacity: .001; pointer-events: none; }
@@ -35,9 +36,17 @@
 .reaction-menu { position: absolute; bottom: 65px; left: 50%; transform: translateX(-50%); display: flex; gap: 3px; padding: 7px; border-radius: 10px; }
 .reaction-menu button { min-width: 36px!important; width: 36px; height: 36px!important; font-size: 19px!important; }
 .reaction-layer { position: absolute; inset: 0; z-index: 8; pointer-events: none; overflow: hidden; }
-.reaction-layer span { position: absolute; left: 50%; bottom: 12%; font-size: 38px; animation: reactionFloat 2.2s ease-out forwards; }
-.reaction-layer span:nth-child(2n) { left: 38%; }.reaction-layer span:nth-child(3n) { left: 62%; }
+.reaction-layer > span { position: absolute; left: 50%; bottom: 12%; font-size: 38px; animation: reactionFloat 2.2s ease-out forwards; }
+.reaction-layer > span:nth-child(2n) { left: 38%; }.reaction-layer > span:nth-child(3n) { left: 62%; }
+.reaction-layer > .money-rocket-reaction { width: clamp(88px, 16vw, 150px); height: clamp(88px, 16vw, 150px); bottom: 4%; font-size: 0; filter: drop-shadow(0 0 16px rgba(93, 232, 217, .55)) drop-shadow(0 0 26px rgba(159, 91, 245, .42)); animation: moneyRocketFlight 3s cubic-bezier(.2,.75,.25,1) forwards; }
+.money-rocket-reaction img { width: 100%; height: 100%; object-fit: contain; }
+.money-rocket-launcher { position: absolute; z-index: 13; right: 14px; bottom: 14px; width: 52px; height: 52px; display: grid; place-items: center; padding: 4px; overflow: hidden; border: 1px solid rgba(139, 232, 198, .34); border-radius: 50%; background: radial-gradient(circle, rgba(103, 69, 166, .76), rgba(10, 8, 13, .92)); box-shadow: 0 0 18px rgba(116, 76, 202, .22); cursor: pointer; transition: transform .18s, box-shadow .18s; }
+.money-rocket-launcher:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 0 25px rgba(86, 220, 183, .35); }.money-rocket-launcher:disabled { opacity: .35; cursor: not-allowed; }.money-rocket-launcher img { width: 46px; height: 46px; object-fit: contain; }
 @keyframes reactionFloat { 0% { transform: translate(-50%, 20px) scale(.65); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(-50%, -220px) scale(1.2) rotate(8deg); opacity: 0; } }
+@keyframes moneyRocketFlight { 0% { transform: translate(-70%, 55px) scale(.34) rotate(-17deg); opacity: 0; } 14% { opacity: 1; } 52% { transform: translate(-15%, -115px) scale(1.05) rotate(4deg); opacity: 1; } 100% { transform: translate(105%, -390px) scale(.72) rotate(22deg); opacity: 0; } }
+.meeting-pip-source { position: fixed; left: -4px; bottom: -4px; z-index: -1; width: 2px; height: 2px; opacity: .001; pointer-events: none; }.meeting-pip-source.mirrored { transform: scaleX(-1); }
+.meeting-top-actions .secondary-button.active { border-color: rgba(99, 211, 160, .42); color: #8be0b4; background: rgba(65, 181, 128, .08); }
+.meeting-mobile-scrim,.mobile-chat-fab { display: none; }
 .collaboration-overlay { position: absolute; inset: 0; z-index: 7; width: 100%; height: 100%; pointer-events: none; touch-action: none; }
 .collaboration-overlay.active { pointer-events: auto; cursor: crosshair; }
 .remote-cursor text { fill: white; paint-order: stroke; stroke: rgba(6,4,8,.9); stroke-width: 5px; font: 600 19px 'Manrope'; }
@@ -133,3 +142,19 @@
 .privacy-mask-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; }
 .privacy-mask-actions small { color: #7e7586; font-size: 9px; }
 .privacy-mask-modal { width: min(920px,calc(100vw - 24px)); }
+
+@media (max-width: 1000px) {
+  .meeting-mobile-scrim { position: fixed; inset: 0; z-index: 70; display: block; border: 0; background: rgba(3, 2, 5, .7); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+  .mobile-chat-fab { position: fixed; z-index: 80; right: 18px; bottom: 18px; min-height: 42px; display: flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid rgba(155, 107, 229, .42); border-radius: 22px; background: rgba(22, 15, 31, .97); color: #d8c3f8; box-shadow: 0 12px 34px rgba(0,0,0,.48), 0 0 20px rgba(122, 76, 203, .16); font: 600 9px 'Manrope'; }
+  .mobile-chat-fab svg { width: 16px; }.mobile-chat-fab i { min-width: 18px; height: 18px; display: grid; place-items: center; border-radius: 9px; background: #7a4fc4; color: white; font: normal 7px 'DM Sans'; }.mobile-chat-fab.active { border-color: rgba(104, 214, 164, .45); color: #86deb2; }
+  .meeting-page.mobile-panel-open .meeting-side { position: fixed; z-index: 75; top: 74px; right: 14px; bottom: 72px; display: flex; width: min(430px, calc(100vw - 28px)); min-height: 0; margin: 0; border-color: rgba(158, 109, 231, .32); background: rgba(14, 11, 18, .99); box-shadow: 0 24px 65px rgba(0,0,0,.62); animation: mobilePanelIn .2s ease-out; }
+  .meeting-page.mobile-panel-open .meeting-chat-scroll { max-height: none; flex: 1; }
+  @keyframes mobilePanelIn { from { transform: translateY(18px); opacity: 0; } to { transform: none; opacity: 1; } }
+}
+
+@media (max-width: 700px) {
+  .mobile-chat-fab { right: 12px; bottom: calc(204px + env(safe-area-inset-bottom)); }
+  .meeting-page.mobile-panel-open .meeting-side { top: 68px; right: 8px; bottom: calc(258px + env(safe-area-inset-bottom)); left: 8px; width: auto; }
+  .meeting-page.mobile-panel-open .meeting-side-tabs button { padding-right: 4px; }
+  .money-rocket-launcher { width: 46px; height: 46px; right: 10px; bottom: 10px; }.money-rocket-launcher img { width: 41px; height: 41px; }
+}

@@ -7,6 +7,8 @@ export async function getMeetingAccess({ roomCode, password }) {
 }
 
 function defaultIceServers() { return [{ urls: 'stun:stun.l.google.com:19302' }]; }
+const LIVE_REACTIONS = new Set(['👍', '👏', '❤️', '😂', '🎉', '🔥', 'MONEY_ROCKET']);
+function isLiveReaction(value) { return typeof value === 'string' && LIVE_REACTIONS.has(value); }
 
 export class MeetingConnection {
   constructor(callbacks = {}) { this.callbacks = callbacks; this.socket = null; this.peers = new Map(); this.participants = new Map(); this.orphanIce = new Map(); this.localStream = new MediaStream(); this.selfId = ''; }
@@ -32,7 +34,7 @@ export class MeetingConnection {
         if (message.type === 'answer') { await this.acceptAnswer(message); return; }
         if (message.type === 'ice') { await this.acceptIce(message); return; }
         if (message.type === 'presence') { this.participants.set(message.peer.peerId, message.peer); this.emitParticipants(); return; }
-        if (message.type === 'reaction') { this.callbacks.onReaction?.({ peerId: message.peerId, emoji: message.emoji }); return; }
+        if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.peerId, emoji: message.emoji }); return; }
         if (message.type === 'chat') { this.callbacks.onChat?.(message.message); return; }
         if (message.type === 'chat-reaction') { this.callbacks.onChatReaction?.(message.update); return; }
         if (message.type === 'force-mute') { this.callbacks.onForceMute?.(message); return; }
@@ -93,7 +95,7 @@ export class MeetingConnection {
   }
   setPresence(data) { this.presence = { ...this.presence, ...data }; this.sendPresence(); }
   sendPresence() { this.send({ type: 'presence', data: this.presence || {} }); }
-  react(emoji) { this.send({ type: 'reaction', emoji }); }
+  react(emoji) { if (isLiveReaction(emoji)) this.send({ type: 'reaction', emoji }); }
   chat(message) { this.send({ type: 'chat', message }); }
   reactToChat(update) { this.send({ type: 'chat-reaction', update }); }
   collaborate(type, payload = {}, target = null) { this.send({ type, target, ...payload }); }
@@ -214,7 +216,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (message.type === 'offer') return this.acceptOffer(message);
     if (message.type === 'answer') return this.acceptAnswer(message);
     if (message.type === 'ice') return this.acceptIce(message);
-    if (message.type === 'reaction') { this.callbacks.onReaction?.({ peerId: message.source, emoji: message.emoji }); return; }
+    if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.source, emoji: message.emoji }); return; }
     if (message.type?.startsWith('collab-')) {
       if (!message.source || !this.participants.has(message.source)) return;
       this.callbacks.onCollaboration?.(message); return;
@@ -265,7 +267,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
   send(message) {
     if (['offer', 'answer', 'ice'].includes(message.type)) this.broadcast('signal', { ...message, source: this.selfId });
-    else if (message.type === 'reaction') this.broadcast('signal', { type: 'reaction', source: this.selfId, emoji: message.emoji });
+    else if (message.type === 'reaction' && isLiveReaction(message.emoji)) this.broadcast('signal', { type: 'reaction', source: this.selfId, emoji: message.emoji });
     else if (message.type?.startsWith('collab-')) this.broadcast('signal', { ...message, source: this.selfId });
     else if (message.type === 'moderation' && message.action === 'mute' && this.role === 'HOST') this.mutePeer(message.target);
   }

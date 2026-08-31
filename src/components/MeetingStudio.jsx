@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Check, Copy, Eraser, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Pencil, PhoneOff, Plus, Reply, RotateCcw, Send, ShieldCheck, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, X } from 'lucide-react';
+import { Camera, CameraOff, Check, Copy, Eraser, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Pencil, PhoneOff, PictureInPicture2, Plus, Reply, RotateCcw, Send, ShieldCheck, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, X } from 'lucide-react';
 import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 import { onOnlineUsersChange, primeRealtime, releaseRealtimePrime } from '../services/supabase';
@@ -7,6 +7,26 @@ import ConstellationAvatar from './ConstellationAvatar';
 
 const EMOJIS = ['👍', '👏', '❤️', '😂', '🎉', '🔥'];
 const MESSAGE_EMOJIS = [...EMOJIS, '😊', '🙏', '🤔', '✅', '🚀', '💡'];
+const MONEY_ROCKET_REACTION = 'MONEY_ROCKET';
+const MONEY_ROCKET_ASSET = `${import.meta.env.BASE_URL}assets/money-rocket-reaction.png`;
+
+function createMeetingPipPlaceholder(title) {
+  const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 360;
+  const context = canvas.getContext('2d');
+  if (!context || typeof canvas.captureStream !== 'function') return null;
+  const stars = Array.from({ length: 36 }, (_, index) => ({ x: (index * 97) % canvas.width, y: (index * 53) % canvas.height, r: 1 + index % 3 }));
+  const draw = () => {
+    const glow = context.createRadialGradient(320, 155, 18, 320, 155, 300);
+    glow.addColorStop(0, '#3a2162'); glow.addColorStop(.48, '#171021'); glow.addColorStop(1, '#070509');
+    context.fillStyle = glow; context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = 'rgba(210,190,255,.72)'; stars.forEach((star) => { context.beginPath(); context.arc(star.x, star.y, star.r, 0, Math.PI * 2); context.fill(); });
+    context.beginPath(); context.arc(320, 145, 58, 0, Math.PI * 2); context.strokeStyle = '#9b70ed'; context.lineWidth = 2; context.shadowBlur = 28; context.shadowColor = '#8b58e0'; context.stroke(); context.shadowBlur = 0;
+    context.fillStyle = '#eee6fa'; context.textAlign = 'center'; context.font = '600 25px Manrope, sans-serif'; context.fillText(String(title || 'Reunión activa').slice(0, 38), 320, 250);
+    context.fillStyle = '#72d69f'; context.font = '600 15px DM Sans, sans-serif'; context.fillText('●  Audio conectado', 320, 282);
+  };
+  draw(); const timer = setInterval(draw, 1000); const stream = canvas.captureStream(4);
+  return { stream, close() { clearInterval(timer); stream.getTracks().forEach((track) => track.stop()); } };
+}
 
 function announceRaisedHand(name) {
   const synthesis = globalThis.speechSynthesis; const Utterance = globalThis.SpeechSynthesisUtterance;
@@ -40,7 +60,7 @@ function AudioMeter({ stream, enabled = true, onSpeakingChange, label = 'Nivel d
   return <span className={`voice-meter ${level ? 'detecting' : ''}`} role="meter" aria-label={label} aria-valuenow={level} aria-valuemin="0" aria-valuemax="5">{[1, 2, 3, 4, 5].map((bar) => <i className={bar <= level ? 'on' : ''} key={bar} />)}</span>;
 }
 
-function VideoSurface({ stream, name, avatarSeed, avatar = '', muted = false, playAudio = true, speaking = false, handRaised = false, presentation = false }) {
+function VideoSurface({ stream, name, avatarSeed, avatar = '', muted = false, playAudio = true, speaking = false, handRaised = false, presentation = false, mirrored = false }) {
   const videoRef = useRef(null); const audioRef = useRef(null); const resumePlayback = useRef(null);
   const [playbackBlocked, setPlaybackBlocked] = useState(false); const [, refreshMedia] = useState(0);
   useEffect(() => {
@@ -83,7 +103,7 @@ function VideoSurface({ stream, name, avatarSeed, avatar = '', muted = false, pl
     return () => window.removeEventListener('pointerdown', unlock, true);
   }, [playbackBlocked]);
   const hasVideo = Boolean(stream?.getVideoTracks().some((track) => track.enabled && track.readyState === 'live'));
-  return <div className={`video-surface ${presentation ? 'presentation' : ''} ${speaking ? 'speaking' : ''} ${hasVideo ? 'has-video' : 'audio-only-surface'}`}>
+  return <div className={`video-surface ${presentation ? 'presentation' : ''} ${mirrored ? 'mirrored' : ''} ${speaking ? 'speaking' : ''} ${hasVideo ? 'has-video' : 'audio-only-surface'}`}>
     <video className={hasVideo ? '' : 'audio-only'} ref={videoRef} autoPlay playsInline muted controls={false} disablePictureInPicture controlsList="nodownload noplaybackrate noremoteplayback" />
     <audio className="remote-audio" ref={audioRef} autoPlay controls={false} preload="auto" />
     {!hasVideo && <ConstellationAvatar className="video-avatar" seed={avatarSeed || name} name={name} src={avatar} />}
@@ -309,6 +329,7 @@ function InvitePanel({ members, onlineUserIds, onInviteMany, onClose }) {
 export default function MeetingStudio({ toast, user, joinRequest, onSessionChange, canCreate = false }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`; const mediaKey = `galaxy_meeting_media_${user.id}`; const maskKey = `galaxy_privacy_masks_${user.id}`;
   const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null);
+  const pipVideoRef = useRef(null); const pipPlaceholderRef = useRef(null);
   const collaborationGrants = useRef(new Map()); const collaborationRequestTimes = useRef(new Map()); const presentationOwner = useRef(null); const cursorTimer = useRef(null); const requestTimer = useRef(null);
   const participantHandStates = useRef(new Map()); const participantSnapshotReady = useRef(false);
   const annotationStrokesRef = useRef([]);
@@ -318,7 +339,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const [mic, setMic] = useState(false); const [camera, setCamera] = useState(false); const [joined, setJoined] = useState(false); const [status, setStatus] = useState('offline'); const [relayReady, setRelayReady] = useState(null);
   const [participants, setParticipants] = useState([]); const [remoteStreams, setRemoteStreams] = useState({}); const [peerStates, setPeerStates] = useState({});
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
-  const [sideTab, setSideTab] = useState('people'); const [messages, setMessages] = useState([]); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
+  const [sideTab, setSideTab] = useState('people'); const [mobilePanelOpen, setMobilePanelOpen] = useState(false); const [messages, setMessages] = useState([]); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
+  const [pipActive, setPipActive] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false); const [collaborationMode, setCollaborationMode] = useState(null); const [collaborationColor, setCollaborationColor] = useState('#ffcf5a');
   const [collaborationRequest, setCollaborationRequest] = useState(null); const [requestedCollaboration, setRequestedCollaboration] = useState(null); const [collaborationPermission, setCollaborationPermission] = useState(null);
   const [annotationStrokes, setAnnotationStrokes] = useState([]); const [remoteCursors, setRemoteCursors] = useState({});
@@ -344,7 +366,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
   const mergeMessage = useCallback((message) => setMessages((items) => items.some((item) => item.id === message.id) ? items.map((item) => item.id === message.id ? { ...item, ...message } : item) : [...items, message]), []);
   const applyChatReaction = useCallback((update) => { if (!update.emoji) return; setMessages((items) => items.map((item) => { if (item.id !== update.messageId) return item; const reactions = [...(item.reactions || [])]; const index = reactions.findIndex((entry) => entry.emoji === update.emoji); if (index < 0 && update.active) reactions.push({ emoji: update.emoji, count: 1, mine: update.userId === user.id }); else if (index >= 0) { const current = reactions[index]; const count = Math.max(0, current.count + (update.active ? 1 : -1)); if (!count) reactions.splice(index, 1); else reactions[index] = { ...current, count, ...(update.userId === user.id ? { mine: update.active } : {}) }; } return { ...item, reactions }; })); }, [user.id]);
-  const showReaction = ({ emoji }) => { const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), 2400); };
+  const showReaction = ({ emoji }) => { if (![...EMOJIS, MONEY_ROCKET_REACTION].includes(emoji)) return; const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), emoji === MONEY_ROCKET_REACTION ? 3200 : 2400); };
   const resetCollaboration = () => { collaborationGrants.current.clear(); collaborationRequestTimes.current.clear(); clearTimeout(requestTimer.current); setCollaborationMode(null); setCollaborationRequest(null); setRequestedCollaboration(null); setCollaborationPermission(null); setAnnotationStrokes([]); setRemoteCursors({}); };
   const mergeAnnotationPoint = (message) => {
     const { strokeId, point, start, color } = message; if (!/^[0-9a-f-]{16,64}$/i.test(strokeId || '') || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.x > 1000 || point.y < 0 || point.y > 1000) return;
@@ -403,10 +425,10 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
 
   const stopMedia = () => { mediaRef.current.getTracks().forEach((track) => track.stop()); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
-  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
+  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setMobilePanelOpen(false); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
   useEffect(() => {
     const epoch = ++lifecycleEpoch.current;
-    return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); };
+    return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); };
   }, []);
   useEffect(() => { onSessionChange?.({ active: joined || waiting, joined, waiting, title: meeting?.title || '', roomCode: meeting?.roomCode || '', mic, camera, sharing: Boolean(sharing), audioBlocked }); }, [joined, waiting, meeting?.title, meeting?.roomCode, mic, camera, sharing, audioBlocked, onSessionChange]);
   useEffect(() => {
@@ -640,6 +662,35 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
 
   const remotePresentationEntry = Object.entries(remoteStreams).find(([peerId, stream]) => participants.find((item) => item.peerId === peerId)?.sharing && stream.getVideoTracks().some((track) => track.readyState === 'live'));
   const currentPresentationOwner = sharing ? connection.current?.selfId || null : remotePresentationEntry?.[0] || null;
+  const firstRemoteVideo = Object.values(remoteStreams).find((stream) => stream.getVideoTracks().some((track) => track.enabled && track.readyState === 'live'));
+  const preferredPipStream = sharing || firstRemoteVideo || (camera && media?.getVideoTracks().some((track) => track.enabled && track.readyState === 'live') ? media : null);
+  const pipMirrored = preferredPipStream === media;
+  const syncPipSource = async () => {
+    const video = pipVideoRef.current; if (!video) return false;
+    let stream = preferredPipStream;
+    if (stream && pipPlaceholderRef.current) { pipPlaceholderRef.current.close(); pipPlaceholderRef.current = null; }
+    if (!stream) {
+      if (!pipPlaceholderRef.current) pipPlaceholderRef.current = createMeetingPipPlaceholder(meeting?.title);
+      stream = pipPlaceholderRef.current?.stream || null;
+    }
+    if (!stream) return false;
+    if (video.srcObject !== stream) video.srcObject = stream;
+    await video.play();
+    if (!video.videoWidth || !video.videoHeight) await waitForVideoMetadata(video);
+    return true;
+  };
+  const enterPictureInPicture = async (silent = false) => {
+    const video = pipVideoRef.current;
+    if (!joined || !video) return;
+    try {
+      if (document.pictureInPictureElement === video) { await document.exitPictureInPicture(); return; }
+      if (video.webkitPresentationMode === 'picture-in-picture') { video.webkitSetPresentationMode('inline'); return; }
+      if (!await syncPipSource()) throw new Error('Tu navegador necesita una cámara o pantalla activa para abrir la ventana flotante.');
+      if (typeof video.requestPictureInPicture === 'function' && document.pictureInPictureEnabled !== false) await video.requestPictureInPicture();
+      else if (typeof video.webkitSetPresentationMode === 'function' && video.webkitSupportsPresentationMode?.('picture-in-picture')) video.webkitSetPresentationMode('picture-in-picture');
+      else throw new Error('Tu navegador no admite la ventana flotante de reuniones.');
+    } catch (error) { if (!silent && !['NotAllowedError', 'AbortError'].includes(error.name)) toast(error.message, 'info'); }
+  };
   useEffect(() => {
     if (presentationOwner.current === currentPresentationOwner) return;
     presentationOwner.current = currentPresentationOwner; resetCollaboration();
@@ -647,6 +698,26 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     const timer = setTimeout(() => connection.current?.collaborate('collab-state-request', { presenterPeerId: currentPresentationOwner }, currentPresentationOwner), 250);
     return () => clearTimeout(timer);
   }, [currentPresentationOwner]);
+  useEffect(() => {
+    const video = pipVideoRef.current; if (!video) return undefined;
+    const entered = () => setPipActive(true); const left = () => setPipActive(false);
+    const webkitChanged = () => setPipActive(video.webkitPresentationMode === 'picture-in-picture');
+    video.addEventListener('enterpictureinpicture', entered); video.addEventListener('leavepictureinpicture', left); video.addEventListener('webkitpresentationmodechanged', webkitChanged);
+    return () => { video.removeEventListener('enterpictureinpicture', entered); video.removeEventListener('leavepictureinpicture', left); video.removeEventListener('webkitpresentationmodechanged', webkitChanged); };
+  }, [meeting?.meetingId]);
+  useEffect(() => { if (joined) syncPipSource().catch(() => {}); }, [joined, preferredPipStream, meeting?.meetingId]);
+  useEffect(() => {
+    const continueOutside = () => { if (document.hidden && joined && !pipActive) enterPictureInPicture(true); };
+    document.addEventListener('visibilitychange', continueOutside);
+    return () => document.removeEventListener('visibilitychange', continueOutside);
+  }, [joined, pipActive, preferredPipStream]);
+  useEffect(() => {
+    if (joined) return;
+    if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {});
+    if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline');
+    if (pipVideoRef.current) { pipVideoRef.current.pause(); pipVideoRef.current.srcObject = null; }
+    pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null;
+  }, [joined]);
 
   if (!meeting) return <MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} onRestart={restartMeeting} onRemove={removeEndedMeeting} canCreate={canCreate} />;
   if (waiting) return <div className="meeting-waiting surface"><span className="waiting-orbit" /><p className="eyebrow">SALA DE ESPERA</p><h1>{meeting.title}</h1><p>El anfitrión recibió tu solicitud. Esta pantalla entrará automáticamente cuando te admita.</p><strong>{meeting.roomCode}</strong><button className="secondary-button" onClick={() => disconnect(true)}>Cancelar</button></div>;
@@ -656,15 +727,19 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const presentationStream = sharing || remotePresentation?.[1];
   const presentationPeer = remotePresentation && participants.find((item) => item.peerId === remotePresentation[0]);
   const canCollaborate = Boolean(sharing) || collaborationPermission?.presenterPeerId === currentPresentationOwner;
-  return <section className="meeting-page">
-    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1></div><div className="meeting-top-actions"><button className="secondary-button" onClick={copyInvite}><Copy /> {meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
+  return <section className={`meeting-page ${mobilePanelOpen ? 'mobile-panel-open' : ''}`}>
+    {mobilePanelOpen && <button className="meeting-mobile-scrim" type="button" aria-label="Cerrar chat" onClick={() => setMobilePanelOpen(false)} />}
+    <button className={`mobile-chat-fab ${mobilePanelOpen ? 'active' : ''}`} type="button" disabled={!joined} onClick={() => { setSideTab('chat'); setMobilePanelOpen((open) => !open); }}><MessageCircle /><span>{mobilePanelOpen ? 'Cerrar chat' : 'Abrir chat'}</span>{messages.length > 0 && <i>{messages.length}</i>}</button>
+    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1></div><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={copyInvite}><Copy /> {meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
     <div className="meeting-grid">
       <div className="meeting-stage">
-        {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span><CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} onPoint={sendCollaborationPoint} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
+        {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span><CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} onPoint={sendCollaborationPoint} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
         <RemoteAudioLayer streams={remoteStreams} onBlockedChange={setAudioBlocked} />
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
         {presentationStream && <div className="collaboration-toolbar glass"><button className={collaborationMode === 'draw' ? 'active' : ''} disabled={Boolean(requestedCollaboration)} onClick={() => selectCollaborationMode('draw', remotePresentation?.[0])}><Pencil /> {requestedCollaboration?.mode === 'draw' ? 'Esperando permiso' : 'Dibujar'}</button><button className={collaborationMode === 'pointer' ? 'active' : ''} disabled={Boolean(requestedCollaboration)} onClick={() => selectCollaborationMode('pointer', remotePresentation?.[0])}><MousePointer2 /> {requestedCollaboration?.mode === 'pointer' ? 'Esperando permiso' : 'Control guiado'}</button>{sharing && <><label className="annotation-color" title="Color de anotación"><input type="color" value={collaborationColor} onChange={(event) => setCollaborationColor(event.target.value)} /></label><button onClick={clearAnnotations}><Eraser /> Limpiar</button></>}</div>}
-        <div className="reaction-layer">{reactions.map((item) => <span key={item.id}>{item.emoji}</span>)}</div>
+        <div className="reaction-layer">{reactions.map((item) => item.emoji === MONEY_ROCKET_REACTION ? <span className="money-rocket-reaction" key={item.id}><img src={MONEY_ROCKET_ASSET} alt="" /></span> : <span key={item.id}>{item.emoji}</span>)}</div>
+        <button className="money-rocket-launcher" type="button" disabled={!joined} title="Lanzar cohete de dinero para todos" aria-label="Lanzar cohete de dinero para todos" onClick={() => react(MONEY_ROCKET_REACTION)}><img src={MONEY_ROCKET_ASSET} alt="" /></button>
+        <video className={`meeting-pip-source ${pipMirrored ? 'mirrored' : ''}`} ref={pipVideoRef} muted playsInline autoPlay aria-hidden="true" />
       </div>
       <aside className="meeting-side"><div className="meeting-side-tabs"><button className={sideTab === 'people' ? 'active' : ''} onClick={() => setSideTab('people')}><Users /> Personas <span>{participants.length + 1}</span></button><button className={sideTab === 'chat' ? 'active' : ''} onClick={() => setSideTab('chat')}><MessageCircle /> Chat <span>{messages.length}</span></button></div>{sideTab === 'people' ? <><div className="people-list"><div className={`person ${localSpeaking ? 'speaking' : ''}`}><ConstellationAvatar className="avatar avatar-sm" seed={user.id} name={user.name} src={user.avatar} /><span>{user.name} · Tú {isHost && <small>Anfitrión</small>} {handRaised && '✋'}</span><AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} />{mic ? <Mic /> : <MicOff />}</div>{participants.map((peer) => <div className={`person ${peer.speaking ? 'speaking' : ''}`} key={peer.peerId}><ConstellationAvatar className="avatar avatar-sm" seed={peer.userId || peer.peerId} name={peer.name} src={peer.avatar} /><span>{peer.name} {peer.handRaised && '✋'}<small>{peer.role === 'HOST' ? 'Anfitrión' : peerStates[peer.peerId] === 'connected' ? 'Audio P2P conectado' : 'Enlazando medios'}</small></span><AudioMeter stream={remoteStreams[peer.peerId]} enabled={peer.mic} />{isHost && peer.role !== 'HOST' && peer.mic ? <button className="host-mute" title="Silenciar participante" onClick={() => connection.current?.mutePeer(peer.peerId)}><MicOff /></button> : peer.mic ? <Mic /> : <MicOff />}</div>)}</div>{isHost && waitingParticipants.length > 0 && <div className="waiting-list"><p className="eyebrow">ESPERANDO ({waitingParticipants.length})</p>{waitingParticipants.map((item) => <div className="person" key={item.id}><ConstellationAvatar className="avatar avatar-sm" seed={item.userId} name={item.name} src={item.avatar} /><span>{item.name}<small>@{item.username}</small></span><button title="Admitir" onClick={() => admission(item, true)}><Check /></button><button title="Rechazar" onClick={() => admission(item, false)}><X /></button></div>)}</div>}<div className="meeting-side-footer"><button className="secondary-button" onClick={copyInvite}><Copy /> Copiar invitación</button>{isHost && <button className="secondary-button" onClick={toggleLock}>{meeting.locked ? <Unlock /> : <Lock />} {meeting.locked ? 'Desbloquear' : 'Bloquear sala'}</button>}</div></> : <ChatPanel messages={messages} user={user} replyTo={replyTo} setReplyTo={setReplyTo} onSend={sendChat} onReact={reactToMessage} />}</aside>
     </div>
