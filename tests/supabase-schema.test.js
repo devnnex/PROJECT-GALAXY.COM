@@ -98,6 +98,20 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('.video-surface.audio-only-surface');
   });
 
+  it('enhances distant voices safely and synchronizes cosmic reactions', () => {
+    expect(meetingStudio).toContain('autoGainControl: { ideal: true }');
+    expect(meetingStudio).toContain('noiseSuppression: { ideal: true }');
+    expect(meetingStudio).toContain('createDynamicsCompressor()');
+    expect(meetingStudio).toContain('preamp.gain.value = 2.4');
+    expect(meetingStudio).toContain("{ id: 'UFO'");
+    expect(meetingStudio).toContain("{ id: 'ALIEN_BIRTHDAY'");
+    expect(meetingStudio).toContain('Happy Birthday!');
+    expect(meetingClient).toContain("'UFO', 'ALIEN', 'ALIEN_BIRTHDAY'");
+    expect(meetingStyles).toContain('@keyframes ufoFlight');
+    expect(meetingStyles).toContain('@keyframes birthdayArrival');
+    expect(meetingStyles).toContain('@media (prefers-reduced-motion: reduce)');
+  });
+
   it('uses the one-RPC meeting creation path and resilient realtime startup', () => {
     expect(schema).toContain("'participantStatus','ADMITTED'");
     expect(meetingStudio).toMatch(/const created = await api\.createMeeting\(form\);[\s\S]*await connectAccess\(created\)/);

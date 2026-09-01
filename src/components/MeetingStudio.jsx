@@ -9,6 +9,29 @@ const EMOJIS = ['👍', '👏', '❤️', '😂', '🎉', '🔥'];
 const MESSAGE_EMOJIS = [...EMOJIS, '😊', '🙏', '🤔', '✅', '🚀', '💡'];
 const MONEY_ROCKET_REACTION = 'MONEY_ROCKET';
 const MONEY_ROCKET_ASSET = `${import.meta.env.BASE_URL}assets/money-rocket-reaction.png`;
+const COSMIC_REACTIONS = [
+  { id: MONEY_ROCKET_REACTION, label: 'Cohete de dinero', icon: '🚀' },
+  { id: 'UFO', label: 'Lanzar UFO', icon: '🛸' },
+  { id: 'ALIEN', label: 'Enviar alien', icon: '👽' },
+  { id: 'ALIEN_BIRTHDAY', label: 'Alien de cumpleaños', icon: '🎂' },
+];
+
+function voiceCaptureConstraints() {
+  return {
+    echoCancellation: { ideal: true },
+    noiseSuppression: { ideal: true },
+    autoGainControl: { ideal: true },
+    channelCount: { ideal: 1 },
+  };
+}
+
+function CosmicReaction({ reaction }) {
+  if (reaction === MONEY_ROCKET_REACTION) return <span className="money-rocket-reaction"><img src={MONEY_ROCKET_ASSET} alt="" /></span>;
+  if (reaction === 'UFO') return <span className="ufo-reaction" role="img" aria-label="UFO"><i className="ufo-dome" /><i className="ufo-body"><b /><b /><b /></i><i className="ufo-beam" /></span>;
+  if (reaction === 'ALIEN') return <span className="alien-reaction" role="img" aria-label="Alien"><i>👽</i><b>¡Saludos, terrícola!</b></span>;
+  if (reaction === 'ALIEN_BIRTHDAY') return <span className="alien-birthday-reaction" role="img" aria-label="Alien deseando feliz cumpleaños"><i>👽</i><b>Happy Birthday!</b><em>🎉</em><em>🎂</em></span>;
+  return <span>{reaction}</span>;
+}
 
 function createMeetingPipPlaceholder(title) {
   const canvas = document.createElement('canvas'); canvas.width = 640; canvas.height = 360;
@@ -116,14 +139,38 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
   const ref = useRef(null);
   useEffect(() => {
     const audio = ref.current; if (!audio) return undefined;
-    let disposed = false;
+    let disposed = false; let generation = 0; let graph = null;
+    const disposeGraph = (target) => {
+      if (!target) return;
+      target.nodes.forEach((node) => { try { node.disconnect(); } catch { /* already disconnected */ } });
+      target.destination.stream.getTracks().forEach((track) => track.stop());
+      target.context.close().catch(() => {});
+    };
+    const closeGraph = () => { disposeGraph(graph); graph = null; };
     const play = async () => {
       if (disposed) return;
       const tracks = (stream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
-      audio.srcObject = tracks.length ? new MediaStream(tracks) : null;
+      const currentGeneration = ++generation; closeGraph();
+      audio.srcObject = null;
       if (!tracks.length) { onBlocked(peerId, false); return; }
-      try { await audio.play(); if (!disposed) onBlocked(peerId, false); }
-      catch { if (!disposed) onBlocked(peerId, true); }
+      const Context = window.AudioContext || window.webkitAudioContext;
+      if (Context) {
+        let nextGraph = null;
+        try {
+          const context = new Context(); const destination = context.createMediaStreamDestination();
+          const source = context.createMediaStreamSource(new MediaStream(tracks)); const preamp = context.createGain(); const compressor = context.createDynamicsCompressor(); const output = context.createGain();
+          preamp.gain.value = 2.4; compressor.threshold.value = -10; compressor.knee.value = 6; compressor.ratio.value = 10; compressor.attack.value = .003; compressor.release.value = .2; output.gain.value = 1.25;
+          source.connect(preamp); preamp.connect(compressor); compressor.connect(output); output.connect(destination);
+          nextGraph = { context, destination, nodes: [source, preamp, compressor, output] };
+          await context.resume().catch(() => {});
+          if (disposed || currentGeneration !== generation) { disposeGraph(nextGraph); return; }
+          graph = nextGraph;
+          audio.srcObject = destination.stream;
+        } catch { disposeGraph(nextGraph); if (currentGeneration === generation) audio.srcObject = new MediaStream(tracks); }
+      } else audio.srcObject = new MediaStream(tracks);
+      audio.volume = 1;
+      try { await audio.play(); if (!disposed && currentGeneration === generation) onBlocked(peerId, false); }
+      catch { if (!disposed && currentGeneration === generation) onBlocked(peerId, true); }
     };
     const changed = () => { play(); };
     const unlock = () => { play(); };
@@ -132,10 +179,10 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
     (stream?.getTracks() || []).forEach((track) => { track.addEventListener('unmute', changed); track.addEventListener('ended', changed); });
     play();
     return () => {
-      disposed = true; onBlocked(peerId, false); window.removeEventListener('galaxy:resume-meeting-audio', unlock);
+      disposed = true; generation += 1; onBlocked(peerId, false); window.removeEventListener('galaxy:resume-meeting-audio', unlock);
       stream?.removeEventListener('addtrack', changed); stream?.removeEventListener('removetrack', changed);
       (stream?.getTracks() || []).forEach((track) => { track.removeEventListener('unmute', changed); track.removeEventListener('ended', changed); });
-      audio.pause(); audio.srcObject = null;
+      audio.pause(); audio.srcObject = null; closeGraph();
     };
   }, [stream, peerId, onBlocked]);
   return <audio ref={ref} className="remote-audio" autoPlay preload="auto" />;
@@ -355,7 +402,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     const preferences = readMediaPreferences(); let restoredMic = false; let restoredCamera = false;
     if ((preferences.mic || preferences.camera) && navigator.mediaDevices?.getUserMedia) {
       try {
-        const restored = await navigator.mediaDevices.getUserMedia({ audio: Boolean(preferences.mic), video: Boolean(preferences.camera) });
+        const restored = await navigator.mediaDevices.getUserMedia({ audio: preferences.mic ? voiceCaptureConstraints() : false, video: Boolean(preferences.camera) });
         mediaRef.current.getTracks().forEach((track) => track.stop()); mediaRef.current = restored; setMedia(restored);
         restoredMic = restored.getAudioTracks().some((track) => track.readyState === 'live'); restoredCamera = restored.getVideoTracks().some((track) => track.readyState === 'live');
         setMic(restoredMic); setCamera(restoredCamera);
@@ -366,7 +413,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
   const mergeMessage = useCallback((message) => setMessages((items) => items.some((item) => item.id === message.id) ? items.map((item) => item.id === message.id ? { ...item, ...message } : item) : [...items, message]), []);
   const applyChatReaction = useCallback((update) => { if (!update.emoji) return; setMessages((items) => items.map((item) => { if (item.id !== update.messageId) return item; const reactions = [...(item.reactions || [])]; const index = reactions.findIndex((entry) => entry.emoji === update.emoji); if (index < 0 && update.active) reactions.push({ emoji: update.emoji, count: 1, mine: update.userId === user.id }); else if (index >= 0) { const current = reactions[index]; const count = Math.max(0, current.count + (update.active ? 1 : -1)); if (!count) reactions.splice(index, 1); else reactions[index] = { ...current, count, ...(update.userId === user.id ? { mine: update.active } : {}) }; } return { ...item, reactions }; })); }, [user.id]);
-  const showReaction = ({ emoji }) => { if (![...EMOJIS, MONEY_ROCKET_REACTION].includes(emoji)) return; const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), emoji === MONEY_ROCKET_REACTION ? 3200 : 2400); };
+  const showReaction = ({ emoji }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), cosmic ? 4200 : 2400); };
   const resetCollaboration = () => { collaborationGrants.current.clear(); collaborationRequestTimes.current.clear(); clearTimeout(requestTimer.current); setCollaborationMode(null); setCollaborationRequest(null); setRequestedCollaboration(null); setCollaborationPermission(null); setAnnotationStrokes([]); setRemoteCursors({}); };
   const mergeAnnotationPoint = (message) => {
     const { strokeId, point, start, color } = message; if (!/^[0-9a-f-]{16,64}$/i.test(strokeId || '') || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.x > 1000 || point.y < 0 || point.y > 1000) return;
@@ -525,7 +572,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     return new MediaStream([...(sharedAudio.current.track ? [sharedAudio.current.track] : []), ...screen.getVideoTracks()]);
   };
   const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharing ? await sharedLocalStream(sharing, next) : next); };
-  const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio', video: kind === 'video' }); const track = captured.getTracks()[0]; const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); await publishMedia(new MediaStream([...retained, track])); return track; };
+  const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio' ? voiceCaptureConstraints() : false, video: kind === 'video' }); const track = captured.getTracks()[0]; const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); await publishMedia(new MediaStream([...retained, track])); return track; };
   const toggleTrack = async (kind) => { try { const isAudio = kind === 'audio'; const active = isAudio ? mic : camera; let track = mediaRef.current.getTracks().find((item) => item.kind === kind && item.readyState === 'live'); if (!track) track = await acquireTrack(kind); else track.enabled = !active; const enabled = track.enabled; if (isAudio) setMic(enabled); else setCamera(enabled); saveMediaPreferences(isAudio ? { mic: enabled } : { camera: enabled }); connection.current?.setPresence({ mic: isAudio ? enabled : mic, camera: isAudio ? camera : enabled, sharing: Boolean(sharing), handRaised, speaking: isAudio ? localSpeaking && enabled : localSpeaking }); } catch (error) { toast(error.message || 'No fue posible acceder al dispositivo.', 'error'); } };
   const stopShare = async () => {
     const owner = connection.current?.selfId;
@@ -737,8 +784,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
         <RemoteAudioLayer streams={remoteStreams} onBlockedChange={setAudioBlocked} />
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
         {presentationStream && <div className="collaboration-toolbar glass"><button className={collaborationMode === 'draw' ? 'active' : ''} disabled={Boolean(requestedCollaboration)} onClick={() => selectCollaborationMode('draw', remotePresentation?.[0])}><Pencil /> {requestedCollaboration?.mode === 'draw' ? 'Esperando permiso' : 'Dibujar'}</button><button className={collaborationMode === 'pointer' ? 'active' : ''} disabled={Boolean(requestedCollaboration)} onClick={() => selectCollaborationMode('pointer', remotePresentation?.[0])}><MousePointer2 /> {requestedCollaboration?.mode === 'pointer' ? 'Esperando permiso' : 'Control guiado'}</button>{sharing && <><label className="annotation-color" title="Color de anotación"><input type="color" value={collaborationColor} onChange={(event) => setCollaborationColor(event.target.value)} /></label><button onClick={clearAnnotations}><Eraser /> Limpiar</button></>}</div>}
-        <div className="reaction-layer">{reactions.map((item) => item.emoji === MONEY_ROCKET_REACTION ? <span className="money-rocket-reaction" key={item.id}><img src={MONEY_ROCKET_ASSET} alt="" /></span> : <span key={item.id}>{item.emoji}</span>)}</div>
-        <button className="money-rocket-launcher" type="button" disabled={!joined} title="Lanzar cohete de dinero para todos" aria-label="Lanzar cohete de dinero para todos" onClick={() => react(MONEY_ROCKET_REACTION)}><img src={MONEY_ROCKET_ASSET} alt="" /></button>
+        <div className="reaction-layer">{reactions.map((item) => <CosmicReaction reaction={item.emoji} key={item.id} />)}</div>
+        <div className="cosmic-reaction-launcher" role="group" aria-label="Reacciones cósmicas">{COSMIC_REACTIONS.map((item) => <button type="button" disabled={!joined} title={`${item.label} para todos`} aria-label={`${item.label} para todos`} key={item.id} onClick={() => react(item.id)}>{item.id === MONEY_ROCKET_REACTION ? <img src={MONEY_ROCKET_ASSET} alt="" /> : <span>{item.icon}</span>}</button>)}</div>
         <video className={`meeting-pip-source ${pipMirrored ? 'mirrored' : ''}`} ref={pipVideoRef} muted playsInline autoPlay aria-hidden="true" />
       </div>
       <aside className="meeting-side"><div className="meeting-side-tabs"><button className={sideTab === 'people' ? 'active' : ''} onClick={() => setSideTab('people')}><Users /> Personas <span>{participants.length + 1}</span></button><button className={sideTab === 'chat' ? 'active' : ''} onClick={() => setSideTab('chat')}><MessageCircle /> Chat <span>{messages.length}</span></button></div>{sideTab === 'people' ? <><div className="people-list"><div className={`person ${localSpeaking ? 'speaking' : ''}`}><ConstellationAvatar className="avatar avatar-sm" seed={user.id} name={user.name} src={user.avatar} /><span>{user.name} · Tú {isHost && <small>Anfitrión</small>} {handRaised && '✋'}</span><AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} />{mic ? <Mic /> : <MicOff />}</div>{participants.map((peer) => <div className={`person ${peer.speaking ? 'speaking' : ''}`} key={peer.peerId}><ConstellationAvatar className="avatar avatar-sm" seed={peer.userId || peer.peerId} name={peer.name} src={peer.avatar} /><span>{peer.name} {peer.handRaised && '✋'}<small>{peer.role === 'HOST' ? 'Anfitrión' : peerStates[peer.peerId] === 'connected' ? 'Audio P2P conectado' : 'Enlazando medios'}</small></span><AudioMeter stream={remoteStreams[peer.peerId]} enabled={peer.mic} />{isHost && peer.role !== 'HOST' && peer.mic ? <button className="host-mute" title="Silenciar participante" onClick={() => connection.current?.mutePeer(peer.peerId)}><MicOff /></button> : peer.mic ? <Mic /> : <MicOff />}</div>)}</div>{isHost && waitingParticipants.length > 0 && <div className="waiting-list"><p className="eyebrow">ESPERANDO ({waitingParticipants.length})</p>{waitingParticipants.map((item) => <div className="person" key={item.id}><ConstellationAvatar className="avatar avatar-sm" seed={item.userId} name={item.name} src={item.avatar} /><span>{item.name}<small>@{item.username}</small></span><button title="Admitir" onClick={() => admission(item, true)}><Check /></button><button title="Rechazar" onClick={() => admission(item, false)}><X /></button></div>)}</div>}<div className="meeting-side-footer"><button className="secondary-button" onClick={copyInvite}><Copy /> Copiar invitación</button>{isHost && <button className="secondary-button" onClick={toggleLock}>{meeting.locked ? <Unlock /> : <Lock />} {meeting.locked ? 'Desbloquear' : 'Bloquear sala'}</button>}</div></> : <ChatPanel messages={messages} user={user} replyTo={replyTo} setReplyTo={setReplyTo} onSend={sendChat} onReact={reactToMessage} />}</aside>
