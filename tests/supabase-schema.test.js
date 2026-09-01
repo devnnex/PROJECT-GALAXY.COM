@@ -98,6 +98,14 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('.video-surface.audio-only-surface');
   });
 
+  it('fails open to direct meeting audio when Web Audio is suspended', () => {
+    expect(meetingStudio).toContain("target.context.state === 'running'");
+    expect(meetingStudio).toContain('enhanced ? target.destination.stream : directStream');
+    expect(meetingStudio).toContain('context.onstatechange = () => selectReliableOutput');
+    expect(meetingStudio).toContain("window.addEventListener('pageshow', resume)");
+    expect(meetingStudio).toContain("document.addEventListener('visibilitychange', visible)");
+  });
+
   it('enhances distant voices safely and synchronizes cosmic reactions', () => {
     expect(meetingStudio).toContain('autoGainControl: { ideal: true }');
     expect(meetingStudio).toContain('noiseSuppression: { ideal: true }');
@@ -140,6 +148,14 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('Pantalla, micrófono y audio disponible mezclados correctamente.');
     expect(meetingStudio).toContain('<RemoteAudioLayer streams={remoteStreams}');
     expect(meetingStudio).toContain('playAudio={false}');
+  });
+
+  it('keeps presenter voice alive while the shared-audio context changes state', () => {
+    expect(meetingStudio).toContain('microphoneTracks.find((track) => track.enabled)');
+    expect(meetingStudio).toContain('mixer.setStateHandler?.((running)');
+    expect(meetingStudio).toContain('running && mixer.mixedTrack ? mixer.mixedTrack : mixer.fallbackTrack');
+    expect(meetingClient).toContain('this.mediaUpdate = Promise.resolve()');
+    expect(meetingClient).toContain('version !== this.localStreamVersion');
   });
 
   it('keeps meeting media alive across internal navigation', () => {

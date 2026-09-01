@@ -11,7 +11,7 @@ const LIVE_REACTIONS = new Set(['👍', '👏', '❤️', '😂', '🎉', '🔥'
 function isLiveReaction(value) { return typeof value === 'string' && LIVE_REACTIONS.has(value); }
 
 export class MeetingConnection {
-  constructor(callbacks = {}) { this.callbacks = callbacks; this.socket = null; this.peers = new Map(); this.participants = new Map(); this.orphanIce = new Map(); this.localStream = new MediaStream(); this.selfId = ''; }
+  constructor(callbacks = {}) { this.callbacks = callbacks; this.socket = null; this.peers = new Map(); this.participants = new Map(); this.orphanIce = new Map(); this.localStream = new MediaStream(); this.localStreamVersion = 0; this.mediaUpdate = Promise.resolve(); this.selfId = ''; }
 
   async connect({ url, roomId, token, stream, iceServers = [] }) {
     this.localStream = stream || new MediaStream(); this.iceServers = iceServers.length ? iceServers : defaultIceServers();
@@ -81,12 +81,19 @@ export class MeetingConnection {
   }
   async attachLocalTracks(pc) { for (const kind of ['audio', 'video']) { const transceiver = pc.getTransceivers().find((item) => item.receiver.track.kind === kind); if (transceiver) { transceiver.direction = 'sendrecv'; await transceiver.sender.replaceTrack(this.localStream.getTracks().find((track) => track.kind === kind) || null); } } }
   async setLocalStream(stream) {
-    this.localStream = stream || new MediaStream();
-    for (const { pc } of this.peers.values()) {
-      const audioSender = pc.getSenders().find((sender) => sender.track?.kind === 'audio') || pc.getTransceivers().find((item) => item.receiver.track.kind === 'audio')?.sender;
-      const videoSender = pc.getSenders().find((sender) => sender.track?.kind === 'video') || pc.getTransceivers().find((item) => item.receiver.track.kind === 'video')?.sender;
-      await audioSender?.replaceTrack(this.localStream.getAudioTracks()[0] || null); await videoSender?.replaceTrack(this.localStream.getVideoTracks()[0] || null);
-    }
+    const nextStream = stream || new MediaStream(); const version = ++this.localStreamVersion; this.localStream = nextStream;
+    this.mediaUpdate = this.mediaUpdate.catch(() => {}).then(async () => {
+      if (version !== this.localStreamVersion) return;
+      const audioTrack = nextStream.getAudioTracks()[0] || null; const videoTrack = nextStream.getVideoTracks()[0] || null;
+      for (const { pc } of this.peers.values()) {
+        if (version !== this.localStreamVersion) return;
+        if (pc.connectionState === 'closed') continue;
+        const audioSender = pc.getSenders().find((sender) => sender.track?.kind === 'audio') || pc.getTransceivers().find((item) => item.receiver.track.kind === 'audio')?.sender;
+        const videoSender = pc.getSenders().find((sender) => sender.track?.kind === 'video') || pc.getTransceivers().find((item) => item.receiver.track.kind === 'video')?.sender;
+        await Promise.all([audioSender?.replaceTrack(audioTrack), videoSender?.replaceTrack(videoTrack)]);
+      }
+    });
+    return this.mediaUpdate;
   }
   updateIceServers(iceServers) {
     if (!iceServers?.length) return;
@@ -103,7 +110,7 @@ export class MeetingConnection {
   endMeeting() { if (this.role === 'HOST') this.send({ type: 'end-meeting' }); }
   send(message) { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify(message)); }
   emitParticipants() { this.callbacks.onParticipants?.([...this.participants.values()]); }
-  disconnect() { this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.socket?.close(1000, 'Participant left'); this.socket = null; }
+  disconnect() { this.localStreamVersion += 1; this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.socket?.close(1000, 'Participant left'); this.socket = null; }
 }
 
 export class SupabaseMeetingConnection extends MeetingConnection {
@@ -282,7 +289,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
   endMeeting() { if (this.role === 'HOST') return this.broadcast('meeting-ended', { by: this.identity.name }); return undefined; }
   disconnect() {
-    this.active = false; this.connectVersion += 1; clearTimeout(this.iceRefreshTimer); this.iceRefreshTimer = null; this.pendingRemovals.forEach((timer) => clearTimeout(timer)); this.pendingRemovals.clear(); this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
+    this.active = false; this.connectVersion += 1; this.localStreamVersion += 1; clearTimeout(this.iceRefreshTimer); this.iceRefreshTimer = null; this.pendingRemovals.forEach((timer) => clearTimeout(timer)); this.pendingRemovals.clear(); this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
     if (this.channel) { this.channel.untrack(); supabase.removeChannel(this.channel); } this.channel = null; this.callbacks.onStatus?.('disconnected');
   }
 }

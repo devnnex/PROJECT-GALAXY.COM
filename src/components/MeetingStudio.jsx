@@ -139,19 +139,32 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
   const ref = useRef(null);
   useEffect(() => {
     const audio = ref.current; if (!audio) return undefined;
-    let disposed = false; let generation = 0; let graph = null;
+    let disposed = false; let generation = 0; let graph = null; let directStream = null;
     const disposeGraph = (target) => {
       if (!target) return;
+      target.context.onstatechange = null;
       target.nodes.forEach((node) => { try { node.disconnect(); } catch { /* already disconnected */ } });
       target.destination.stream.getTracks().forEach((track) => track.stop());
       target.context.close().catch(() => {});
     };
-    const closeGraph = () => { disposeGraph(graph); graph = null; };
-    const play = async () => {
+    const closeGraph = () => { const current = graph; graph = null; disposeGraph(current); };
+    const attachAndPlay = async (output, currentGeneration) => {
+      if (disposed || currentGeneration !== generation || !output) return;
+      if (audio.srcObject !== output) audio.srcObject = output;
+      audio.volume = 1;
+      try { await audio.play(); if (!disposed && currentGeneration === generation) onBlocked(peerId, false); }
+      catch { if (!disposed && currentGeneration === generation) onBlocked(peerId, true); }
+    };
+    const selectReliableOutput = (target, currentGeneration) => {
+      if (disposed || currentGeneration !== generation) return;
+      const enhanced = target && target === graph && target.context.state === 'running';
+      attachAndPlay(enhanced ? target.destination.stream : directStream, currentGeneration);
+    };
+    const rebuild = async () => {
       if (disposed) return;
       const tracks = (stream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
       const currentGeneration = ++generation; closeGraph();
-      audio.srcObject = null;
+      audio.pause(); audio.srcObject = null; directStream = tracks.length ? new MediaStream(tracks) : null;
       if (!tracks.length) { onBlocked(peerId, false); return; }
       const Context = window.AudioContext || window.webkitAudioContext;
       if (Context) {
@@ -162,24 +175,31 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
           preamp.gain.value = 2.4; compressor.threshold.value = -10; compressor.knee.value = 6; compressor.ratio.value = 10; compressor.attack.value = .003; compressor.release.value = .2; output.gain.value = 1.25;
           source.connect(preamp); preamp.connect(compressor); compressor.connect(output); output.connect(destination);
           nextGraph = { context, destination, nodes: [source, preamp, compressor, output] };
-          await context.resume().catch(() => {});
-          if (disposed || currentGeneration !== generation) { disposeGraph(nextGraph); return; }
           graph = nextGraph;
-          audio.srcObject = destination.stream;
-        } catch { disposeGraph(nextGraph); if (currentGeneration === generation) audio.srcObject = new MediaStream(tracks); }
-      } else audio.srcObject = new MediaStream(tracks);
-      audio.volume = 1;
-      try { await audio.play(); if (!disposed && currentGeneration === generation) onBlocked(peerId, false); }
-      catch { if (!disposed && currentGeneration === generation) onBlocked(peerId, true); }
+          context.onstatechange = () => selectReliableOutput(nextGraph, currentGeneration);
+          await context.resume().catch(() => {});
+          if (disposed || currentGeneration !== generation) { if (graph === nextGraph) graph = null; disposeGraph(nextGraph); return; }
+          selectReliableOutput(nextGraph, currentGeneration); return;
+        } catch { if (graph === nextGraph) graph = null; disposeGraph(nextGraph); }
+      }
+      attachAndPlay(directStream, currentGeneration);
     };
-    const changed = () => { play(); };
-    const unlock = () => { play(); };
+    const resume = async () => {
+      if (disposed) return;
+      const currentGeneration = generation; const currentGraph = graph;
+      if (currentGraph?.context.state === 'suspended') await currentGraph.context.resume().catch(() => {});
+      selectReliableOutput(currentGraph, currentGeneration);
+    };
+    const changed = () => { rebuild(); };
+    const visible = () => { if (!document.hidden) resume(); };
     stream?.addEventListener('addtrack', changed); stream?.addEventListener('removetrack', changed);
-    window.addEventListener('galaxy:resume-meeting-audio', unlock);
+    window.addEventListener('galaxy:resume-meeting-audio', resume); window.addEventListener('focus', resume); window.addEventListener('pageshow', resume);
+    window.addEventListener('pointerdown', resume, true); window.addEventListener('keydown', resume, true); document.addEventListener('visibilitychange', visible);
     (stream?.getTracks() || []).forEach((track) => { track.addEventListener('unmute', changed); track.addEventListener('ended', changed); });
-    play();
+    rebuild();
     return () => {
-      disposed = true; generation += 1; onBlocked(peerId, false); window.removeEventListener('galaxy:resume-meeting-audio', unlock);
+      disposed = true; generation += 1; onBlocked(peerId, false); window.removeEventListener('galaxy:resume-meeting-audio', resume); window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume);
+      window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visible);
       stream?.removeEventListener('addtrack', changed); stream?.removeEventListener('removetrack', changed);
       (stream?.getTracks() || []).forEach((track) => { track.removeEventListener('unmute', changed); track.removeEventListener('ended', changed); });
       audio.pause(); audio.srcObject = null; closeGraph();
@@ -249,25 +269,35 @@ function waitForVideoMetadata(video) {
 }
 
 async function createSharedAudioMixer(displayStream, microphoneStream) {
-  const tracks = [...(displayStream?.getAudioTracks() || []), ...(microphoneStream?.getAudioTracks() || [])]
+  const displayTracks = (displayStream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
+  const microphoneTracks = (microphoneStream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
+  const tracks = [...displayTracks, ...microphoneTracks]
     .filter((track, index, items) => track.readyState === 'live' && items.findIndex((item) => item.id === track.id) === index);
+  const fallbackTrack = microphoneTracks.find((track) => track.enabled) || displayTracks.find((track) => track.enabled) || microphoneTracks[0] || displayTracks[0] || null;
   if (!tracks.length) return { track: null, close() {} };
-  if (tracks.length === 1) return { track: tracks[0], close() {} };
+  if (tracks.length === 1) return { track: fallbackTrack, fallbackTrack, close() {} };
   const Context = window.AudioContext || window.webkitAudioContext;
-  if (!Context) return { track: tracks[0], close() {} };
+  if (!Context) return { track: fallbackTrack, fallbackTrack, close() {} };
 
-  const context = new Context(); const destination = context.createMediaStreamDestination(); const sources = [];
+  const context = new Context(); const destination = context.createMediaStreamDestination(); const sources = []; let stateHandler = null; let closed = false;
   tracks.forEach((track) => {
     const source = context.createMediaStreamSource(new MediaStream([track])); source.connect(destination); sources.push(source);
   });
-  await context.resume?.().catch(() => {});
-  if (context.state !== 'running') {
-    sources.forEach((source) => source.disconnect()); destination.stream.getTracks().forEach((track) => track.stop()); context.close().catch(() => {});
-    return { track: tracks[0], close() {} };
-  }
+  const mixedTrack = destination.stream.getAudioTracks()[0] || null;
+  const notifyState = () => { if (!closed) stateHandler?.(context.state === 'running'); };
+  const resume = async () => { if (closed || context.state === 'running') return; await context.resume?.().catch(() => {}); notifyState(); };
+  const visible = () => { if (!document.hidden) resume(); };
+  context.onstatechange = notifyState;
+  window.addEventListener('focus', resume); window.addEventListener('pageshow', resume); window.addEventListener('pointerdown', resume, true); window.addEventListener('keydown', resume, true); document.addEventListener('visibilitychange', visible);
+  await resume();
   return {
-    track: destination.stream.getAudioTracks()[0] || tracks[0],
+    track: context.state === 'running' && mixedTrack ? mixedTrack : fallbackTrack,
+    mixedTrack,
+    fallbackTrack,
+    setStateHandler(handler) { stateHandler = typeof handler === 'function' ? handler : null; },
     close() {
+      closed = true; stateHandler = null; context.onstatechange = null;
+      window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume); window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visible);
       sources.forEach((source) => source.disconnect());
       destination.stream.getTracks().forEach((track) => track.stop());
       context.close().catch(() => {});
@@ -568,8 +598,13 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const createMeeting = async (form) => { setBusy(true); try { const created = await api.createMeeting(form); setMeetings((items) => [created, ...items]); await connectAccess(created); } catch (error) { disconnect(true); toast(error.message, 'error'); } finally { setBusy(false); } };
   const sharedLocalStream = async (screen, microphone = mediaRef.current) => {
     sharedAudio.current?.close();
-    sharedAudio.current = await createSharedAudioMixer(sourceStream.current, microphone);
-    return new MediaStream([...(sharedAudio.current.track ? [sharedAudio.current.track] : []), ...screen.getVideoTracks()]);
+    const mixer = await createSharedAudioMixer(sourceStream.current, microphone); sharedAudio.current = mixer;
+    mixer.setStateHandler?.((running) => {
+      if (sharedAudio.current !== mixer || sharingRef.current !== screen || !connection.current) return;
+      const reliableTrack = running && mixer.mixedTrack ? mixer.mixedTrack : mixer.fallbackTrack;
+      connection.current.setLocalStream(new MediaStream([...(reliableTrack ? [reliableTrack] : []), ...screen.getVideoTracks()])).catch(() => {});
+    });
+    return new MediaStream([...(mixer.track ? [mixer.track] : []), ...screen.getVideoTracks()]);
   };
   const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharing ? await sharedLocalStream(sharing, next) : next); };
   const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio' ? voiceCaptureConstraints() : false, video: kind === 'video' }); const track = captured.getTracks()[0]; const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); await publishMedia(new MediaStream([...retained, track])); return track; };
