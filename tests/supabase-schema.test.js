@@ -150,6 +150,15 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('@keyframes moneyAlienWarp');
   });
 
+  it('ships the animated money phoenix reaction to every participant', () => {
+    expect(meetingStudio).toContain("{ id: 'MONEY_PHOENIX'");
+    expect(meetingStudio).toContain('assets/money-phoenix-reaction.png');
+    expect(meetingClient).toContain("'MONEY_PHOENIX'");
+    expect(meetingStyles).toContain('@keyframes phoenixAscension');
+    expect(meetingStyles).toContain('@keyframes phoenixWingbeat');
+    expect(meetingStyles).toContain('@keyframes phoenixMoneyShower');
+  });
+
   it('uses the one-RPC meeting creation path and resilient realtime startup', () => {
     expect(schema).toContain("'participantStatus','ADMITTED'");
     expect(meetingStudio).toMatch(/const created = await api\.createMeeting\(form\);[\s\S]*await connectAccess\(created\)/);

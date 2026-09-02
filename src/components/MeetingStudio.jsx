@@ -11,10 +11,12 @@ const MONEY_ROCKET_REACTION = 'MONEY_ROCKET';
 const MONEY_ROCKET_ASSET = `${import.meta.env.BASE_URL}assets/money-rocket-reaction.png`;
 const MONEY_CHARACTER_ASSET = `${import.meta.env.BASE_URL}assets/money-character-reaction.png`;
 const MONEY_ALIEN_ASSET = `${import.meta.env.BASE_URL}assets/money-alien-reaction.png`;
+const MONEY_PHOENIX_ASSET = `${import.meta.env.BASE_URL}assets/money-phoenix-reaction.png`;
 const COSMIC_REACTIONS = [
   { id: MONEY_ROCKET_REACTION, label: 'Cohete de dinero', asset: MONEY_ROCKET_ASSET },
   { id: 'MONEY_CHARACTER', label: 'Personaje millonario', asset: MONEY_CHARACTER_ASSET },
   { id: 'MONEY_ALIEN', label: 'Portal alien de dinero', asset: MONEY_ALIEN_ASSET },
+  { id: 'MONEY_PHOENIX', label: 'Fénix de poder', asset: MONEY_PHOENIX_ASSET },
   { id: 'UFO', label: 'Lanzar UFO', icon: '🛸' },
   { id: 'ALIEN', label: 'Enviar alien', icon: '👽' },
   { id: 'ALIEN_BIRTHDAY', label: 'Alien de cumpleaños', icon: '🎂' },
@@ -48,6 +50,7 @@ function CosmicReaction({ reaction }) {
   if (reaction === MONEY_ROCKET_REACTION) return <span className="money-rocket-reaction"><img src={MONEY_ROCKET_ASSET} alt="" /></span>;
   if (reaction === 'MONEY_CHARACTER') return <span className="money-character-reaction" role="img" aria-label="Personaje rodeado de dinero"><img src={MONEY_CHARACTER_ASSET} alt="" /></span>;
   if (reaction === 'MONEY_ALIEN') return <span className="money-alien-reaction" role="img" aria-label="Alien en un portal de dinero"><img src={MONEY_ALIEN_ASSET} alt="" /></span>;
+  if (reaction === 'MONEY_PHOENIX') return <span className="money-phoenix-reaction" role="img" aria-label="Fénix poderoso ascendiendo entre dinero y destellos"><i aria-hidden="true" /><img src={MONEY_PHOENIX_ASSET} alt="" /><b aria-hidden="true">$ ✦ $ ✦ $</b></span>;
   if (reaction === 'UFO') return <span className="ufo-reaction" role="img" aria-label="UFO"><i className="ufo-dome" /><i className="ufo-body"><b /><b /><b /></i><i className="ufo-beam" /></span>;
   if (reaction === 'ALIEN') return <span className="alien-reaction" role="img" aria-label="Alien"><i>👽</i><b>¡Saludos, terrícola!</b></span>;
   if (reaction === 'ALIEN_BIRTHDAY') return <span className="alien-birthday-reaction" role="img" aria-label="Alien deseando feliz cumpleaños"><i>👽</i><b>Happy Birthday!</b><em>🎉</em><em>🎂</em></span>;

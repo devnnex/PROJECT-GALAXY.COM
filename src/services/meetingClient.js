@@ -7,7 +7,7 @@ export async function getMeetingAccess({ roomCode, password }) {
 }
 
 function defaultIceServers() { return [{ urls: 'stun:stun.l.google.com:19302' }]; }
-const LIVE_REACTIONS = new Set(['👍', '👏', '❤️', '😂', '🎉', '🔥', 'MONEY_ROCKET', 'MONEY_CHARACTER', 'MONEY_ALIEN', 'UFO', 'ALIEN', 'ALIEN_BIRTHDAY']);
+const LIVE_REACTIONS = new Set(['👍', '👏', '❤️', '😂', '🎉', '🔥', 'MONEY_ROCKET', 'MONEY_CHARACTER', 'MONEY_ALIEN', 'MONEY_PHOENIX', 'UFO', 'ALIEN', 'ALIEN_BIRTHDAY']);
 function isLiveReaction(value) { return typeof value === 'string' && LIVE_REACTIONS.has(value); }
 
 export class MeetingConnection {
