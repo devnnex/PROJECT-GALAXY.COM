@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Check, Copy, Eraser, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Pencil, PhoneOff, PictureInPicture2, Plus, Reply, RotateCcw, Send, ShieldCheck, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, X } from 'lucide-react';
+import { Camera, CameraOff, Check, Copy, Eraser, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Pencil, PhoneOff, PictureInPicture2, Plus, Reply, RotateCcw, Send, ShieldCheck, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 import { onOnlineUsersChange, primeRealtime, releaseRealtimePrime } from '../services/supabase';
@@ -27,6 +27,21 @@ function voiceCaptureConstraints() {
     autoGainControl: { ideal: true },
     channelCount: { ideal: 1 },
   };
+}
+
+let sharedMeetingAudioContext = null;
+
+function meetingAudioContext() {
+  const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
+  if (!Context) return null;
+  if (!sharedMeetingAudioContext || sharedMeetingAudioContext.state === 'closed') sharedMeetingAudioContext = new Context();
+  return sharedMeetingAudioContext;
+}
+
+function primeMeetingAudio() {
+  const context = meetingAudioContext();
+  if (context?.state === 'suspended') context.resume().catch(() => {});
+  window.dispatchEvent(new Event('galaxy:resume-meeting-audio'));
 }
 
 function CosmicReaction({ reaction }) {
@@ -72,8 +87,8 @@ function AudioMeter({ stream, enabled = true, onSpeakingChange, label = 'Nivel d
   const [level, setLevel] = useState(0); const speakingRef = useRef(false);
   useEffect(() => {
     if (!stream || !enabled || !stream.getAudioTracks().length) { setLevel(0); if (speakingRef.current) onSpeakingChange?.(false); speakingRef.current = false; return undefined; }
-    const Context = window.AudioContext || window.webkitAudioContext; if (!Context) return undefined;
-    const context = new Context(); const analyser = context.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = .72;
+    const context = meetingAudioContext(); if (!context) return undefined;
+    const analyser = context.createAnalyser(); analyser.fftSize = 256; analyser.smoothingTimeConstant = .72;
     const source = context.createMediaStreamSource(new MediaStream(stream.getAudioTracks())); source.connect(analyser);
     const samples = new Uint8Array(analyser.fftSize); let frame = 0;
     const read = () => {
@@ -84,7 +99,7 @@ function AudioMeter({ stream, enabled = true, onSpeakingChange, label = 'Nivel d
       if (speaking !== speakingRef.current) { speakingRef.current = speaking; onSpeakingChange?.(speaking); }
       frame = requestAnimationFrame(read);
     };
-    read(); return () => { cancelAnimationFrame(frame); source.disconnect(); context.close(); if (speakingRef.current) onSpeakingChange?.(false); };
+    read(); return () => { cancelAnimationFrame(frame); source.disconnect(); analyser.disconnect(); if (speakingRef.current) onSpeakingChange?.(false); };
   }, [stream, enabled, onSpeakingChange]);
   return <span className={`voice-meter ${level ? 'detecting' : ''}`} role="meter" aria-label={label} aria-valuenow={level} aria-valuemin="0" aria-valuemax="5">{[1, 2, 3, 4, 5].map((bar) => <i className={bar <= level ? 'on' : ''} key={bar} />)}</span>;
 }
@@ -148,10 +163,9 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
     let disposed = false; let generation = 0; let graph = null; let directStream = null;
     const disposeGraph = (target) => {
       if (!target) return;
-      target.context.onstatechange = null;
+      target.context.removeEventListener?.('statechange', target.stateChanged);
       target.nodes.forEach((node) => { try { node.disconnect(); } catch { /* already disconnected */ } });
       target.destination.stream.getTracks().forEach((track) => track.stop());
-      target.context.close().catch(() => {});
     };
     const closeGraph = () => { const current = graph; graph = null; disposeGraph(current); };
     const attachAndPlay = async (output, currentGeneration) => {
@@ -176,13 +190,15 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
       if (Context) {
         let nextGraph = null;
         try {
-          const context = new Context(); const destination = context.createMediaStreamDestination();
+          const context = meetingAudioContext(); if (!context) throw new Error('AudioContext unavailable');
+          const destination = context.createMediaStreamDestination();
           const source = context.createMediaStreamSource(new MediaStream(tracks)); const preamp = context.createGain(); const compressor = context.createDynamicsCompressor(); const output = context.createGain();
           preamp.gain.value = 2.4; compressor.threshold.value = -10; compressor.knee.value = 6; compressor.ratio.value = 10; compressor.attack.value = .003; compressor.release.value = .2; output.gain.value = 1.25;
           source.connect(preamp); preamp.connect(compressor); compressor.connect(output); output.connect(destination);
-          nextGraph = { context, destination, nodes: [source, preamp, compressor, output] };
+          const stateChanged = () => selectReliableOutput(nextGraph, currentGeneration);
+          nextGraph = { context, destination, nodes: [source, preamp, compressor, output], stateChanged };
           graph = nextGraph;
-          context.onstatechange = () => selectReliableOutput(nextGraph, currentGeneration);
+          context.addEventListener?.('statechange', stateChanged);
           await context.resume().catch(() => {});
           if (disposed || currentGeneration !== generation) { if (graph === nextGraph) graph = null; disposeGraph(nextGraph); return; }
           selectReliableOutput(nextGraph, currentGeneration); return;
@@ -424,7 +440,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
   const [sideTab, setSideTab] = useState('people'); const [mobilePanelOpen, setMobilePanelOpen] = useState(false); const [messages, setMessages] = useState([]); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [pipActive, setPipActive] = useState(false);
-  const [audioBlocked, setAudioBlocked] = useState(false); const [collaborationMode, setCollaborationMode] = useState(null); const [collaborationColor, setCollaborationColor] = useState('#ffcf5a');
+  const [audioBlocked, setAudioBlocked] = useState(false); const [shareHasAudio, setShareHasAudio] = useState(false); const [shareAudioEnabled, setShareAudioEnabled] = useState(true); const [collaborationMode, setCollaborationMode] = useState(null); const [collaborationColor, setCollaborationColor] = useState('#ffcf5a');
   const [collaborationRequest, setCollaborationRequest] = useState(null); const [requestedCollaboration, setRequestedCollaboration] = useState(null); const [collaborationPermission, setCollaborationPermission] = useState(null);
   const [annotationStrokes, setAnnotationStrokes] = useState([]); const [remoteCursors, setRemoteCursors] = useState({});
 
@@ -567,6 +583,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
 
   const enterMeeting = ({ roomCode, password = '', restoreMedia = false }) => {
+    primeMeetingAudio();
     const epoch = lifecycleEpoch.current; const key = `${epoch}:${String(roomCode).toUpperCase()}:${password}`;
     if (entryInFlight.current?.key === key) return entryInFlight.current.promise;
     resumeMediaRequested.current = resumeMediaRequested.current || restoreMedia;
@@ -601,7 +618,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     return () => { active = false; clearInterval(timer); };
   }, [inviteOpen, meeting?.meetingId, meeting?.role]);
 
-  const createMeeting = async (form) => { setBusy(true); try { const created = await api.createMeeting(form); setMeetings((items) => [created, ...items]); await connectAccess(created); } catch (error) { disconnect(true); toast(error.message, 'error'); } finally { setBusy(false); } };
+  const createMeeting = async (form) => { primeMeetingAudio(); setBusy(true); try { const created = await api.createMeeting(form); setMeetings((items) => [created, ...items]); await connectAccess(created); } catch (error) { disconnect(true); toast(error.message, 'error'); } finally { setBusy(false); } };
   const sharedLocalStream = async (screen, microphone = mediaRef.current) => {
     sharedAudio.current?.close();
     const mixer = await createSharedAudioMixer(sourceStream.current, microphone); sharedAudio.current = mixer;
@@ -618,16 +635,22 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const stopShare = async () => {
     const owner = connection.current?.selfId;
     if (sharingRef.current && owner) connection.current?.collaborate('collab-reset', { presenterPeerId: owner });
-    sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; sharingRef.current = null; presentationOwner.current = null; setSharing(null); setCropSource(null); setPrivacySource(null); saveMediaPreferences({ sharing: false }); resetCollaboration(); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false });
+    sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; sharingRef.current = null; presentationOwner.current = null; setSharing(null); setShareHasAudio(false); setShareAudioEnabled(true); setCropSource(null); setPrivacySource(null); saveMediaPreferences({ sharing: false }); resetCollaboration(); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false });
   };
   const publishShare = async (stream) => { sharingRef.current = stream; presentationOwner.current = connection.current?.selfId || null; resetCollaboration(); setSharing(stream); saveMediaPreferences({ sharing: true }); await connection.current?.setLocalStream(await sharedLocalStream(stream)); connection.current?.setPresence({ sharing: true }); };
+  const toggleSharedAudio = () => {
+    const tracks = sourceStream.current?.getAudioTracks() || [];
+    if (!tracks.length) { toast('La fuente compartida no entregó sonido al navegador.', 'info'); return; }
+    const next = !shareAudioEnabled; tracks.forEach((track) => { track.enabled = next; }); setShareAudioEnabled(next);
+    toast(next ? 'Sonido de la pantalla compartida activado.' : 'Sonido de la pantalla compartida silenciado.', 'info');
+  };
   const capture = async (custom = false, protectedMode = false) => {
     setShareMenu(false); if (!joined) return;
     try {
       if (!navigator.mediaDevices?.getDisplayMedia) throw new Error('Este navegador móvil no expone captura de pantalla a páginas web. Usa Chrome/Edge/Firefox de escritorio o comparte con la cámara trasera.');
       const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
       stream.getVideoTracks()[0]?.applyConstraints({ frameRate: { ideal: 20, max: 30 } }).catch(() => {});
-      sourceStream.current = stream; stream.getVideoTracks()[0].addEventListener('ended', stopShare, { once: true });
+      sourceStream.current = stream; setShareHasAudio(stream.getAudioTracks().length > 0); setShareAudioEnabled(true); stream.getVideoTracks()[0].addEventListener('ended', stopShare, { once: true });
       if (protectedMode && user.role === 'ADMIN') setPrivacySource(stream);
       else if (custom) setCropSource(stream); else { await publishShare(stream); toast(stream.getAudioTracks().length ? 'Pantalla, micrófono y audio disponible mezclados correctamente.' : 'Pantalla y micrófono compartidos. El audio interno depende de la fuente y del navegador.', 'info'); }
     } catch (error) { if (error.name !== 'NotAllowedError' && error.name !== 'AbortError') toast(error.message, 'error'); }
@@ -637,7 +660,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no permite capturar la cámara.');
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
-      sourceStream.current = stream; stream.getVideoTracks()[0]?.addEventListener('ended', stopShare, { once: true }); await publishShare(stream);
+      sourceStream.current = stream; setShareHasAudio(false); setShareAudioEnabled(true); stream.getVideoTracks()[0]?.addEventListener('ended', stopShare, { once: true }); await publishShare(stream);
       toast('Cámara trasera compartida como presentación. Úsala para documentos, pizarras o una segunda pantalla.');
     } catch (error) { if (error.name !== 'NotAllowedError') toast(error.message || 'No fue posible abrir la cámara trasera.', 'error'); }
   };
@@ -821,7 +844,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1></div><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={copyInvite}><Copy /> {meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
     <div className="meeting-grid">
       <div className="meeting-stage">
-        {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span><CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} onPoint={sendCollaborationPoint} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
+        {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span>{sharing && shareHasAudio && <button className={`presentation-audio-toggle ${shareAudioEnabled ? 'active' : ''}`} type="button" aria-pressed={shareAudioEnabled} title={shareAudioEnabled ? 'Silenciar sonido de la pantalla compartida' : 'Activar sonido de la pantalla compartida'} onClick={toggleSharedAudio}>{shareAudioEnabled ? <Volume2 /> : <VolumeX />}<span>{shareAudioEnabled ? 'Sonido compartido' : 'Sonido silenciado'}</span></button>}<CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} onPoint={sendCollaborationPoint} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
         <RemoteAudioLayer streams={remoteStreams} onBlockedChange={setAudioBlocked} />
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
         {presentationStream && <div className="collaboration-toolbar glass"><button className={collaborationMode === 'draw' ? 'active' : ''} disabled={Boolean(requestedCollaboration)} onClick={() => selectCollaborationMode('draw', remotePresentation?.[0])}><Pencil /> {requestedCollaboration?.mode === 'draw' ? 'Esperando permiso' : 'Dibujar'}</button><button className={collaborationMode === 'pointer' ? 'active' : ''} disabled={Boolean(requestedCollaboration)} onClick={() => selectCollaborationMode('pointer', remotePresentation?.[0])}><MousePointer2 /> {requestedCollaboration?.mode === 'pointer' ? 'Esperando permiso' : 'Control guiado'}</button>{sharing && <><label className="annotation-color" title="Color de anotación"><input type="color" value={collaborationColor} onChange={(event) => setCollaborationColor(event.target.value)} /></label><button onClick={clearAnnotations}><Eraser /> Limpiar</button></>}</div>}

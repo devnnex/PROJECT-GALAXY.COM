@@ -17,6 +17,8 @@
 .meeting-audio-unlock svg { width: 16px; color: #bb91fb; }
 .resume-audio-button { position: absolute; z-index: 4; left: 50%; bottom: 42px; transform: translateX(-50%); min-height: 36px; display: inline-flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid rgba(168, 123, 245, .42); border-radius: 20px; background: rgba(19, 13, 27, .94); color: #e7dafa; font: 600 9px 'Manrope'; box-shadow: 0 8px 25px rgba(0, 0, 0, .35); white-space: nowrap; }
 .resume-audio-button svg { width: 15px; color: #b98ef8; }
+.presentation-audio-toggle { position: absolute; z-index: 13; left: 14px; bottom: 14px; min-height: 38px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid rgba(174, 136, 238, .38); border-radius: 20px; background: rgba(12, 9, 16, .9); color: #8e8796; box-shadow: 0 9px 26px rgba(0, 0, 0, .38); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); font: 600 9px 'Manrope'; }
+.presentation-audio-toggle.active { border-color: rgba(87, 218, 163, .42); color: #a6e7c7; background: rgba(18, 42, 33, .88); }.presentation-audio-toggle svg { width: 16px; }
 .video-avatar { width: 72px; height: 72px; display: grid; place-items: center; border-radius: 50%; border: 1px solid rgba(181, 145, 249, .34); background: linear-gradient(135deg, #65448f, #21172d); color: #e0d4f8; font: 600 18px 'Manrope'; }
 .video-avatar.constellation-avatar { background: radial-gradient(circle at 32% 26%, rgba(200, 173, 255, .22), transparent 34%), linear-gradient(145deg, #352052, #09070d); font: inherit; }
 .video-name { position: absolute; left: 8px; bottom: 8px; z-index: 2; display: flex; align-items: center; gap: 5px; padding: 5px 7px; border-radius: 5px; background: rgba(5, 4, 7, .72); font-size: 8px; }
@@ -156,6 +158,7 @@
   .reaction-menu { position: fixed; left: 12px; right: 12px; bottom: 190px; transform: none; justify-content: center; z-index: 80; }
   .share-menu { position: fixed; left: 12px; right: 12px; bottom: 190px; width: auto; transform: none; z-index: 80; }
   .collaboration-toolbar { top: auto; right: 8px; left: 8px; bottom: 9px; overflow-x: auto; justify-content: center; }.collaboration-toolbar button { flex: 0 0 auto; }
+  .presentation-audio-toggle { left: 8px; top: 48px; bottom: auto; min-height: 34px; padding: 0 10px; }.presentation-audio-toggle span { display: none; }
   .meeting-audio-unlock { bottom: 58px; }
   .background-meeting-bar { left: 8px; right: 8px; bottom: calc(72px + env(safe-area-inset-bottom)); width: auto; }.background-meeting-bar > .secondary-button { display: none; }
 }

@@ -121,6 +121,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     this.endValidation = null;
     this.connectVersion = 0;
     this.pendingRemovals = new Map();
+    this.pendingSignals = new Map();
     this.iceRefreshTimer = null;
   }
 
@@ -133,6 +134,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     const channel = await subscribeRealtimeChannel(() => {
       if (!this.active || version !== this.connectVersion) throw Object.assign(new Error('Conexión reemplazada.'), { name: 'AbortError' });
       const channel = supabase.channel(`meeting:${roomId}`, { config: { private: true, broadcast: { self: false, ack: false }, presence: { key: this.selfId } } });
+      this.channel = channel;
       channel.on('broadcast', { event: 'signal' }, ({ payload }) => this.handleSignal(payload).catch(() => {}));
       channel.on('broadcast', { event: 'participant-state' }, ({ payload }) => this.handleParticipantState(payload).catch(() => {}));
       channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
@@ -185,15 +187,31 @@ export class SupabaseMeetingConnection extends MeetingConnection {
 
   removePeer(peerId) {
     this.cancelPeerRemoval(peerId);
+    this.pendingSignals.delete(peerId);
     super.removePeer(peerId);
+  }
+
+  queueSignal(message) {
+    if (!message?.source) return;
+    const pending = this.pendingSignals.get(message.source) || [];
+    pending.push(message);
+    this.pendingSignals.set(message.source, pending.slice(-100));
+  }
+
+  async flushPendingSignals(peerId) {
+    const pending = this.pendingSignals.get(peerId);
+    if (!pending?.length || !this.participants.has(peerId)) return;
+    this.pendingSignals.delete(peerId);
+    for (const message of pending) await this.handleSignal(message);
   }
 
   async syncPresence() {
     if (!this.active || !this.channel) return; const online = new Set(); const canonicalUsers = this.canonicalPresence();
     for (const peer of canonicalUsers.values()) {
       online.add(peer.peerId); this.cancelPeerRemoval(peer.peerId);
-      const isNew = !this.participants.has(peer.peerId); this.participants.set(peer.peerId, { ...this.participants.get(peer.peerId), ...peer });
-      if (isNew && this.selfId > peer.peerId) await this.createPeer(peer.peerId, true).catch(() => {});
+      this.participants.set(peer.peerId, { ...this.participants.get(peer.peerId), ...peer });
+      if (this.selfId > peer.peerId && !this.peers.has(peer.peerId)) await this.createPeer(peer.peerId, true).catch(() => {});
+      await this.flushPendingSignals(peer.peerId).catch(() => {});
     }
     for (const [peerId, peer] of [...this.participants.entries()]) if (!online.has(peerId)) {
       const replacement = peer.userId && canonicalUsers.get(peer.userId);
@@ -218,7 +236,9 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   async handleSignal(message) {
     if (!message || (message.target && message.target !== this.selfId)) return;
     if (['offer', 'answer', 'ice'].includes(message.type) && message.source && !this.participants.has(message.source)) {
-      await this.syncPresence(); if (!this.participants.has(message.source)) return;
+      this.queueSignal(message);
+      await this.syncPresence();
+      return;
     }
     if (message.type === 'offer') return this.acceptOffer(message);
     if (message.type === 'answer') return this.acceptAnswer(message);
@@ -289,7 +309,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
   endMeeting() { if (this.role === 'HOST') return this.broadcast('meeting-ended', { by: this.identity.name }); return undefined; }
   disconnect() {
-    this.active = false; this.connectVersion += 1; this.localStreamVersion += 1; clearTimeout(this.iceRefreshTimer); this.iceRefreshTimer = null; this.pendingRemovals.forEach((timer) => clearTimeout(timer)); this.pendingRemovals.clear(); this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
+    this.active = false; this.connectVersion += 1; this.localStreamVersion += 1; clearTimeout(this.iceRefreshTimer); this.iceRefreshTimer = null; this.pendingRemovals.forEach((timer) => clearTimeout(timer)); this.pendingRemovals.clear(); this.pendingSignals.clear(); this.peers.forEach(({ pc, remoteStream, reconnectTimer }) => { if (reconnectTimer) clearTimeout(reconnectTimer); pc.close(); remoteStream.getTracks().forEach((track) => track.stop()); }); this.peers.clear(); this.participants.clear();
     if (this.channel) { this.channel.untrack(); supabase.removeChannel(this.channel); } this.channel = null; this.callbacks.onStatus?.('disconnected');
   }
 }

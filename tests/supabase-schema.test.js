@@ -101,9 +101,29 @@ describe('Supabase contract', () => {
   it('fails open to direct meeting audio when Web Audio is suspended', () => {
     expect(meetingStudio).toContain("target.context.state === 'running'");
     expect(meetingStudio).toContain('enhanced ? target.destination.stream : directStream');
-    expect(meetingStudio).toContain('context.onstatechange = () => selectReliableOutput');
+    expect(meetingStudio).toContain("context.addEventListener?.('statechange', stateChanged)");
     expect(meetingStudio).toContain("window.addEventListener('pageshow', resume)");
     expect(meetingStudio).toContain("document.addEventListener('visibilitychange', visible)");
+  });
+
+  it('queues early WebRTC signals and primes one shared audio engine before joining', () => {
+    expect(meetingClient).toContain('this.pendingSignals = new Map()');
+    expect(meetingClient).toContain('this.queueSignal(message)');
+    expect(meetingClient).toContain('await this.flushPendingSignals(peer.peerId)');
+    expect(meetingClient).toContain("this.selfId > peer.peerId && !this.peers.has(peer.peerId)");
+    expect(meetingStudio).toContain('let sharedMeetingAudioContext = null');
+    expect(meetingStudio).toContain('const context = meetingAudioContext(); if (!context) return undefined;');
+    expect(meetingStudio).toContain('primeMeetingAudio();');
+    expect(meetingStudio).toContain("context.addEventListener?.('statechange', stateChanged)");
+  });
+
+  it('lets the presenter mute only the captured screen sound', () => {
+    expect(meetingStudio).toContain('const toggleSharedAudio = () =>');
+    expect(meetingStudio).toContain('sourceStream.current?.getAudioTracks()');
+    expect(meetingStudio).toContain('track.enabled = next');
+    expect(meetingStudio).toContain('className={`presentation-audio-toggle');
+    expect(meetingStudio).toContain("setShareHasAudio(stream.getAudioTracks().length > 0)");
+    expect(meetingStyles).toContain('.presentation-audio-toggle');
   });
 
   it('enhances distant voices safely and synchronizes cosmic reactions', () => {
