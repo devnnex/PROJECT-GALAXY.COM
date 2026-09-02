@@ -7,6 +7,8 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 
 const pad = (value) => String(value).padStart(2, '0');
 const localInputValue = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 const dateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+const validLocalDate = (value) => { const date = new Date(value); return Number.isFinite(date.getTime()) ? date : null; };
+const defaultRepeatUntil = (startsAt) => { const date = validLocalDate(startsAt); if (!date) return ''; date.setDate(date.getDate() + 28); return dateKey(date); };
 
 function firstGridDay(month) {
   const value = new Date(month.getFullYear(), month.getMonth(), 1);
@@ -36,13 +38,29 @@ function CreateEventModal({ onClose, onCreated, toast }) {
   const defaultEnd = new Date(defaultStart.getTime() + 90 * 60 * 1000);
   const [form, setForm] = useState({ title: '', description: '', kind: 'MEETING', startsAt: localInputValue(defaultStart), endsAt: localInputValue(defaultEnd), recurrence: 'NONE', repeatUntil: '' });
   const [busy, setBusy] = useState(false);
-  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const update = (key, value) => setForm((current) => {
+    if (key === 'startsAt') {
+      const previousStart = validLocalDate(current.startsAt); const previousEnd = validLocalDate(current.endsAt); const nextStart = validLocalDate(value);
+      const duration = previousStart && previousEnd && previousEnd > previousStart ? previousEnd.getTime() - previousStart.getTime() : 90 * 60 * 1000;
+      const next = { ...current, startsAt: value, ...(nextStart ? { endsAt: localInputValue(new Date(nextStart.getTime() + duration)) } : {}) };
+      if (nextStart && current.recurrence === 'WEEKLY' && (!current.repeatUntil || current.repeatUntil < dateKey(nextStart))) next.repeatUntil = defaultRepeatUntil(value);
+      return next;
+    }
+    if (key === 'recurrence') return { ...current, recurrence: value, repeatUntil: value === 'WEEKLY' ? (current.repeatUntil || defaultRepeatUntil(current.startsAt)) : '' };
+    return { ...current, [key]: value };
+  });
   const submit = async (event) => {
-    event.preventDefault(); setBusy(true);
+    event.preventDefault();
+    const title = form.title.trim(); const description = form.description.trim(); const startsAt = validLocalDate(form.startsAt); const endsAt = validLocalDate(form.endsAt);
+    if (!title) { toast('Escribe un nombre para la reunión.', 'error'); return; }
+    if (!startsAt || !endsAt) { toast('Selecciona una fecha y hora válidas.', 'error'); return; }
+    if (endsAt <= startsAt) { toast('La hora final debe ser posterior a la hora de inicio.', 'error'); return; }
+    if (form.recurrence === 'WEEKLY' && (!form.repeatUntil || form.repeatUntil < dateKey(startsAt))) { toast('Selecciona hasta qué fecha se repetirá la reunión.', 'error'); return; }
+    setBusy(true);
     try {
       const result = await api.createCalendarEvent({
-        title: form.title, description: form.description, kind: form.kind,
-        startsAt: new Date(form.startsAt).toISOString(), endsAt: new Date(form.endsAt).toISOString(),
+        title, description, kind: form.kind,
+        startsAt: startsAt.toISOString(), endsAt: endsAt.toISOString(),
         recurrence: form.recurrence, repeatUntil: form.recurrence === 'WEEKLY' ? form.repeatUntil : null,
       });
       toast(result.created === 1 ? 'Evento agregado al calendario.' : `${result.created} sesiones semanales agregadas.`);

@@ -40,6 +40,12 @@
 .reaction-layer > span:nth-child(2n) { left: 38%; }.reaction-layer > span:nth-child(3n) { left: 62%; }
 .reaction-layer > .money-rocket-reaction { width: clamp(88px, 16vw, 150px); height: clamp(88px, 16vw, 150px); bottom: 4%; font-size: 0; filter: drop-shadow(0 0 16px rgba(93, 232, 217, .55)) drop-shadow(0 0 26px rgba(159, 91, 245, .42)); animation: moneyRocketFlight 3s cubic-bezier(.2,.75,.25,1) forwards; }
 .money-rocket-reaction img { width: 100%; height: 100%; object-fit: contain; }
+.reaction-layer > .money-character-reaction,.reaction-layer > .money-alien-reaction { width: clamp(170px, 29vw, 285px); height: clamp(170px, 29vw, 285px); bottom: 2%; font-size: 0; filter: drop-shadow(0 0 18px rgba(160,255,90,.52)) drop-shadow(0 14px 24px rgba(0,0,0,.45)); will-change: transform,opacity,filter; }
+.reaction-layer > .money-character-reaction { height: clamp(230px, 42vw, 410px); animation: moneyCharacterBounce 4.2s cubic-bezier(.16,.82,.22,1) forwards; }
+.reaction-layer > .money-alien-reaction { animation: moneyAlienWarp 4.2s cubic-bezier(.18,.78,.2,1) forwards; }
+.money-character-reaction img,.money-alien-reaction img { width: 100%; height: 100%; object-fit: contain; }
+.money-character-reaction:before,.money-character-reaction:after,.money-alien-reaction:before,.money-alien-reaction:after { position: absolute; z-index: 2; color: #dfff78; font: 800 clamp(28px,5vw,52px)/1 'Manrope'; text-shadow: 0 0 12px #8eff60,0 0 28px rgba(113,255,98,.75); animation: stickerMoneySpark .58s ease-in-out infinite alternate; }
+.money-character-reaction:before,.money-alien-reaction:before { content: '$'; left: -5%; top: 18%; }.money-character-reaction:after,.money-alien-reaction:after { content: '✦'; right: -2%; top: 8%; animation-delay: .22s; }
 .cosmic-reaction-launcher { position: absolute; z-index: 13; right: 14px; bottom: 14px; display: flex; gap: 5px; padding: 5px; border: 1px solid rgba(139, 232, 198, .25); border-radius: 28px; background: rgba(10, 8, 13, .86); box-shadow: 0 8px 28px rgba(0,0,0,.35), 0 0 18px rgba(116, 76, 202, .16); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .cosmic-reaction-launcher button { width: 42px; height: 42px; display: grid; place-items: center; padding: 2px; overflow: hidden; border: 1px solid rgba(164, 126, 228, .2); border-radius: 50%; background: radial-gradient(circle, rgba(103, 69, 166, .58), rgba(17, 12, 22, .92)); color: white; cursor: pointer; transition: transform .18s, border-color .18s, box-shadow .18s; }
 .cosmic-reaction-launcher button:hover { transform: translateY(-3px) scale(1.07); border-color: rgba(116, 229, 191, .52); box-shadow: 0 0 18px rgba(86, 220, 183, .25); }.cosmic-reaction-launcher button:disabled { opacity: .35; cursor: not-allowed; transform: none; }.cosmic-reaction-launcher img { width: 38px; height: 38px; object-fit: contain; }.cosmic-reaction-launcher span { font-size: 22px; line-height: 1; }
@@ -59,6 +65,9 @@
 @keyframes alienArrival { 0% { transform: translate(-50%, 130px) scale(.25); opacity: 0; } 18% { opacity: 1; } 43%,72% { transform: translate(-50%, -80px) scale(1); opacity: 1; } 100% { transform: translate(-50%, -230px) scale(.7) rotate(7deg); opacity: 0; } }
 @keyframes birthdayArrival { 0% { transform: translate(-50%, 140px) scale(.25) rotate(-8deg); opacity: 0; } 18% { opacity: 1; } 38%,76% { transform: translate(-50%, -75px) scale(1.05) rotate(0); opacity: 1; } 100% { transform: translate(-50%, -235px) scale(.72) rotate(6deg); opacity: 0; } }
 @keyframes birthdayConfetti { to { transform: translateY(-9px) rotate(12deg) scale(1.13); } }
+@keyframes moneyCharacterBounce { 0% { transform: translate(-50%, 130px) scale(.18) rotate(-13deg); opacity: 0; filter: blur(5px); } 16% { opacity: 1; filter: blur(0); } 35% { transform: translate(-50%, -35px) scale(1.12) rotate(4deg); } 48% { transform: translate(-50%, -12px) scale(.96) rotate(-2deg); } 62%,78% { transform: translate(-50%, -25px) scale(1.04) rotate(1deg); opacity: 1; } 100% { transform: translate(-50%, -260px) scale(.7) rotate(12deg); opacity: 0; filter: blur(2px); } }
+@keyframes moneyAlienWarp { 0% { transform: translate(-50%, -35px) scale(.08) rotate(-35deg); opacity: 0; filter: blur(9px) brightness(2); } 18% { opacity: 1; filter: blur(0) brightness(1.35); } 38% { transform: translate(-50%, -85px) scale(1.16) rotate(7deg); } 52% { transform: translate(-50%, -65px) scale(.94) rotate(-4deg); } 66%,80% { transform: translate(-50%, -75px) scale(1.04) rotate(2deg); opacity: 1; filter: brightness(1.12); } 100% { transform: translate(-50%, -80px) scale(1.75) rotate(28deg); opacity: 0; filter: blur(8px) brightness(2); } }
+@keyframes stickerMoneySpark { to { transform: translateY(-10px) rotate(9deg) scale(1.18); opacity: .65; } }
 .meeting-pip-source { position: fixed; left: -4px; bottom: -4px; z-index: -1; width: 2px; height: 2px; opacity: .001; pointer-events: none; }.meeting-pip-source.mirrored { transform: scaleX(-1); }
 .meeting-top-actions .secondary-button.active { border-color: rgba(99, 211, 160, .42); color: #8be0b4; background: rgba(65, 181, 128, .08); }
 .meeting-mobile-scrim,.mobile-chat-fab { display: none; }
@@ -171,10 +180,10 @@
   .mobile-chat-fab { right: 12px; bottom: calc(204px + env(safe-area-inset-bottom)); }
   .meeting-page.mobile-panel-open .meeting-side { top: 68px; right: 8px; bottom: calc(258px + env(safe-area-inset-bottom)); left: 8px; width: auto; }
   .meeting-page.mobile-panel-open .meeting-side-tabs button { padding-right: 4px; }
-  .cosmic-reaction-launcher { right: 8px; bottom: 8px; gap: 3px; padding: 4px; }.cosmic-reaction-launcher button { width: 37px; height: 37px; }.cosmic-reaction-launcher img { width: 34px; height: 34px; }.cosmic-reaction-launcher span { font-size: 19px; }
+  .cosmic-reaction-launcher { right: 8px; bottom: 8px; max-width: calc(100% - 16px); gap: 3px; padding: 4px; overflow-x: auto; scrollbar-width: none; }.cosmic-reaction-launcher::-webkit-scrollbar { display: none; }.cosmic-reaction-launcher button { width: 37px; height: 37px; flex: 0 0 37px; }.cosmic-reaction-launcher img { width: 34px; height: 34px; }.cosmic-reaction-launcher span { font-size: 19px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reaction-layer > span,.reaction-layer > .money-rocket-reaction,.reaction-layer > .ufo-reaction,.reaction-layer > .alien-reaction,.reaction-layer > .alien-birthday-reaction { animation-duration: .9s; animation-timing-function: ease-out; }
-  .ufo-body b,.alien-birthday-reaction em { animation: none; }
+  .reaction-layer > span,.reaction-layer > .money-rocket-reaction,.reaction-layer > .money-character-reaction,.reaction-layer > .money-alien-reaction,.reaction-layer > .ufo-reaction,.reaction-layer > .alien-reaction,.reaction-layer > .alien-birthday-reaction { animation-duration: .9s; animation-timing-function: ease-out; }
+  .ufo-body b,.alien-birthday-reaction em,.money-character-reaction:before,.money-character-reaction:after,.money-alien-reaction:before,.money-alien-reaction:after { animation: none; }
 }

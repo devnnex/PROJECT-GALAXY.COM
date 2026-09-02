@@ -6,6 +6,7 @@ const schema = read('../supabase/schema.sql');
 const app = read('../src/App.jsx');
 const api = read('../src/services/api.js');
 const meeting = read('../src/components/MeetingStudio.jsx');
+const calendar = read('../src/components/CalendarPage.jsx');
 
 describe('Galaxy owner and member access controls', () => {
   it('keeps the owner allowlist server-controlled and exposes admin toggles only through RPC', () => {
@@ -58,5 +59,14 @@ describe('Galaxy owner and member access controls', () => {
     expect(schema).not.toContain('public.create_calendar_event(text,text,text,timestamptz,timestamptz,text,date)\n  to authenticated');
     expect(schema).toContain('function public.remove_ended_meeting');
     expect(meeting).toContain('api.removeEndedMeeting');
+  });
+
+  it('keeps scheduled meeting dates valid when the start or recurrence changes', () => {
+    expect(calendar).toContain('const validLocalDate =');
+    expect(calendar).toContain('previousEnd.getTime() - previousStart.getTime()');
+    expect(calendar).toContain("endsAt: localInputValue(new Date(nextStart.getTime() + duration))");
+    expect(calendar).toContain("value === 'WEEKLY' ? (current.repeatUntil || defaultRepeatUntil(current.startsAt))");
+    expect(calendar).toContain('const title = form.title.trim()');
+    expect(calendar).toContain('La hora final debe ser posterior a la hora de inicio.');
   });
 });
