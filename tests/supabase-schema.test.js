@@ -157,6 +157,7 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('@keyframes phoenixAscension');
     expect(meetingStyles).toContain('@keyframes phoenixWingbeat');
     expect(meetingStyles).toContain('@keyframes phoenixMoneyShower');
+    expect(meetingStyles).toContain('width: clamp(170px, 29vw, 285px); height: clamp(170px, 29vw, 285px)');
   });
 
   it('uses the one-RPC meeting creation path and resilient realtime startup', () => {
