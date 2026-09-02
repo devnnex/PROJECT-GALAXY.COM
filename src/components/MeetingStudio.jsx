@@ -12,15 +12,32 @@ const MONEY_ROCKET_ASSET = `${import.meta.env.BASE_URL}assets/money-rocket-react
 const MONEY_CHARACTER_ASSET = `${import.meta.env.BASE_URL}assets/money-character-reaction.png`;
 const MONEY_ALIEN_ASSET = `${import.meta.env.BASE_URL}assets/money-alien-reaction.png`;
 const MONEY_PHOENIX_ASSET = `${import.meta.env.BASE_URL}assets/money-phoenix-reaction.png`;
+const PHOENIX_TRANSFORM_REACTION = 'PHOENIX_TRANSFORM';
+const PHOENIX_BASE_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-base-reaction.png`;
+const PHOENIX_SUPER_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-super-reaction.png`;
+const PHOENIX_LIGHTNING_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-lightning.webm`;
 const COSMIC_REACTIONS = [
   { id: MONEY_ROCKET_REACTION, label: 'Cohete de dinero', asset: MONEY_ROCKET_ASSET },
   { id: 'MONEY_CHARACTER', label: 'Personaje millonario', asset: MONEY_CHARACTER_ASSET },
   { id: 'MONEY_ALIEN', label: 'Portal alien de dinero', asset: MONEY_ALIEN_ASSET },
   { id: 'MONEY_PHOENIX', label: 'Fénix de poder', asset: MONEY_PHOENIX_ASSET },
+  { id: PHOENIX_TRANSFORM_REACTION, label: 'Transformación del fénix', asset: PHOENIX_BASE_ASSET },
   { id: 'UFO', label: 'Lanzar UFO', icon: '🛸' },
   { id: 'ALIEN', label: 'Enviar alien', icon: '👽' },
   { id: 'ALIEN_BIRTHDAY', label: 'Alien de cumpleaños', icon: '🎂' },
 ];
+
+function PhoenixTransformReaction() {
+  const videoRef = useRef(null);
+  useEffect(() => {
+    const video = videoRef.current; if (!video) return undefined;
+    video.volume = .72; video.currentTime = 0;
+    const play = () => video.play().catch(() => {});
+    play(); window.addEventListener('galaxy:resume-meeting-audio', play); window.addEventListener('pointerdown', play, true);
+    return () => { window.removeEventListener('galaxy:resume-meeting-audio', play); window.removeEventListener('pointerdown', play, true); video.pause(); };
+  }, []);
+  return <span className="phoenix-transform-reaction" role="img" aria-label="Fénix transformándose con un estallido y rayos"><video ref={videoRef} src={PHOENIX_LIGHTNING_ASSET} autoPlay playsInline preload="auto" controls={false} disablePictureInPicture /><img className="phoenix-base-form" src={PHOENIX_BASE_ASSET} alt="" /><i aria-hidden="true" /><b aria-hidden="true" /><img className="phoenix-super-form" src={PHOENIX_SUPER_ASSET} alt="" /></span>;
+}
 
 function voiceCaptureConstraints() {
   return {
@@ -51,6 +68,7 @@ function CosmicReaction({ reaction }) {
   if (reaction === 'MONEY_CHARACTER') return <span className="money-character-reaction" role="img" aria-label="Personaje rodeado de dinero"><img src={MONEY_CHARACTER_ASSET} alt="" /></span>;
   if (reaction === 'MONEY_ALIEN') return <span className="money-alien-reaction" role="img" aria-label="Alien en un portal de dinero"><img src={MONEY_ALIEN_ASSET} alt="" /></span>;
   if (reaction === 'MONEY_PHOENIX') return <span className="money-phoenix-reaction" role="img" aria-label="Fénix poderoso ascendiendo entre dinero y destellos"><i aria-hidden="true" /><img src={MONEY_PHOENIX_ASSET} alt="" /><b aria-hidden="true">$ ✦ $ ✦ $</b></span>;
+  if (reaction === PHOENIX_TRANSFORM_REACTION) return <PhoenixTransformReaction />;
   if (reaction === 'UFO') return <span className="ufo-reaction" role="img" aria-label="UFO"><i className="ufo-dome" /><i className="ufo-body"><b /><b /><b /></i><i className="ufo-beam" /></span>;
   if (reaction === 'ALIEN') return <span className="alien-reaction" role="img" aria-label="Alien"><i>👽</i><b>¡Saludos, terrícola!</b></span>;
   if (reaction === 'ALIEN_BIRTHDAY') return <span className="alien-birthday-reaction" role="img" aria-label="Alien deseando feliz cumpleaños"><i>👽</i><b>Happy Birthday!</b><em>🎉</em><em>🎂</em></span>;
@@ -448,6 +466,11 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const [annotationStrokes, setAnnotationStrokes] = useState([]); const [remoteCursors, setRemoteCursors] = useState({});
 
   useEffect(() => { annotationStrokesRef.current = annotationStrokes; }, [annotationStrokes]);
+  useEffect(() => {
+    const finalForm = new Image(); finalForm.src = PHOENIX_SUPER_ASSET;
+    const lightning = document.createElement('video'); lightning.preload = 'auto'; lightning.src = PHOENIX_LIGHTNING_ASSET; lightning.load();
+    return () => { lightning.pause(); lightning.removeAttribute('src'); lightning.load(); };
+  }, []);
 
   const rememberMeeting = (value) => { localStorage.setItem(activeKey, JSON.stringify({ roomCode: value.roomCode, title: value.title, role: value.role || (value.host ? 'HOST' : 'PARTICIPANT') })); };
   const forgetMeeting = () => { localStorage.removeItem(activeKey); };
@@ -468,7 +491,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
   const mergeMessage = useCallback((message) => setMessages((items) => items.some((item) => item.id === message.id) ? items.map((item) => item.id === message.id ? { ...item, ...message } : item) : [...items, message]), []);
   const applyChatReaction = useCallback((update) => { if (!update.emoji) return; setMessages((items) => items.map((item) => { if (item.id !== update.messageId) return item; const reactions = [...(item.reactions || [])]; const index = reactions.findIndex((entry) => entry.emoji === update.emoji); if (index < 0 && update.active) reactions.push({ emoji: update.emoji, count: 1, mine: update.userId === user.id }); else if (index >= 0) { const current = reactions[index]; const count = Math.max(0, current.count + (update.active ? 1 : -1)); if (!count) reactions.splice(index, 1); else reactions[index] = { ...current, count, ...(update.userId === user.id ? { mine: update.active } : {}) }; } return { ...item, reactions }; })); }, [user.id]);
-  const showReaction = ({ emoji }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), cosmic ? 4200 : 2400); };
+  const showReaction = ({ emoji }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); setReactions((items) => [...items, { id, emoji }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
   const resetCollaboration = () => { collaborationGrants.current.clear(); collaborationRequestTimes.current.clear(); clearTimeout(requestTimer.current); setCollaborationMode(null); setCollaborationRequest(null); setRequestedCollaboration(null); setCollaborationPermission(null); setAnnotationStrokes([]); setRemoteCursors({}); };
   const mergeAnnotationPoint = (message) => {
     const { strokeId, point, start, color } = message; if (!/^[0-9a-f-]{16,64}$/i.test(strokeId || '') || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.x > 1000 || point.y < 0 || point.y > 1000) return;

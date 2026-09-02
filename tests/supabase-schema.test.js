@@ -160,6 +160,19 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('width: clamp(170px, 29vw, 285px); height: clamp(170px, 29vw, 285px)');
   });
 
+  it('ships the synchronized phoenix transformation with transparent lightning sound', () => {
+    expect(meetingStudio).toContain("PHOENIX_TRANSFORM_REACTION = 'PHOENIX_TRANSFORM'");
+    expect(meetingStudio).toContain('assets/phoenix-lightning.webm');
+    expect(meetingStudio).toContain('assets/phoenix-base-reaction.png');
+    expect(meetingStudio).toContain('assets/phoenix-super-reaction.png');
+    expect(meetingStudio).toContain('video.volume = .72');
+    expect(meetingStudio).toContain("lightning.preload = 'auto'");
+    expect(meetingStudio).toContain("emoji === PHOENIX_TRANSFORM_REACTION ? 11_300");
+    expect(meetingClient).toContain("'PHOENIX_TRANSFORM'");
+    expect(meetingStyles).toContain('@keyframes phoenixTransformExplosion');
+    expect(meetingStyles).toContain('@keyframes phoenixSuperArrival');
+  });
+
   it('uses the one-RPC meeting creation path and resilient realtime startup', () => {
     expect(schema).toContain("'participantStatus','ADMITTED'");
     expect(meetingStudio).toMatch(/const created = await api\.createMeeting\(form\);[\s\S]*await connectAccess\(created\)/);
