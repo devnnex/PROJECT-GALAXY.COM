@@ -21,13 +21,14 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(schema).toContain(",650,'premium-downloads','SCANNER-POWER-ELITE.pine'");
   });
 
-  it('limits regular accounts to meetings, calendar and profile', () => {
+  it('opens member commerce and messaging while retaining administrator-only areas', () => {
     expect(schema).toContain('function public.require_active_membership()');
     expect(schema).toMatch(/function public\.create_meeting[\s\S]*public\.require_admin\(\)/);
     expect(schema).toMatch(/function public\.join_meeting[\s\S]*public\.require_active_membership\(\)/);
     expect(schema).toMatch(/function public\.has_active_membership[\s\S]*status='ACTIVE'/);
-    expect(app).toContain("['meetings', 'calendar', 'profile'].includes(id)");
+    expect(app).toContain("['marketplace', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id)");
     expect(app).toContain('availableNavigation = isAdmin ? navigation : memberNavigation');
+    expect(app).toContain('useEffect(() => { reloadMembership().catch(() => {}); }, [user.id])');
     expect(app).toContain('canCreate={isAdmin}');
     expect(app).toContain("page === 'meetings' ? 'active' : 'background'");
   });

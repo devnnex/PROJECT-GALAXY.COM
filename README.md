@@ -35,7 +35,7 @@ Supabase no incluye TURN. La Edge Function `turn-credentials` entrega credencial
 
 ## Acceso y administración
 
-`elkin56ty@gmail.com` es la identidad administrativa protegida por la allowlist del servidor. Las demás cuentas solo ven Reuniones, Calendario y Perfil; pueden entrar, aceptar o rechazar invitaciones, pero no crear salas ni eventos. La sección **Usuarios** permite al administrador suspender y reactivar cuentas. Una cuenta suspendida conserva una pantalla informativa bloqueada, mientras las RPC operativas rechazan su acceso.
+`elkin56ty@gmail.com` es la identidad administrativa protegida por la allowlist del servidor. Las demás cuentas ven Marketplace, Reuniones, Calendario, Mensajes, Wallet, Órdenes y Perfil; pueden consultar su propia actividad comercial, entrar y responder invitaciones, pero no crear salas o eventos ni acceder a Inicio, Descubrir, En vivo o Usuarios. La sección **Usuarios** permite al administrador suspender y reactivar cuentas. Una cuenta suspendida conserva una pantalla informativa bloqueada, mientras las RPC operativas rechazan su acceso.
 
 Cada cuenta regular admite una sola sesión Supabase. Si aparece otra sesión de navegador o dispositivo mientras la primera sigue activa, ambas se invalidan y la cuenta puede volver a entrar tras la ventana de seguridad de 30 segundos. El administrador está exento para evitar un bloqueo operativo.
 
@@ -45,4 +45,4 @@ La cuenta administrativa conserva todas las opciones normales para compartir pan
 
 ## Pagos y Scanner
 
-El checkout muestra la wallet y el QR de USDT TRC20/ERC20 seleccionados. La confirmación es manual y no controla el acceso a reuniones o LIVE. Scanner Power Elite está oculto para todas las cuentas excepto `elkin56ty@gmail.com`; su descarga se valida nuevamente en `scanner-download` y utiliza una URL firmada de 60 segundos desde el bucket privado `premium-downloads`. El archivo `.pine` está excluido de Git.
+El checkout muestra la wallet y el QR de USDT TRC20/ERC20 seleccionados. La confirmación es manual y no controla el acceso a reuniones o LIVE. Scanner Power Elite aparece en el Marketplace de las cuentas activas para consultar y proceder al pago, pero solamente `elkin56ty@gmail.com` recibe la opción de descarga. Esa identidad se valida nuevamente en `scanner-download`, que utiliza una URL firmada de 60 segundos desde el bucket privado `premium-downloads`. El archivo `.pine` está excluido de Git.

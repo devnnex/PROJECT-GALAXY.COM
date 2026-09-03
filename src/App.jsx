@@ -26,7 +26,7 @@ const navigation = [
   ['live', 'En vivo', Radio], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['messages', 'Mensajes', MessageCircle],
   ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['users', 'Usuarios', Users], ['profile', 'Perfil', User],
 ];
-const memberNavigation = navigation.filter(([id]) => ['meetings', 'calendar', 'profile'].includes(id));
+const memberNavigation = navigation.filter(([id]) => ['marketplace', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id));
 
 const membershipMarketplacePlans = [
   { code: 'MONTHLY', name: 'Órbita mensual', duration: '1 mes', price: 80, tone: 'violet', note: 'Acceso flexible' },
@@ -215,7 +215,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
   const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
   const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
-  useEffect(() => { if (isAdmin) reloadMembership().catch(() => {}); }, [user.id, isAdmin]);
+  useEffect(() => { reloadMembership().catch(() => {}); }, [user.id]);
   const membership = membershipCenter.membership || user.membership || { isActive: false };
   useEffect(() => {
     if (!inviteToken) return;
