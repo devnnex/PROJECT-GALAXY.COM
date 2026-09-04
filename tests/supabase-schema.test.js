@@ -13,7 +13,7 @@ const appHtml = readFileSync(new URL('../app.html', import.meta.url), 'utf8');
 
 const publicRpc = [
   'get_current_user', 'update_profile', 'update_profile_avatar', 'get_bootstrap_data', 'create_meeting', 'join_meeting', 'get_my_meetings',
-  'get_meeting_state', 'admit_meeting_participant', 'deny_meeting_participant', 'set_meeting_locked',
+  'get_meeting_state', 'admit_meeting_participant', 'deny_meeting_participant', 'set_meeting_locked', 'set_participant_mics_locked',
   'restart_meeting', 'remove_ended_meeting',
   'end_meeting', 'get_community_members', 'get_meeting_invite_candidates', 'mark_meeting_invitation_seen',
   'invite_to_meeting', 'get_meeting_messages',
@@ -196,11 +196,29 @@ describe('Supabase contract', () => {
   it('captures and mixes shared audio with the presenter microphone', () => {
     expect(meetingStudio).toContain('async function createSharedAudioMixer(displayStream, microphoneStream)');
     expect(meetingStudio).toContain('context.createMediaStreamDestination()');
-    expect(meetingStudio).toContain('audio: true');
+    expect(meetingStudio).toContain('getDisplayMedia({ video: true, audio:');
     expect(meetingStudio).toContain('sharedLocalStream(stream)');
     expect(meetingStudio).toContain('Pantalla, micrófono y audio disponible mezclados correctamente.');
     expect(meetingStudio).toContain('<RemoteAudioLayer streams={remoteStreams}');
     expect(meetingStudio).toContain('playAudio={false}');
+    expect(meetingStudio).toContain('suppressLocalAudioPlayback: false');
+    expect(meetingStudio).toContain("selfBrowserSurface: 'exclude'");
+    expect(meetingStudio).toContain('const context = meetingAudioContext()');
+  });
+
+  it('persists host microphone lock and attributes floating chat and reactions', () => {
+    expect(schema).toContain('function public.set_participant_mics_locked');
+    expect(schema).toContain("'{participantMicsLocked}'");
+    expect(schema).toContain("'participantMicsLocked'");
+    expect(api).toContain("setParticipantMicsLocked: (payload) => rpc('set_participant_mics_locked', payload)");
+    expect(meetingClient).toContain("type: 'participant-mics-lock'");
+    expect(meetingClient).toContain('handleParticipantMicsLock');
+    expect(meetingStudio).toContain('Silenciar a todos');
+    expect(meetingStudio).toContain('Micrófono bloqueado por el anfitrión');
+    expect(meetingStudio).toContain('className="floating-chat-layer"');
+    expect(meetingStudio).toContain('senderName={item.senderName}');
+    expect(meetingStyles).toContain('.floating-chat-message');
+    expect(meetingStyles).toContain('.reaction-sender');
   });
 
   it('keeps presenter voice alive while the shared-audio context changes state', () => {

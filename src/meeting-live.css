@@ -40,6 +40,10 @@
 .reaction-layer { position: absolute; inset: 0; z-index: 8; pointer-events: none; overflow: hidden; }
 .reaction-layer > span { position: absolute; left: 50%; bottom: 12%; font-size: 38px; animation: reactionFloat 2.2s ease-out forwards; }
 .reaction-layer > span:nth-child(2n) { left: 38%; }.reaction-layer > span:nth-child(3n) { left: 62%; }
+.reaction-symbol { font-style: normal; }.reaction-sender { position: absolute; z-index: 9; left: 50%; bottom: 1px; max-width: 180px; transform: translateX(-50%); padding: 5px 9px; overflow: hidden; border: 1px solid rgba(188,153,247,.42); border-radius: 13px; background: rgba(10,7,14,.9); box-shadow: 0 7px 20px rgba(0,0,0,.42); color: #f0e7fb; font: 700 9px/1.2 'Manrope'; letter-spacing: 0; text-overflow: ellipsis; white-space: nowrap; filter: none; }
+.floating-chat-layer { position: absolute; z-index: 12; top: 16px; left: 16px; width: min(390px,calc(100% - 32px)); display: grid; gap: 7px; pointer-events: none; }
+.floating-chat-message { display: grid; grid-template-columns: 29px minmax(0,1fr); gap: 9px; align-items: start; padding: 10px 12px; border: 1px solid rgba(169,126,235,.3); border-radius: 12px; background: rgba(10,8,14,.9); box-shadow: 0 12px 30px rgba(0,0,0,.38); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); animation: floatingMessageIn 5.2s ease forwards; }
+.floating-chat-message > svg { width: 17px; margin: 2px auto 0; color: #b58df3; }.floating-chat-message span { min-width: 0; }.floating-chat-message strong { display: block; color: #c6a8f4; font: 700 9px 'Manrope'; }.floating-chat-message p { margin: 3px 0 0; overflow: hidden; color: #eee8f2; font-size: 10px; line-height: 1.4; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .reaction-layer > .money-rocket-reaction { width: clamp(88px, 16vw, 150px); height: clamp(88px, 16vw, 150px); bottom: 4%; font-size: 0; filter: drop-shadow(0 0 16px rgba(93, 232, 217, .55)) drop-shadow(0 0 26px rgba(159, 91, 245, .42)); animation: moneyRocketFlight 3s cubic-bezier(.2,.75,.25,1) forwards; }
 .money-rocket-reaction img { width: 100%; height: 100%; object-fit: contain; }
 .reaction-layer > .money-character-reaction,.reaction-layer > .money-alien-reaction { width: clamp(170px, 29vw, 285px); height: clamp(170px, 29vw, 285px); bottom: 2%; font-size: 0; filter: drop-shadow(0 0 18px rgba(160,255,90,.52)) drop-shadow(0 14px 24px rgba(0,0,0,.45)); will-change: transform,opacity,filter; }
@@ -78,6 +82,7 @@
 @keyframes alienArrival { 0% { transform: translate(-50%, 130px) scale(.25); opacity: 0; } 18% { opacity: 1; } 43%,72% { transform: translate(-50%, -80px) scale(1); opacity: 1; } 100% { transform: translate(-50%, -230px) scale(.7) rotate(7deg); opacity: 0; } }
 @keyframes birthdayArrival { 0% { transform: translate(-50%, 140px) scale(.25) rotate(-8deg); opacity: 0; } 18% { opacity: 1; } 38%,76% { transform: translate(-50%, -75px) scale(1.05) rotate(0); opacity: 1; } 100% { transform: translate(-50%, -235px) scale(.72) rotate(6deg); opacity: 0; } }
 @keyframes birthdayConfetti { to { transform: translateY(-9px) rotate(12deg) scale(1.13); } }
+@keyframes floatingMessageIn { 0% { transform: translateY(-12px); opacity: 0; } 8%,84% { transform: none; opacity: 1; } 100% { transform: translateY(-8px); opacity: 0; } }
 @keyframes moneyCharacterBounce { 0% { transform: translate(-50%, 130px) scale(.18) rotate(-13deg); opacity: 0; filter: blur(5px); } 16% { opacity: 1; filter: blur(0); } 35% { transform: translate(-50%, -35px) scale(1.12) rotate(4deg); } 48% { transform: translate(-50%, -12px) scale(.96) rotate(-2deg); } 62%,78% { transform: translate(-50%, -25px) scale(1.04) rotate(1deg); opacity: 1; } 100% { transform: translate(-50%, -260px) scale(.7) rotate(12deg); opacity: 0; filter: blur(2px); } }
 @keyframes moneyAlienWarp { 0% { transform: translate(-50%, -35px) scale(.08) rotate(-35deg); opacity: 0; filter: blur(9px) brightness(2); } 18% { opacity: 1; filter: blur(0) brightness(1.35); } 38% { transform: translate(-50%, -85px) scale(1.16) rotate(7deg); } 52% { transform: translate(-50%, -65px) scale(.94) rotate(-4deg); } 66%,80% { transform: translate(-50%, -75px) scale(1.04) rotate(2deg); opacity: 1; filter: brightness(1.12); } 100% { transform: translate(-50%, -80px) scale(1.75) rotate(28deg); opacity: 0; filter: blur(8px) brightness(2); } }
 @keyframes stickerMoneySpark { to { transform: translateY(-10px) rotate(9deg) scale(1.18); opacity: .65; } }
@@ -132,6 +137,7 @@
 .meeting-waiting h1 { margin: 0; font: 600 32px 'Manrope'; }.meeting-waiting > p:not(.eyebrow) { max-width: 520px; color: #88818e; }.meeting-waiting > strong { letter-spacing: .16em; color: #b995f4; }
 .waiting-orbit { width: 56px; height: 56px; border: 2px solid rgba(145, 92, 228, .2); border-top-color: #9a6ce5; border-radius: 50%; animation: spin 1s linear infinite; }
 .meeting-top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }.meeting-top-actions .secondary-button { min-height: 34px; padding: 0 11px; font-size: 9px; }.meeting-top-actions svg { width: 14px; }
+.meeting-top-actions .participant-mic-lock.active { border-color: rgba(218,93,116,.48); background: rgba(173,53,76,.12); color: #ef9aaa; }
 .meeting-grid { grid-template-columns: minmax(0, 1fr) 330px; }
 .meeting-side { min-width: 0; padding: 0; overflow: hidden; }
 .meeting-side-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
@@ -204,9 +210,10 @@
   .meeting-page.mobile-panel-open .meeting-side { top: 68px; right: 8px; bottom: calc(258px + env(safe-area-inset-bottom)); left: 8px; width: auto; }
   .meeting-page.mobile-panel-open .meeting-side-tabs button { padding-right: 4px; }
   .cosmic-reaction-launcher { right: 8px; bottom: 8px; max-width: calc(100% - 16px); gap: 3px; padding: 4px; overflow-x: auto; scrollbar-width: none; }.cosmic-reaction-launcher::-webkit-scrollbar { display: none; }.cosmic-reaction-launcher button { width: 37px; height: 37px; flex: 0 0 37px; }.cosmic-reaction-launcher img { width: 34px; height: 34px; }.cosmic-reaction-launcher span { font-size: 19px; }
+  .floating-chat-layer { top: 9px; left: 9px; width: calc(100% - 18px); }.floating-chat-message { padding: 8px 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reaction-layer > span,.reaction-layer > .money-rocket-reaction,.reaction-layer > .money-character-reaction,.reaction-layer > .money-alien-reaction,.reaction-layer > .money-phoenix-reaction,.reaction-layer > .phoenix-transform-reaction,.reaction-layer > .ufo-reaction,.reaction-layer > .alien-reaction,.reaction-layer > .alien-birthday-reaction { animation-duration: .9s; animation-timing-function: ease-out; }
+  .reaction-layer > span,.reaction-layer > .money-rocket-reaction,.reaction-layer > .money-character-reaction,.reaction-layer > .money-alien-reaction,.reaction-layer > .money-phoenix-reaction,.reaction-layer > .phoenix-transform-reaction,.reaction-layer > .ufo-reaction,.reaction-layer > .alien-reaction,.reaction-layer > .alien-birthday-reaction { animation-duration: .9s; animation-timing-function: ease-out; }.floating-chat-message { animation: none; }
   .ufo-body b,.alien-birthday-reaction em,.money-character-reaction:before,.money-character-reaction:after,.money-alien-reaction:before,.money-alien-reaction:after,.money-phoenix-reaction img,.money-phoenix-reaction i,.money-phoenix-reaction b,.phoenix-transform-reaction video,.phoenix-transform-reaction img,.phoenix-transform-reaction i,.phoenix-transform-reaction b { animation: none; }
 }

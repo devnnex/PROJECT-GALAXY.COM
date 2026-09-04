@@ -156,6 +156,7 @@ export const api = {
   admitMeetingParticipant: (payload) => rpc('admit_meeting_participant', payload),
   denyMeetingParticipant: (payload) => rpc('deny_meeting_participant', payload),
   setMeetingLocked: (payload) => rpc('set_meeting_locked', payload),
+  setParticipantMicsLocked: (payload) => rpc('set_participant_mics_locked', payload),
   endMeeting: (payload) => rpc('end_meeting', payload),
   restartMeeting: (payload) => rpc('restart_meeting', payload),
   removeEndedMeeting: (payload) => rpc('remove_ended_meeting', payload),

@@ -706,6 +706,7 @@ language sql stable set search_path = public as $$
   select jsonb_build_object('id', p_meeting.id, 'meetingId', p_meeting.id, 'title', p_meeting.title,
     'roomCode', p_meeting.room_code, 'status', p_meeting.status, 'waitingRoom', p_meeting.waiting_room,
     'locked', p_meeting.locked, 'host', p_meeting.host_id = p_user, 'hostId', p_meeting.host_id,
+    'participantMicsLocked',coalesce(p_meeting.permissions->>'participantMicsLocked','false')='true',
     'startsAt', p_meeting.starts_at, 'endedAt', p_meeting.ended_at,
     'scheduledEndsAt',p_meeting.scheduled_ends_at);
 $$;
@@ -1063,6 +1064,16 @@ create or replace function public.deny_meeting_participant(p_meeting_id uuid,p_p
 create or replace function public.set_meeting_locked(p_meeting_id uuid,p_locked boolean) returns jsonb language plpgsql security definer set search_path=public,auth as $$
 begin if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=public.require_active_membership()) then raise exception 'Solo el anfitrión puede realizar esta acción.' using errcode='P0001'; end if; update public.meetings set locked=coalesce(p_locked,false) where id=p_meeting_id; return jsonb_build_object('locked',coalesce(p_locked,false)); end; $$;
 
+create or replace function public.set_participant_mics_locked(p_meeting_id uuid,p_locked boolean) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_host uuid:=public.require_active_membership(); v_locked boolean:=coalesce(p_locked,false);
+begin
+  update public.meetings set permissions=jsonb_set(coalesce(permissions,'{}'::jsonb),'{participantMicsLocked}',to_jsonb(v_locked),true)
+  where id=p_meeting_id and host_id=v_host and status='ACTIVE';
+  if not found then raise exception 'Solo el anfitrión puede controlar los micrófonos.' using errcode='P0001'; end if;
+  return jsonb_build_object('meetingId',p_meeting_id,'participantMicsLocked',v_locked);
+end; $$;
+
 create or replace function public.end_meeting(p_meeting_id uuid) returns jsonb language plpgsql security definer set search_path=public,auth as $$
 declare v_deleted_messages integer:=0;
 begin
@@ -1092,7 +1103,9 @@ begin
   insert into public.meeting_participants(meeting_id,user_id,role,status,joined_at,left_at,permissions)
   values(p_meeting_id,v_user,'HOST','ADMITTED',now(),null,'{}'::jsonb)
   on conflict(meeting_id,user_id) do update set role='HOST',status='ADMITTED',joined_at=now(),left_at=null,permissions='{}'::jsonb;
-  update public.meetings set status='ACTIVE',starts_at=now(),ended_at=null,locked=false where id=p_meeting_id returning * into v_meeting;
+  update public.meetings set status='ACTIVE',starts_at=now(),ended_at=null,locked=false,
+    permissions=jsonb_set(coalesce(permissions,'{}'::jsonb),'{participantMicsLocked}','false'::jsonb,true)
+  where id=p_meeting_id returning * into v_meeting;
   select value into v_ice from public.app_settings where key='ice_servers';
   return public.meeting_summary(v_meeting,v_user)||jsonb_build_object(
     'role','HOST','participantStatus','ADMITTED','iceServers',coalesce(v_ice,'[]'::jsonb),'messages','[]'::jsonb
@@ -1382,13 +1395,13 @@ grant execute on function public.get_turn_provider_config() to service_role;
 
 revoke execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),
   public.require_admin(),public.is_current_session_valid(),public.get_admin_users(),public.set_user_access(uuid,boolean),
-  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),
+  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),
   public.cleanup_old_calendar_events(),public.get_calendar_events(timestamptz,timestamptz),
   public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
 from public,anon,authenticated;
 grant execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),public.is_current_session_valid(),
   public.get_admin_users(),public.set_user_access(uuid,boolean),
-  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),
+  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),
   public.get_calendar_events(timestamptz,timestamptz),
   public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
 to authenticated;

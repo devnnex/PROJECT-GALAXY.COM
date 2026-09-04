@@ -34,7 +34,7 @@ export class MeetingConnection {
         if (message.type === 'answer') { await this.acceptAnswer(message); return; }
         if (message.type === 'ice') { await this.acceptIce(message); return; }
         if (message.type === 'presence') { this.participants.set(message.peer.peerId, message.peer); this.emitParticipants(); return; }
-        if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.peerId, emoji: message.emoji }); return; }
+        if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.peerId, senderName: this.participants.get(message.peerId)?.name, emoji: message.emoji }); return; }
         if (message.type === 'chat') { this.callbacks.onChat?.(message.message); return; }
         if (message.type === 'chat-reaction') { this.callbacks.onChatReaction?.(message.update); return; }
         if (message.type === 'force-mute') { this.callbacks.onForceMute?.(message); return; }
@@ -137,8 +137,8 @@ export class SupabaseMeetingConnection extends MeetingConnection {
       this.channel = channel;
       channel.on('broadcast', { event: 'signal' }, ({ payload }) => this.handleSignal(payload).catch(() => {}));
       channel.on('broadcast', { event: 'participant-state' }, ({ payload }) => this.handleParticipantState(payload).catch(() => {}));
-      channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
-      channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId));
+      channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId, true));
+      channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId, false));
       channel.on('broadcast', { event: 'meeting-ended' }, ({ payload }) => this.handleMeetingEnded(payload));
       channel.on('presence', { event: 'sync' }, () => this.syncPresence());
       return channel;
@@ -243,7 +243,8 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (message.type === 'offer') return this.acceptOffer(message);
     if (message.type === 'answer') return this.acceptAnswer(message);
     if (message.type === 'ice') return this.acceptIce(message);
-    if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.source, emoji: message.emoji }); return; }
+    if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.source, senderName: this.participants.get(message.source)?.name, emoji: message.emoji }); return; }
+    if (message.type === 'participant-mics-lock') { await this.handleParticipantMicsLock(message); return; }
     if (message.type?.startsWith('collab-')) {
       if (!message.source || !this.participants.has(message.source)) return;
       this.callbacks.onCollaboration?.(message); return;
@@ -254,10 +255,19 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     }
   }
 
-  async handlePersistedMessage(messageId) {
+  async handleParticipantMicsLock(message) {
+    if (!message?.source) return;
+    if (!this.participants.has(message.source)) await this.syncPresence();
+    const sender = this.participants.get(message.source);
+    if (sender?.role !== 'HOST') return;
+    const state = await api.getMeetingState({ meetingId: this.roomId }).catch(() => null);
+    if (state) this.callbacks.onParticipantMicsLock?.({ locked: Boolean(state.participantMicsLocked), by: sender.name });
+  }
+
+  async handlePersistedMessage(messageId, announce = true) {
     if (!messageId) return;
     const message = await api.getMeetingMessage({ meetingId: this.roomId, messageId }).catch(() => null);
-    if (message) this.callbacks.onChat?.(message);
+    if (message) this.callbacks.onChat?.(message, { announce });
   }
 
   async handleMeetingEnded(payload) {
@@ -306,6 +316,12 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (!peer?.userId) return;
     const command = await api.requestMeetingMute({ meetingId: this.roomId, userId: peer.userId });
     await this.broadcast('signal', { type: 'force-mute', source: this.selfId, target: peerId, commandId: command.id, by: this.identity.name });
+  }
+  async setParticipantMicsLocked(locked) {
+    if (this.role !== 'HOST') return null;
+    const result = await api.setParticipantMicsLocked({ meetingId: this.roomId, locked: Boolean(locked) });
+    await this.broadcast('signal', { type: 'participant-mics-lock', source: this.selfId });
+    return result;
   }
   endMeeting() { if (this.role === 'HOST') return this.broadcast('meeting-ended', { by: this.identity.name }); return undefined; }
   disconnect() {
