@@ -22,3 +22,9 @@
 @keyframes invitation-appear{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @media(prefers-reduced-motion:reduce){.invitation-dialog[open]{animation:none}}
 @media(max-width:600px){.invitation-dialog .invitation-glass{padding:22px}.admin-users-actions{width:100%}.admin-users-actions button{flex:1}.invitation-actions button{flex:1}.invitation-dialog h2{font-size:25px}}
+.delete-user-dialog .invitation-symbol{color:#ffc2c9;background:rgba(255,117,141,.09);border-color:rgba(255,160,176,.22)}
+.delete-user-identity{display:grid;gap:6px;padding:16px;margin:20px 0;border:1px solid rgba(255,255,255,.1);border-radius:14px;background:rgba(255,255,255,.04);overflow-wrap:anywhere}
+.delete-user-identity span{font-size:12px;color:#bdb5ce}
+.delete-user-dialog #delete-user-description{color:#bdb5ce;font-size:13px;line-height:1.7;margin-bottom:24px}
+.delete-user-dialog .delete-user-submit{background:linear-gradient(135deg,#b94360,#92374f);border:1px solid rgba(255,180,194,.25);color:#fff;box-shadow:0 4px 18px rgba(146,55,79,.18)}
+.delete-user-dialog .delete-user-error{padding:14px;border-radius:12px;color:#ffd0d8;background:rgba(197,64,95,.12);border:1px solid rgba(255,160,176,.18);font-size:12px;line-height:1.6;overflow-wrap:anywhere}

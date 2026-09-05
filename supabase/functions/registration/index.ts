@@ -4,7 +4,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 const env = (name: string) => { const value = Deno.env.get(name); if (!value) throw new Error('Configuración del servidor incompleta.'); return value; };
 Deno.serve(async (request) => {
   const origin = request.headers.get('origin') || '';
-  const allowed = (Deno.env.get('APP_ALLOWED_ORIGINS') || '').split(',').map(value => value.trim());
+  const allowed = (Deno.env.get('APP_ALLOWED_ORIGINS') || 'https://devnnex.github.io,http://localhost:5173').split(',').map(value => value.trim());
   const headers = { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': allowed.includes(origin) ? origin : allowed[0] || '', 'Access-Control-Allow-Headers': 'authorization, apikey, content-type, x-client-info', 'Access-Control-Allow-Methods': 'POST, OPTIONS', Vary: 'Origin' };
   const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers });
   if (request.method === 'OPTIONS') return respond({});
@@ -47,13 +47,24 @@ Deno.serve(async (request) => {
       return respond({ expiresAt: data.expiresAt });
     }
     if (body.action === 'delete') {
-      const { data: target, error } = await admin.from('profiles').select('id,role').eq('id', body.userId).single();
-      if (error || !target || target.role === 'ADMIN' || target.id === auth.user.id) return respond({ error: 'No puedes eliminar esta cuenta.' }, 400);
+      const { data: target, error } = await admin.from('profiles').select('id,role').eq('id', body.userId).maybeSingle();
+      if (error) return respond({ error: 'No se pudo consultar la cuenta. Revisa la configuración de Supabase.' }, 500);
+      if (!target) return respond({ deleted: true });
+      if (target.role === 'ADMIN' || target.id === auth.user.id) return respond({ error: 'No puedes eliminar esta cuenta.' }, 400);
       // Delete physical storage through the Storage API before deleting Auth.
       const { error: storageError } = await admin.storage.from('profile-avatars').remove([`${target.id}/profile`]);
       if (storageError) return respond({ error: 'No se pudo eliminar la foto. Reintenta la eliminación.' }, 502);
       const { error: deleteError } = await client.rpc('delete_registered_user', { p_user_id: target.id });
-      if (deleteError) return respond({ error: 'No se pudo eliminar la cuenta y sus datos. Reintenta.' }, 400);
+      if (deleteError) {
+        console.error('registration-delete', { code: deleteError.code, message: deleteError.message, details: deleteError.details });
+        const message = deleteError.code === 'PGRST202' || deleteError.code === '42883'
+          ? 'La eliminación aún no está instalada en Supabase. Ejecuta el archivo schema.sql actualizado.'
+          : deleteError.code === '23503'
+          ? 'Hay registros asociados que bloquean la eliminación. Ejecuta schema.sql actualizado y vuelve a intentar.'
+          : deleteError.code === 'P0001' ? deleteError.message
+          : 'Supabase no pudo completar la eliminación. Revisa el registro de la función registration para identificar la causa.';
+        return respond({ error: message }, 400);
+      }
       return respond({ deleted: true });
     }
     return respond({ error: 'Acción inválida.' }, 400);

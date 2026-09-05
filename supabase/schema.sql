@@ -1501,6 +1501,9 @@ declare v_admin uuid:=public.require_admin();
 begin
  if p_user_id=v_admin or exists(select 1 from public.profiles where id=p_user_id and role='ADMIN') then raise exception 'No puedes eliminar una cuenta administradora.' using errcode='P0001'; end if;
  delete from public.membership_ledger where beneficiary_id=p_user_id;
+ -- Entitlements RESTRICT deletion of their source payment order. Remove them
+ -- before Auth cascades into crypto_payment_orders, regardless of trigger order.
+ delete from public.product_entitlements where user_id=p_user_id;
  delete from public.calendar_events where created_by=p_user_id;
  delete from public.meeting_messages where sender_id=p_user_id;
  delete from public.meetings where host_id=p_user_id;

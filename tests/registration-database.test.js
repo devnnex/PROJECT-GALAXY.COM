@@ -19,6 +19,8 @@ beforeAll(async () => {
     create table public.calendar_events(created_by uuid references public.profiles);
     create table public.meeting_messages(sender_id uuid references public.profiles);
     create table public.meetings(host_id uuid references public.profiles);
+    create table public.crypto_payment_orders(id uuid primary key default gen_random_uuid(),user_id uuid references public.profiles on delete cascade);
+    create table public.product_entitlements(user_id uuid references public.profiles on delete cascade,source_order_id uuid references public.crypto_payment_orders on delete restrict);
     create function public.require_user() returns uuid language sql as $$select current_setting('test.user_id')::uuid$$;
     create function public.require_admin() returns uuid language plpgsql as $$begin if public.require_user()<>'${owner}'::uuid then raise exception 'Forbidden'; end if; return public.require_user(); end$$;
     create function public.get_current_user() returns jsonb language sql as $$select jsonb_build_object('wallet',to_jsonb(w)) from public.wallets w where user_id=public.require_user()$$;
@@ -73,6 +75,8 @@ it('splits 90/10 using the invitation price and isolates wallet history', async 
 it('protects admins and deletes the account while preserving anonymized beneficiary balances', async () => {
   await expect(db.query('select public.delete_registered_user($1)',[owner])).rejects.toThrow('administradora');
   const user = await scalar("select id from auth.users where email='referred@example.com'");
+  const order = await scalar('insert into public.crypto_payment_orders(user_id) values($1) returning id',[user.id]);
+  await db.query('insert into public.product_entitlements(user_id,source_order_id) values($1,$2)',[user.id,order.id]);
   await db.query('select public.delete_registered_user($1)',[user.id]);
   expect((await scalar('select count(*)::int n from public.profiles where id=$1',[user.id])).n).toBe(0);
   expect((await scalar('select count(*)::int n from public.memberships where user_id=$1',[user.id])).n).toBe(0);

@@ -1,12 +1,38 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MailPlus, Send, X } from 'lucide-react';
+import { MailPlus, Send, Trash2, X } from 'lucide-react';
 import { api } from '../services/api';
 import { MEMBERSHIP_EMOJI } from '../membership-badges';
 
 const amount = value => Number(value || 0).toFixed(2);
 const date = value => new Date(value).toLocaleString('es-CO');
 const entryLabel = kind => kind === 'MEMBERSHIP_PURCHASE' ? 'Tu membresía' : kind === 'REFERRAL_COMMISSION' ? 'Comisión por referido · 10%' : 'Ingreso de membresía';
+
+export function DeleteUserDialog({ account, onClose, onDeleted }) {
+  const dialog = useRef(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    const previous = document.activeElement;
+    const modal = dialog.current;
+    modal.showModal();
+    return () => { modal.close(); previous?.focus(); };
+  }, []);
+  const remove = async () => {
+    if (busy) return;
+    setBusy(true); setError('');
+    try { await api.deleteUser(account.id); onDeleted(account); }
+    catch (err) { setError(err.message); setBusy(false); }
+  };
+  return createPortal(<dialog ref={dialog} className="invitation-dialog delete-user-dialog" aria-labelledby="delete-user-title" aria-describedby="delete-user-description" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
+    <section className="registration-panel invitation-glass"><header className="invitation-heading"><span className="invitation-symbol"><Trash2 size={24} /></span><button className="invitation-close" aria-label="Cerrar" disabled={busy} onClick={onClose}><X size={20} /></button></header>
+      <p className="eyebrow">GESTIÓN DE USUARIOS</p><h2 id="delete-user-title">Eliminar cuenta</h2>
+      <div className="delete-user-identity"><strong>{account.name}</strong><span>{account.email}</span></div>
+      <p id="delete-user-description">Se eliminarán permanentemente esta cuenta, su perfil, foto y datos asociados. Los movimientos de otros usuarios se conservarán sin su identidad. Esta acción no se puede deshacer.</p>
+      {error && <p className="delete-user-error" role="alert">{error}</p>}
+      <footer className="invitation-actions"><button autoFocus className="secondary-button" disabled={busy} onClick={onClose}>Cancelar</button><button className="primary-button delete-user-submit" disabled={busy} onClick={remove}><Trash2 size={16} />{busy ? 'Eliminando…' : 'Eliminar cuenta'}</button></footer>
+    </section></dialog>, document.body);
+}
 
 export function InvitationForm({ users, toast, onClose }) {
   const dialog = useRef(null);

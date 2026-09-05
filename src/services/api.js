@@ -97,7 +97,7 @@ export const api = {
   },
   inspectInvitation: (token) => invokeSecure('registration', { action: 'inspect', token }, 'No se pudo validar la invitación.'),
   inviteUser: (payload) => invokeSecure('registration', { action: 'invite', ...payload }, 'No se pudo enviar la invitación.'),
-  deleteUser: (userId) => invokeSecure('registration', { action: 'delete', userId }, 'No se pudo eliminar la cuenta.'),
+  deleteUser: (userId) => invokeSecure('registration', { action: 'delete', userId }, 'No se pudo conectar con el servicio de eliminación. Comprueba tu conexión y que la función registration esté desplegada con el origen de esta app permitido.'),
   getWalletActivity: () => rpc('get_wallet_activity'),
   async register({ name, username, password, token }) {
     const result = await invokeSecure('registration', { action: 'register', name, username, password, token }, 'No se pudo completar el registro.');
