@@ -182,74 +182,39 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
   const ref = useRef(null);
   useEffect(() => {
     const audio = ref.current; if (!audio) return undefined;
-    let disposed = false; let generation = 0; let graph = null; let directStream = null;
-    const disposeGraph = (target) => {
-      if (!target) return;
-      target.context.removeEventListener?.('statechange', target.stateChanged);
-      target.nodes.forEach((node) => { try { node.disconnect(); } catch { /* already disconnected */ } });
-      target.destination.stream.getTracks().forEach((track) => track.stop());
+    let disposed = false;
+    const play = async () => {
+      if (disposed || !audio.srcObject) return;
+      audio.defaultMuted = false; audio.muted = false; audio.volume = 1;
+      try { await audio.play(); if (!disposed) onBlocked(peerId, false); }
+      catch { if (!disposed) onBlocked(peerId, true); }
     };
-    const closeGraph = () => { const current = graph; graph = null; disposeGraph(current); };
-    const attachAndPlay = async (output, currentGeneration) => {
-      if (disposed || currentGeneration !== generation || !output) return;
-      if (audio.srcObject !== output) audio.srcObject = output;
-      audio.volume = 1;
-      try { await audio.play(); if (!disposed && currentGeneration === generation) onBlocked(peerId, false); }
-      catch { if (!disposed && currentGeneration === generation) onBlocked(peerId, true); }
-    };
-    const selectReliableOutput = (target, currentGeneration) => {
-      if (disposed || currentGeneration !== generation) return;
-      const enhanced = target && target === graph && target.context.state === 'running';
-      attachAndPlay(enhanced ? target.destination.stream : directStream, currentGeneration);
-    };
-    const rebuild = async () => {
+    const syncTracks = () => {
       if (disposed) return;
       const tracks = (stream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
-      const currentGeneration = ++generation; closeGraph();
-      audio.pause(); audio.srcObject = null; directStream = tracks.length ? new MediaStream(tracks) : null;
+      const attached = audio.srcObject?.getAudioTracks?.() || [];
+      const unchanged = tracks.length === attached.length && tracks.every((track) => attached.includes(track));
+      if (!unchanged) audio.srcObject = tracks.length ? new MediaStream(tracks) : null;
       if (!tracks.length) { onBlocked(peerId, false); return; }
-      const Context = window.AudioContext || window.webkitAudioContext;
-      if (Context) {
-        let nextGraph = null;
-        try {
-          const context = meetingAudioContext(); if (!context) throw new Error('AudioContext unavailable');
-          const destination = context.createMediaStreamDestination();
-          const source = context.createMediaStreamSource(new MediaStream(tracks)); const preamp = context.createGain(); const compressor = context.createDynamicsCompressor(); const output = context.createGain();
-          preamp.gain.value = 2.4; compressor.threshold.value = -10; compressor.knee.value = 6; compressor.ratio.value = 10; compressor.attack.value = .003; compressor.release.value = .2; output.gain.value = 1.25;
-          source.connect(preamp); preamp.connect(compressor); compressor.connect(output); output.connect(destination);
-          const stateChanged = () => selectReliableOutput(nextGraph, currentGeneration);
-          nextGraph = { context, destination, nodes: [source, preamp, compressor, output], stateChanged };
-          graph = nextGraph;
-          context.addEventListener?.('statechange', stateChanged);
-          await context.resume().catch(() => {});
-          if (disposed || currentGeneration !== generation) { if (graph === nextGraph) graph = null; disposeGraph(nextGraph); return; }
-          selectReliableOutput(nextGraph, currentGeneration); return;
-        } catch { if (graph === nextGraph) graph = null; disposeGraph(nextGraph); }
-      }
-      attachAndPlay(directStream, currentGeneration);
+      play();
     };
-    const resume = async () => {
-      if (disposed) return;
-      const currentGeneration = generation; const currentGraph = graph;
-      if (currentGraph?.context.state === 'suspended') await currentGraph.context.resume().catch(() => {});
-      selectReliableOutput(currentGraph, currentGeneration);
-    };
-    const changed = () => { rebuild(); };
+    const resume = () => { play(); };
+    const changed = () => { syncTracks(); };
     const visible = () => { if (!document.hidden) resume(); };
     stream?.addEventListener('addtrack', changed); stream?.addEventListener('removetrack', changed);
     window.addEventListener('galaxy:resume-meeting-audio', resume); window.addEventListener('focus', resume); window.addEventListener('pageshow', resume);
     window.addEventListener('pointerdown', resume, true); window.addEventListener('keydown', resume, true); document.addEventListener('visibilitychange', visible);
-    (stream?.getTracks() || []).forEach((track) => { track.addEventListener('mute', changed); track.addEventListener('unmute', changed); track.addEventListener('ended', changed); });
-    rebuild();
+    (stream?.getAudioTracks() || []).forEach((track) => { track.addEventListener('unmute', resume); track.addEventListener('ended', changed); });
+    syncTracks();
     return () => {
-      disposed = true; generation += 1; onBlocked(peerId, false); window.removeEventListener('galaxy:resume-meeting-audio', resume); window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume);
+      disposed = true; onBlocked(peerId, false); window.removeEventListener('galaxy:resume-meeting-audio', resume); window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume);
       window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visible);
       stream?.removeEventListener('addtrack', changed); stream?.removeEventListener('removetrack', changed);
-      (stream?.getTracks() || []).forEach((track) => { track.removeEventListener('mute', changed); track.removeEventListener('unmute', changed); track.removeEventListener('ended', changed); });
-      audio.pause(); audio.srcObject = null; closeGraph();
+      (stream?.getAudioTracks() || []).forEach((track) => { track.removeEventListener('unmute', resume); track.removeEventListener('ended', changed); });
+      audio.pause(); audio.srcObject = null;
     };
   }, [stream, peerId, onBlocked]);
-  return <audio ref={ref} className="remote-audio" autoPlay preload="auto" />;
+  return <audio ref={ref} className="remote-audio" autoPlay playsInline preload="auto" />;
 }
 
 function RemoteAudioLayer({ streams, onBlockedChange }) {

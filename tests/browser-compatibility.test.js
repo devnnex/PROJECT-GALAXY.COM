@@ -8,6 +8,8 @@ const html = read('../app.html');
 const vite = read('../vite.config.js');
 const root = read('../index.html');
 const redirect = read('../redirect.js');
+const styles = read('../src/styles.css');
+const calendar = read('../src/calendar.css');
 
 describe('Cross-browser visual contract', () => {
   it('self-hosts the real product fonts at every used weight', () => {
@@ -30,6 +32,12 @@ describe('Cross-browser visual contract', () => {
     expect(html).toContain('viewport-fit=cover');
     expect(compatibility).toContain('@supports (height: 100dvh)');
     expect(compatibility).toContain('env(safe-area-inset-bottom)');
+  });
+
+  it('keeps mobile forms at an iOS-safe text size and the calendar fitted to the viewport', () => {
+    expect(styles).toContain('textarea{font-size:16px!important}');
+    expect(calendar).toContain('.calendar-weekdays,.calendar-grid{width:100%;min-width:0');
+    expect(calendar).toContain('.calendar-cell{min-width:0;min-height:62px');
   });
 
   it('ships JavaScript and CSS compatible with Safari 14+', () => {

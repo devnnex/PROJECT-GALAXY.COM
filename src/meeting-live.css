@@ -217,3 +217,44 @@
   .reaction-layer > span,.reaction-layer > .money-rocket-reaction,.reaction-layer > .money-character-reaction,.reaction-layer > .money-alien-reaction,.reaction-layer > .money-phoenix-reaction,.reaction-layer > .phoenix-transform-reaction,.reaction-layer > .ufo-reaction,.reaction-layer > .alien-reaction,.reaction-layer > .alien-birthday-reaction { animation-duration: .9s; animation-timing-function: ease-out; }.floating-chat-message { animation: none; }
   .ufo-body b,.alien-birthday-reaction em,.money-character-reaction:before,.money-character-reaction:after,.money-alien-reaction:before,.money-alien-reaction:after,.money-phoenix-reaction img,.money-phoenix-reaction i,.money-phoenix-reaction b,.phoenix-transform-reaction video,.phoenix-transform-reaction img,.phoenix-transform-reaction i,.phoenix-transform-reaction b { animation: none; }
 }
+
+/* Keep the complete reaction tray reachable on every stage width. */
+.cosmic-reaction-launcher { left: 50%; right: auto; max-width: calc(100% - 28px); transform: translateX(-50%); overflow-x: auto; overscroll-behavior-inline: contain; scrollbar-width: none; pointer-events: auto; }
+.cosmic-reaction-launcher::-webkit-scrollbar { display: none; }
+.cosmic-reaction-launcher button { flex: 0 0 42px; }
+
+@keyframes phoenixMobileLightning {
+  0%,100% { transform: translate(-50%,-50%) scale(.7) rotate(-8deg); opacity: .18; }
+  45% { transform: translate(-50%,-50%) scale(1.18) rotate(7deg); opacity: .95; }
+}
+
+@media (max-width: 700px) {
+  .meeting-page { gap: 12px; padding-bottom: 82px; }
+  .meeting-top { gap: 8px; }
+  .meeting-top h1 { max-width: calc(100vw - 28px); overflow: hidden; font-size: 21px; text-overflow: ellipsis; white-space: nowrap; }
+  .meeting-top-actions { width: calc(100vw - 28px); flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; padding: 2px 1px 5px; scrollbar-width: none; }
+  .meeting-top-actions::-webkit-scrollbar { display: none; }
+  .meeting-top-actions .secondary-button { flex: 0 0 auto; min-height: 36px; border-radius: 18px; }
+  .meeting-stage { height: min(58dvh, 520px); min-height: min(360px, 52dvh); border-radius: 18px; box-shadow: 0 18px 52px rgba(0,0,0,.36); }
+  .video-grid { inset: 8px; gap: 7px; grid-auto-rows: minmax(150px, 1fr); }
+  .video-surface { min-height: 190px; }
+  .control-dock { height: 64px!important; display: flex!important; justify-content: flex-start; gap: 2px; padding: 6px; overflow-x: auto; overflow-y: hidden; bottom: calc(68px + env(safe-area-inset-bottom)); border-radius: 18px; scrollbar-width: none; }
+  .control-dock::-webkit-scrollbar { display: none; }
+  .control-dock > button,.control-dock > .share-wrap,.control-dock > .reaction-wrap { flex: 0 0 62px; min-width: 62px; }
+  .control-dock button { width: 62px; height: 50px; min-width: 62px; border-radius: 12px; }
+  .control-dock .join-control { min-width: 62px; }
+  .reaction-menu,.share-menu { bottom: calc(140px + env(safe-area-inset-bottom)); }
+  .mobile-chat-fab { right: 12px; bottom: calc(140px + env(safe-area-inset-bottom)); }
+  .meeting-page.mobile-panel-open .meeting-side { top: 68px; right: 8px; bottom: calc(144px + env(safe-area-inset-bottom)); left: 8px; width: auto; border-radius: 20px; }
+  .collaboration-toolbar { top: 50px; right: 8px; bottom: auto; left: 8px; justify-content: flex-start; }
+  .cosmic-reaction-launcher { right: auto; bottom: 8px; max-width: calc(100% - 16px); gap: 3px; padding: 4px; }
+  .cosmic-reaction-launcher button { width: 38px; height: 38px; flex-basis: 38px; }
+  .cosmic-reaction-launcher img { width: 34px; height: 34px; }
+
+  /* Mobile WebKit can render the WebM alpha channel as a dark rectangle.
+     The 1px video keeps its sound; CSS supplies the transparent lightning. */
+  .phoenix-transform-reaction video { left: -9999px; top: 0; width: 1px; height: 1px; opacity: .001; }
+  .phoenix-transform-reaction:before,.phoenix-transform-reaction:after { content: ""; position: absolute; z-index: 3; left: 50%; top: 44%; width: 118%; height: 118%; transform: translate(-50%,-50%); pointer-events: none; mix-blend-mode: screen; }
+  .phoenix-transform-reaction:before { background: repeating-conic-gradient(from 7deg, transparent 0 11deg, rgba(107,205,255,.92) 12deg 13deg, transparent 14deg 28deg); clip-path: polygon(49% 0,55% 36%,67% 8%,63% 40%,89% 18%,70% 46%,100% 42%,73% 53%,95% 72%,66% 62%,75% 100%,57% 68%,49% 96%,42% 67%,20% 96%,34% 61%,3% 72%,28% 52%,0 42%,31% 45%,10% 18%,38% 40%,32% 8%,44% 36%); filter: drop-shadow(0 0 8px #78d8ff) drop-shadow(0 0 22px rgba(77,150,255,.8)); animation: phoenixMobileLightning .54s ease-in-out 5 alternate; }
+  .phoenix-transform-reaction:after { width: 78%; height: 78%; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.95), rgba(105,201,255,.38) 28%, rgba(255,133,24,.2) 48%, transparent 70%); filter: blur(4px); animation: phoenixTransformExplosion 1.15s cubic-bezier(.12,.72,.18,1) 2.16s forwards; opacity: 0; }
+}

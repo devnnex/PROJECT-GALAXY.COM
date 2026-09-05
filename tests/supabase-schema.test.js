@@ -98,10 +98,10 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('.video-surface.audio-only-surface');
   });
 
-  it('fails open to direct meeting audio when Web Audio is suspended', () => {
-    expect(meetingStudio).toContain("target.context.state === 'running'");
-    expect(meetingStudio).toContain('enhanced ? target.destination.stream : directStream');
-    expect(meetingStudio).toContain("context.addEventListener?.('statechange', stateChanged)");
+  it('keeps remote meeting audio direct and independent from the screen-share mixer', () => {
+    expect(meetingStudio).toContain('audio.defaultMuted = false; audio.muted = false; audio.volume = 1');
+    expect(meetingStudio).toContain('audio.srcObject = tracks.length ? new MediaStream(tracks) : null');
+    expect(meetingStudio).not.toContain("track.addEventListener('mute', changed)");
     expect(meetingStudio).toContain("window.addEventListener('pageshow', resume)");
     expect(meetingStudio).toContain("document.addEventListener('visibilitychange', visible)");
   });
@@ -114,7 +114,7 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('let sharedMeetingAudioContext = null');
     expect(meetingStudio).toContain('const context = meetingAudioContext(); if (!context) return undefined;');
     expect(meetingStudio).toContain('primeMeetingAudio();');
-    expect(meetingStudio).toContain("context.addEventListener?.('statechange', stateChanged)");
+    expect(meetingStudio).toContain("window.addEventListener('galaxy:resume-meeting-audio', resume)");
   });
 
   it('lets the presenter mute only the captured screen sound', () => {
@@ -126,11 +126,11 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('.presentation-audio-toggle');
   });
 
-  it('enhances distant voices safely and synchronizes cosmic reactions', () => {
+  it('captures clear voices and synchronizes cosmic reactions', () => {
     expect(meetingStudio).toContain('autoGainControl: { ideal: true }');
     expect(meetingStudio).toContain('noiseSuppression: { ideal: true }');
-    expect(meetingStudio).toContain('createDynamicsCompressor()');
-    expect(meetingStudio).toContain('preamp.gain.value = 2.4');
+    expect(meetingStudio).toContain('channelCount: { ideal: 1 }');
+    expect(meetingStudio).toContain('audio.muted = false');
     expect(meetingStudio).toContain("{ id: 'UFO'");
     expect(meetingStudio).toContain("{ id: 'ALIEN_BIRTHDAY'");
     expect(meetingStudio).toContain('Happy Birthday!');
@@ -138,6 +138,12 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('@keyframes ufoFlight');
     expect(meetingStyles).toContain('@keyframes birthdayArrival');
     expect(meetingStyles).toContain('@media (prefers-reduced-motion: reduce)');
+  });
+
+  it('keeps reactions visible and replaces the mobile phoenix rectangle with transparent CSS lightning', () => {
+    expect(meetingStyles).toContain('max-width: calc(100% - 28px)');
+    expect(meetingStyles).toContain('@keyframes phoenixMobileLightning');
+    expect(meetingStyles).toContain('.phoenix-transform-reaction video { left: -9999px');
   });
 
   it('ships the two animated money sticker reactions to every participant', () => {

@@ -10,6 +10,8 @@ const experience = read('../src/components/MembershipExperience.jsx');
 const paymentConfig = read('../src/payment-config.js');
 const turnFunction = read('../supabase/functions/turn-credentials/index.ts');
 const downloadFunction = read('../supabase/functions/scanner-download/index.ts');
+const registrationManagement = read('../src/components/RegistrationManagement.jsx');
+const registrationStyles = read('../src/registration.css');
 
 describe('open Galaxy meetings and manual commerce', () => {
   it('defines the four membership plans and Scanner product', () => {
@@ -77,5 +79,12 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(experience).toContain('Acceso permanente habilitado');
     expect(experience).toContain('Pago directo y confirmación manual');
     expect(experience).not.toContain('HASH DE LA TRANSACCIÓN');
+  });
+
+  it('presents a member purchase as a confirmed positive payment', () => {
+    expect(registrationManagement).toContain("purchase ? Math.abs(Number(entry.grossAmount ?? entry.amount))");
+    expect(registrationManagement).toContain("purchase ? 'PAGO CONFIRMADO'");
+    expect(registrationManagement).not.toContain("Number(entry.amount) >= 0 ? '+' : ''");
+    expect(registrationStyles).toContain('.membership-ledger-row.membership-payment');
   });
 });
