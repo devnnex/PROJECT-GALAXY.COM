@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { CONFIG } from '../config';
+import { MEMBERSHIP_EMOJI } from '../membership-badges';
 
 const PALETTES = [
   ['#c8adff', '#6f46c7'], ['#9ed8ff', '#3d68c8'], ['#ffb8df', '#9a437d'],
@@ -47,7 +48,8 @@ function profileAvatarUrl(value) {
   return `${CONFIG.SUPABASE_URL}/storage/v1/object/public/profile-avatars/${encodedPath}${version ? `?${version}` : ''}`;
 }
 
-export default function ConstellationAvatar({ seed, name = 'Usuario', className = '', src = '' }) {
+export default function ConstellationAvatar({ seed, name = 'Usuario', className = '', src = '', membership }) {
+  const badge = membership?.isActive && MEMBERSHIP_EMOJI[membership.planCode] ? <span className="avatar-membership-badge" title={membership.planName} aria-label={membership.planName}>{MEMBERSHIP_EMOJI[membership.planCode]}</span> : null;
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const constellation = useMemo(() => createConstellation(seed || name), [seed, name]);
   const imageUrl = useMemo(() => profileAvatarUrl(src), [src]); const [imageFailed, setImageFailed] = useState(false);
@@ -56,7 +58,7 @@ export default function ConstellationAvatar({ seed, name = 'Usuario', className 
   const gradientId = `galaxy-avatar-${instanceId}`;
   const glowId = `galaxy-glow-${instanceId}`;
   if (imageUrl && !imageFailed) return <span className={`constellation-avatar profile-photo ${className}`.trim()} role="img" aria-label={`Foto de perfil de ${name}`}>
-    <img src={imageUrl} alt="" onError={() => setImageFailed(true)} draggable="false" />
+    <img src={imageUrl} alt="" onError={() => setImageFailed(true)} draggable="false" />{badge}
   </span>;
   return <span
     className={`constellation-avatar ${className}`.trim()}
@@ -87,6 +89,6 @@ export default function ConstellationAvatar({ seed, name = 'Usuario', className 
         <circle className="constellation-core" cx="50" cy="50" r="2.8" />
       </g>
       <circle className="constellation-rim" cx="50" cy="50" r="48.5" />
-    </svg>
+    </svg>{badge}
   </span>;
 }

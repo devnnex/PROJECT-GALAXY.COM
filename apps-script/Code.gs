@@ -55,6 +55,16 @@ function doGet() {
 }
 
 function doPost(event) {
+  // Separate authenticated mail-only transport; preserves the existing Auth hook.
+  const invitationBody = String(event && event.postData && event.postData.contents || '');
+  if (invitationBody.length <= 100000) {
+    try {
+      const invitationPayload = JSON.parse(invitationBody);
+      if (invitationPayload.action === 'registration_invitation') return sendRegistrationInvitation_(invitationPayload);
+    } catch (error) {
+      if (invitationBody.indexOf('registration_invitation') !== -1) return jsonOutput_({ ok: false });
+    }
+  }
   const properties = PropertiesService.getScriptProperties();
   const expectedKey = requireProperty_(properties, 'GALAXY_HOOK_KEY');
   if (expectedKey.length < 32) {
@@ -225,4 +235,28 @@ function escapeHtml_(value) {
 function jsonOutput_(value) {
   return ContentService.createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// Registration invitations: mail transport only.
+function sendRegistrationInvitation_(payload) {
+  const properties = PropertiesService.getScriptProperties();
+  const secret = requireProperty_(properties, 'GALAXY_INVITATION_KEY');
+  if (secret.length < 32 || !constantTimeEqual_(String(payload.key || ''), secret)) throw new Error('No autorizado.');
+  const expected = requireHttpsUrl_(requireProperty_(properties, 'APP_REGISTRATION_URL'));
+  const link = String(payload.link || '');
+  if (link.split('#')[0] !== expected || !/#registration=[a-f0-9]{64}$/.test(link)) throw new Error('Enlace inválido.');
+  const email = String(payload.email || '');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || /[\r\n,;]/.test(email)) throw new Error('Correo inválido.');
+  if (new Date(payload.expiresAt).getTime() <= Date.now() || !isFinite(new Date(payload.expiresAt).getTime())) throw new Error('Invitación vencida.');
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw new Error('Correo ocupado.');
+  try {
+    const cache = CacheService.getScriptCache(); const fingerprint = digestHex_(link);
+    if (cache.get(fingerprint)) return jsonOutput_({ ok: true });
+    if (MailApp.getRemainingDailyQuota() < 1) throw new Error('Cuota de correo agotada.');
+    MailApp.sendEmail({ to: email, subject: 'Tu invitación a PROJECT GALAXY', name: 'PROJECT GALAXY', body: 'Te invitamos a registrarte con la membresía ' + String(payload.planName || '') + '.\n\n' + link + '\n\nEl enlace vence 7 minutos después de su creación y solo se puede usar una vez. Completa tu registro antes del vencimiento.' });
+    cache.put(fingerprint, 'sent', 420);
+    return jsonOutput_({ ok: true });
+  } finally { lock.releaseLock(); }
 }

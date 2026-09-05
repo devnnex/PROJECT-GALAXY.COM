@@ -727,7 +727,7 @@ create or replace function public.get_admin_users() returns jsonb
 language sql stable security definer set search_path=public,auth as $$
   with admin as (select public.require_admin() id)
   select coalesce(jsonb_agg(jsonb_build_object(
-    'id',p.id,'name',p.name,'username',p.username,'email',u.email,'avatar',p.avatar,'role',p.role,'status',p.status,
+    'id',p.id,'name',p.name,'username',p.username,'email',u.email,'avatar',p.avatar,'membership',public.membership_view(p.id),'role',p.role,'status',p.status,
     'createdAt',p.created_at,'lastSeenAt',s.last_seen_at,'sessionActive',s.active_session_id is not null and s.last_seen_at>now()-interval '75 seconds'
   ) order by case when p.role='ADMIN' then 0 else 1 end,p.created_at desc),'[]'::jsonb)
   from public.profiles p join auth.users u on u.id=p.id cross join admin
@@ -1038,7 +1038,7 @@ declare v_user uuid:=public.require_active_membership(); v_meeting public.meetin
 begin
   select * into v_meeting from public.meetings where id=p_meeting_id; select * into v_member from public.meeting_participants where meeting_id=p_meeting_id and user_id=v_user and status<>'DENIED';
   if v_meeting.id is null or (v_meeting.host_id<>v_user and v_member.id is null) then raise exception 'No perteneces a esta reunión.' using errcode='P0001'; end if;
-  if v_meeting.host_id=v_user then select coalesce(jsonb_agg(jsonb_build_object('id',mp.id,'userId',mp.user_id,'name',p.name,'username',p.username,'avatar',p.avatar)),'[]'::jsonb) into v_waiting from public.meeting_participants mp join public.profiles p on p.id=mp.user_id where mp.meeting_id=p_meeting_id and mp.status='WAITING'; end if;
+  if v_meeting.host_id=v_user then select coalesce(jsonb_agg(jsonb_build_object('id',mp.id,'userId',mp.user_id,'name',p.name,'username',p.username,'avatar',p.avatar,'membership',public.membership_view(p.id))),'[]'::jsonb) into v_waiting from public.meeting_participants mp join public.profiles p on p.id=mp.user_id where mp.meeting_id=p_meeting_id and mp.status='WAITING'; end if;
   return public.meeting_summary(v_meeting,v_user)||jsonb_build_object('role',case when v_meeting.host_id=v_user then 'HOST' else v_member.role end,'participantStatus',coalesce(v_member.status,'ADMITTED'),'waitingParticipants',v_waiting);
 end; $$;
 
@@ -1144,7 +1144,7 @@ using public.meetings meeting
 where msg.meeting_id=meeting.id and meeting.status='ENDED';
 
 create or replace function public.get_community_members(p_query text default '') returns jsonb language sql stable security definer set search_path=public,auth as $$
-  select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'username',p.username,'avatar',p.avatar) order by p.name),'[]'::jsonb) from (select * from public.profiles where id<>public.require_active_membership() and status='ACTIVE' and public.has_active_membership(id) and (coalesce(trim(p_query),'')='' or name ilike '%'||trim(p_query)||'%' or username::text ilike '%'||trim(p_query)||'%') order by name limit 100) p;
+  select coalesce(jsonb_agg(jsonb_build_object('id',p.id,'name',p.name,'username',p.username,'avatar',p.avatar,'membership',public.membership_view(p.id)) order by p.name),'[]'::jsonb) from (select * from public.profiles where id<>public.require_active_membership() and status='ACTIVE' and public.has_active_membership(id) and (coalesce(trim(p_query),'')='' or name ilike '%'||trim(p_query)||'%' or username::text ilike '%'||trim(p_query)||'%') order by name limit 100) p;
 $$;
 
 create or replace function public.get_meeting_invite_candidates(p_meeting_id uuid,p_query text default '') returns jsonb
@@ -1155,7 +1155,7 @@ begin
     raise exception 'Solo el anfitrión puede consultar las invitaciones.' using errcode='P0001';
   end if;
   select coalesce(jsonb_agg(jsonb_build_object(
-    'id',candidate.id,'name',candidate.name,'username',candidate.username,'avatar',candidate.avatar,
+    'id',candidate.id,'name',candidate.name,'username',candidate.username,'avatar',candidate.avatar,'membership',public.membership_view(candidate.id),
     'invitationId',candidate.invitation_id,'invitationStatus',candidate.invitation_status,
     'invitationSeenAt',candidate.seen_at,'invitationRespondedAt',candidate.responded_at,
     'invitationCreatedAt',candidate.invitation_created_at,'inviteCount',candidate.invite_count,
@@ -1406,4 +1406,108 @@ grant execute on function public.claim_user_session(),public.heartbeat_user_sess
   public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
 to authenticated;
 
+-- Migration: invitation-only registration and membership ledger.
+create table if not exists public.registration_invitations (
+ id uuid primary key default gen_random_uuid(), email text not null,
+ token_hash text not null unique, plan_code text not null references public.membership_plans(code),
+ price_usd numeric(12,2) not null, duration_months integer not null,
+ referrer_id uuid references public.profiles(id) on delete set null,
+ created_by uuid references public.profiles(id) on delete set null,
+ created_at timestamptz not null default now(), expires_at timestamptz not null default now()+interval '7 minutes',
+ consumed_at timestamptz, revoked_at timestamptz,
+ member_id uuid references public.profiles(id) on delete set null
+);
+create table if not exists public.membership_ledger (
+ id uuid primary key default gen_random_uuid(), invitation_id uuid not null references public.registration_invitations(id),
+ beneficiary_id uuid references public.profiles(id) on delete set null,
+ member_id uuid references public.profiles(id) on delete set null,
+ plan_code text not null, kind text not null check(kind in ('MEMBERSHIP_INCOME','REFERRAL_COMMISSION','MEMBERSHIP_PURCHASE')),
+ gross_amount numeric(12,2) not null, amount numeric(12,2) not null,
+ membership_expires_at timestamptz not null, created_at timestamptz not null default now(),
+ unique(invitation_id,kind)
+);
+alter table public.registration_invitations enable row level security;
+alter table public.membership_ledger enable row level security;
+revoke all on public.registration_invitations,public.membership_ledger from anon,authenticated;
+grant all on public.registration_invitations,public.membership_ledger to service_role;
+
+create or replace function public.create_registration_invitation(p_email text,p_plan_code text,p_referrer_id uuid default null) returns jsonb
+language plpgsql security definer set search_path=public,extensions,auth as $$
+declare v_admin uuid:=public.require_admin(); v_plan public.membership_plans; v_token text:=encode(gen_random_bytes(32),'hex'); v_inv public.registration_invitations;
+begin
+ p_email:=lower(trim(p_email));
+ if p_email is null or p_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' or length(p_email)>254 then raise exception 'Correo inválido.' using errcode='P0001'; end if;
+ perform pg_advisory_xact_lock(hashtextextended(p_email,0));
+ if exists(select 1 from auth.users where lower(email)=p_email) then raise exception 'Ese correo ya tiene una cuenta.' using errcode='P0001'; end if;
+ select * into v_plan from public.membership_plans where code=p_plan_code and active;
+ if not found then raise exception 'Selecciona una membresía activa.' using errcode='P0001'; end if;
+ if p_referrer_id is not null and not exists(select 1 from public.profiles where id=p_referrer_id and status='ACTIVE') then raise exception 'El referido debe ser una cuenta activa.' using errcode='P0001'; end if;
+ if not exists(select 1 from auth.users u join public.profiles p on p.id=u.id where lower(u.email)='elkin56ty@gmail.com') then raise exception 'No existe la cuenta propietaria para recibir los ingresos.' using errcode='P0001'; end if;
+ update public.registration_invitations set revoked_at=now() where email=p_email and consumed_at is null and revoked_at is null;
+ insert into public.registration_invitations(email,token_hash,plan_code,price_usd,duration_months,referrer_id,created_by)
+ values(p_email,encode(digest(v_token,'sha256'),'hex'),v_plan.code,v_plan.price_usd,v_plan.duration_months,p_referrer_id,v_admin) returning * into v_inv;
+ return jsonb_build_object('id',v_inv.id,'token',v_token,'email',p_email,'expiresAt',v_inv.expires_at,'planName',v_plan.name);
+end; $$;
+
+-- Runs after the existing profile/wallet trigger, in the same Auth transaction.
+-- app_metadata is writable only by the server, never by public signup callers.
+create or replace function public.accept_registration_invitation() returns trigger
+language plpgsql security definer set search_path=public,extensions,auth as $$
+declare v_inv public.registration_invitations; v_owner uuid; v_commission numeric(12,2); v_expiry timestamptz;
+begin
+ select * into v_inv from public.registration_invitations
+ where token_hash=encode(digest(coalesce(new.raw_app_meta_data->>'registration_token',''),'sha256'),'hex')
+ and email=lower(new.email) and consumed_at is null and revoked_at is null and expires_at>clock_timestamp() for update;
+ if not found or v_inv.expires_at<=clock_timestamp() then raise exception 'Se requiere una invitación vigente.'; end if;
+ select id into v_owner from auth.users where lower(email)='elkin56ty@gmail.com';
+ if v_owner is null then raise exception 'Cuenta propietaria no disponible.'; end if;
+ v_expiry:=now()+make_interval(months=>v_inv.duration_months);
+ v_commission:=case when v_inv.referrer_id is null then 0 else round(v_inv.price_usd*0.10,2) end;
+ insert into public.memberships(user_id,plan_code,status,starts_at,expires_at) values(new.id,v_inv.plan_code,'ACTIVE',now(),v_expiry);
+ insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
+ values(v_inv.id,v_owner,new.id,v_inv.plan_code,'MEMBERSHIP_INCOME',v_inv.price_usd,v_inv.price_usd-v_commission,v_expiry);
+ if v_inv.referrer_id is not null then
+ insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
+ values(v_inv.id,v_inv.referrer_id,new.id,v_inv.plan_code,'REFERRAL_COMMISSION',v_inv.price_usd,v_commission,v_expiry);
+ end if;
+ insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
+ values(v_inv.id,new.id,new.id,v_inv.plan_code,'MEMBERSHIP_PURCHASE',v_inv.price_usd,-v_inv.price_usd,v_expiry);
+ -- Lock balances in a deterministic order for concurrent registrations.
+ perform 1 from public.wallets where user_id in(v_owner,v_inv.referrer_id) order by user_id for update;
+ update public.wallets set available_balance=available_balance+v_inv.price_usd-v_commission,total_earned=total_earned+v_inv.price_usd-v_commission where user_id=v_owner;
+ update public.wallets set available_balance=available_balance+v_commission,total_earned=total_earned+v_commission where user_id=v_inv.referrer_id;
+ update public.wallets set total_spent=total_spent+v_inv.price_usd where user_id=new.id;
+ update public.registration_invitations set consumed_at=now(),member_id=new.id where id=v_inv.id;
+ return new;
+end; $$;
+drop trigger if exists zz_accept_registration_invitation on auth.users;
+create trigger zz_accept_registration_invitation after insert on auth.users for each row execute function public.accept_registration_invitation();
+
+create or replace function public.get_wallet_activity() returns jsonb
+language plpgsql stable security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user();
+begin
+ return jsonb_build_object('wallet',(public.get_current_user())->'wallet','entries',coalesce((
+ select jsonb_agg(jsonb_build_object('id',l.id,'kind',l.kind,'amount',l.amount,'grossAmount',l.gross_amount,
+ 'planCode',l.plan_code,'memberName',coalesce(p.name,'Usuario eliminado'),'createdAt',l.created_at,
+ 'expiresAt',coalesce(m.expires_at,l.membership_expires_at),'memberDeleted',l.member_id is null) order by l.created_at desc)
+ from public.membership_ledger l left join public.profiles p on p.id=l.member_id left join public.memberships m on m.user_id=l.member_id
+ where l.beneficiary_id=v_user),'[]'::jsonb));
+end; $$;
+
+create or replace function public.delete_registered_user(p_user_id uuid) returns void
+language plpgsql security definer set search_path=public,auth as $$
+declare v_admin uuid:=public.require_admin();
+begin
+ if p_user_id=v_admin or exists(select 1 from public.profiles where id=p_user_id and role='ADMIN') then raise exception 'No puedes eliminar una cuenta administradora.' using errcode='P0001'; end if;
+ delete from public.membership_ledger where beneficiary_id=p_user_id;
+ delete from public.calendar_events where created_by=p_user_id;
+ delete from public.meeting_messages where sender_id=p_user_id;
+ delete from public.meetings where host_id=p_user_id;
+ delete from public.registration_invitations where email=(select lower(email) from auth.users where id=p_user_id) and consumed_at is null;
+ update public.registration_invitations set email='deleted-'||id::text,token_hash='deleted-'||id::text where member_id=p_user_id;
+ delete from auth.users where id=p_user_id;
+end; $$;
+revoke all on function public.create_registration_invitation(text,text,uuid),public.accept_registration_invitation(),public.get_wallet_activity(),public.delete_registered_user(uuid) from public,anon,authenticated;
+grant execute on function public.create_registration_invitation(text,text,uuid),public.get_wallet_activity(),public.delete_registered_user(uuid) to authenticated;
 commit;

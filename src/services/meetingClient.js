@@ -129,7 +129,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     const version = ++this.connectVersion;
     this.roomId = roomId; this.role = role; this.selfId = crypto.randomUUID(); this.localStream = stream || new MediaStream(); this.iceServers = iceServers.length ? iceServers : defaultIceServers(); this.active = true; this.callbacks.onStatus?.('signaling');
     const identity = user || await api.me();
-    this.identity = { peerId: this.selfId, userId: identity.id, name: identity.name, avatar: identity.avatar || '', role, connectedAt: Date.now(), ...(this.presence || {}) };
+    this.identity = { peerId: this.selfId, userId: identity.id, name: identity.name, avatar: identity.avatar || '', membership: identity.membership, role, connectedAt: Date.now(), ...(this.presence || {}) };
     primeRealtime(identity.id).catch(() => {});
     const channel = await subscribeRealtimeChannel(() => {
       if (!this.active || version !== this.connectVersion) throw Object.assign(new Error('Conexión reemplazada.'), { name: 'AbortError' });

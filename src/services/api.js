@@ -80,6 +80,10 @@ async function currentUser() {
 async function invokeSecure(name, payload, fallback) {
   const { data, error } = await supabase.functions.invoke(name, { body: payload });
   if (data?.error) throw new Error(data.error);
+  if (error && name === 'registration' && error.context?.json) {
+    const detail = await error.context.json().catch(() => null);
+    if (detail?.error) throw new Error(detail.error);
+  }
   if (error) throw new Error(fallback);
   return data;
 }
@@ -91,20 +95,15 @@ export const api = {
     if (error) throw friendlyError(error);
     return { user: await currentUser(), session: data.session };
   },
-  async register({ name, username, email, password }) {
-    const appUrl = new URL('index.html', new URL(import.meta.env.BASE_URL, globalThis.location.origin));
-    const currentParams = new URLSearchParams(globalThis.location.search);
-    for (const key of ['invite', 'meeting']) {
-      const value = currentParams.get(key);
-      if (value) appUrl.searchParams.set(key, value);
-    }
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(), password,
-      options: { emailRedirectTo: appUrl.href, data: { name: name.trim(), username: username.trim().toLowerCase() } },
-    });
-    if (error) throw friendlyError(error);
-    if (!data.session) return { user: null, session: null, requiresConfirmation: true, email: email.trim() };
-    return { user: await currentUser(), session: data.session };
+  inspectInvitation: (token) => invokeSecure('registration', { action: 'inspect', token }, 'No se pudo validar la invitación.'),
+  inviteUser: (payload) => invokeSecure('registration', { action: 'invite', ...payload }, 'No se pudo enviar la invitación.'),
+  deleteUser: (userId) => invokeSecure('registration', { action: 'delete', userId }, 'No se pudo eliminar la cuenta.'),
+  getWalletActivity: () => rpc('get_wallet_activity'),
+  async register({ name, username, password, token }) {
+    const result = await invokeSecure('registration', { action: 'register', name, username, password, token }, 'No se pudo completar el registro.');
+    history.replaceState(null, '', location.pathname + location.search);
+    try { return await api.login({ email: result.email, password }); }
+    catch { return { registered: true, email: result.email }; }
   },
   async logout() {
     await rpc('release_user_session').catch(() => {});
