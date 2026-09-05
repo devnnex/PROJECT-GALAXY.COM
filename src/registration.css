@@ -1,1 +1,24 @@
 .registration-panel{padding:24px}.registration-panel>p,.registration-panel form>p{color:var(--muted);line-height:1.6}.registration-panel form{display:grid;gap:16px}.registration-panel label{display:grid;gap:8px}.registration-panel input,.registration-panel select{width:100%;min-width:0;padding:12px;border:1px solid var(--line);border-radius:8px;background:#100c18;color:#f3eefb}.membership-ledger-row{display:flex;justify-content:space-between;gap:20px;padding:18px 0;border-top:1px solid var(--line)}.membership-ledger-row p{font-size:12px}.membership-ledger-row small{color:var(--muted)}.delete-account{color:#ff9da9;grid-column:5}.avatar-membership-badge{position:absolute;right:0;bottom:0;display:grid;place-items:center;width:18px;height:18px;font-size:12px;line-height:1;border:1px solid #9985b7;border-radius:50%;background:#100c18;z-index:2}.constellation-avatar:has(.avatar-membership-badge){overflow:visible;clip-path:none}.constellation-avatar:has(.avatar-membership-badge)>img,.constellation-avatar:has(.avatar-membership-badge)>svg{border-radius:50%}@media(max-width:600px){.registration-panel{padding:16px}.membership-ledger-row{flex-direction:column;gap:8px}.delete-account{grid-column:auto}}
+.admin-users-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.admin-users-page .admin-users-table{background:linear-gradient(145deg,rgba(255,255,255,.065),rgba(255,255,255,.018));border:1px solid rgba(255,255,255,.1);border-radius:22px;box-shadow:0 16px 48px rgba(0,0,0,.15);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.invitation-dialog{width:min(540px,calc(100vw - 32px));max-height:calc(100dvh - 40px);margin:auto;padding:0;overflow:auto;color:#f5f3fa;border:1px solid rgba(255,255,255,.22);border-radius:28px;background:linear-gradient(140deg,rgba(48,43,64,.95),rgba(19,17,29,.94));box-shadow:0 32px 100px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.13);backdrop-filter:blur(36px) saturate(140%);-webkit-backdrop-filter:blur(36px) saturate(140%);color-scheme:dark}
+.invitation-dialog::backdrop{background:rgba(7,6,13,.62);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px)}
+.invitation-dialog[open]{animation:invitation-appear .2s ease-out}
+.invitation-dialog .invitation-glass{padding:30px;background:radial-gradient(ellipse at top left,rgba(182,151,255,.1),transparent 60%)}
+.invitation-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+.invitation-symbol{display:grid;place-items:center;width:52px;height:52px;border:1px solid rgba(217,199,255,.22);border-radius:17px;background:linear-gradient(145deg,rgba(211,192,255,.19),rgba(211,192,255,.04));color:#dfd2ff;box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.invitation-close{display:grid;place-items:center;width:34px;height:34px;border:1px solid rgba(255,255,255,.1);border-radius:50%;background:rgba(255,255,255,.06);color:#ddd7e9;cursor:pointer}
+.invitation-dialog h2{margin:8px 0 12px;font-size:28px;font-weight:600;letter-spacing:-.035em}
+.invitation-dialog #invitation-description{font-size:13px;line-height:1.7;color:#b9b2c8;margin-bottom:26px}
+.invitation-dialog .invitation-glass label{font-size:12px;color:#d3ccdf;font-weight:500}
+.invitation-dialog .invitation-glass input,.invitation-dialog .invitation-glass select{min-height:46px;border-radius:12px;border-color:rgba(255,255,255,.12);background:rgba(9,8,16,.32);font:inherit;color:#f5f3fa;transition:border-color .15s,box-shadow .15s}
+.invitation-dialog .invitation-glass input:focus,.invitation-dialog .invitation-glass select:focus{outline:none;border-color:#bba2f4;box-shadow:0 0 0 3px rgba(187,162,244,.14)}
+.invitation-dialog option{background:#211c2f;color:#f5f3fa}
+.invitation-dialog .invitation-glass form>p{margin:0;padding:14px 16px;border-radius:12px;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.07);font-size:11px;color:#bdb5ce;overflow-wrap:anywhere}
+.invitation-actions{display:flex;justify-content:flex-end;gap:10px;padding-top:8px}
+.invitation-dialog .primary-button,.invitation-dialog .secondary-button,.admin-users-actions button{border-radius:12px}
+.invitation-dialog [role=status]{font-size:12px;color:#b9eccf;line-height:1.6;overflow-wrap:anywhere}
+.invitation-close:focus-visible{outline:2px solid #c5adff;outline-offset:3px}
+@keyframes invitation-appear{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
+@media(prefers-reduced-motion:reduce){.invitation-dialog[open]{animation:none}}
+@media(max-width:600px){.invitation-dialog .invitation-glass{padding:22px}.admin-users-actions{width:100%}.admin-users-actions button{flex:1}.invitation-actions button{flex:1}.invitation-dialog h2{font-size:25px}}

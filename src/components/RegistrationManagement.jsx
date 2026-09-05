@@ -1,4 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { MailPlus, Send, X } from 'lucide-react';
 import { api } from '../services/api';
 import { MEMBERSHIP_EMOJI } from '../membership-badges';
 
@@ -6,7 +8,14 @@ const amount = value => Number(value || 0).toFixed(2);
 const date = value => new Date(value).toLocaleString('es-CO');
 const entryLabel = kind => kind === 'MEMBERSHIP_PURCHASE' ? 'Tu membresía' : kind === 'REFERRAL_COMMISSION' ? 'Comisión por referido · 10%' : 'Ingreso de membresía';
 
-export function InvitationForm({ users, toast }) {
+export function InvitationForm({ users, toast, onClose }) {
+  const dialog = useRef(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement;
+    const modal = dialog.current;
+    modal.showModal();
+    return () => { modal.close(); previousFocus?.focus(); };
+  }, []);
   const [plans, setPlans] = useState([]); const [email, setEmail] = useState('');
   const [planCode, setPlanCode] = useState(''); const [referrerId, setReferrerId] = useState('');
   const [busy, setBusy] = useState(false); const [sent, setSent] = useState(null);
@@ -17,14 +26,15 @@ export function InvitationForm({ users, toast }) {
     try { const result = await api.inviteUser({ email, planCode, referrerId }); setSent({ email, ...result }); setEmail(''); toast('Invitación enviada.'); }
     catch (error) { toast(error.message, 'error'); } finally { setBusy(false); }
   };
-  return <section className="surface registration-panel"><h2>Crear invitación</h2><p>Selecciona la membresía confirmada y quién refirió a esta persona. El enlace solo sirve para ese correo y vence en 7 minutos.</p>
-    <form onSubmit={submit}><label>Correo<input required type="email" maxLength={254} value={email} onChange={e => setEmail(e.target.value)} /></label>
+  return createPortal(<dialog ref={dialog} className="invitation-dialog" aria-labelledby="invitation-title" aria-describedby="invitation-description" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }} onClick={event => { if (event.target === dialog.current && !busy) { const bounds = dialog.current.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose(); } }}>
+    <section className="registration-panel invitation-glass"><header className="invitation-heading"><span className="invitation-symbol"><MailPlus size={24} /></span><button type="button" className="invitation-close" disabled={busy} onClick={onClose} aria-label="Cerrar invitación"><X size={20} /></button></header><p className="eyebrow">ACCESO A GALAXY</p><h2 id="invitation-title">Una nueva conexión.</h2><p id="invitation-description">Invita a un miembro y personaliza su acceso. Su enlace será válido durante 7 minutos.</p>
+    <form onSubmit={submit}><label>Correo electrónico<input autoFocus required type="email" placeholder="nombre@correo.com" maxLength={254} value={email} onChange={e => setEmail(e.target.value)} /></label>
       <label>Membresía y badge<select required value={planCode} onChange={e => setPlanCode(e.target.value)}>{plans.map(item => <option value={item.code} key={item.code}>{MEMBERSHIP_EMOJI[item.code]} {item.name} · {amount(item.priceUsd)} USDT · {item.durationMonths} meses</option>)}</select></label>
       <label>Referido por<select value={referrerId} onChange={e => setReferrerId(e.target.value)}><option value="">Sin referido</option>{users.filter(item => item.status === 'ACTIVE').map(item => <option key={item.id} value={item.id}>{item.name} · {item.email}</option>)}</select></label>
       <p>Al registrarse: {amount(Number(plan?.priceUsd || 0) * (referrerId ? 0.9 : 1))} USDT para elkin56ty@gmail.com{referrerId && ` + ${amount(Number(plan?.priceUsd || 0) * 0.1)} USDT de comisión al referente`}.</p>
-      <button className="primary-button" disabled={busy || !planCode}>{busy ? 'Enviando…' : 'Enviar invitación'}</button>
+      <footer className="invitation-actions"><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Cerrar</button><button className="primary-button" disabled={busy || !planCode}><Send size={16} />{busy ? 'Enviando…' : 'Enviar invitación'}</button></footer>
     </form>{sent && <p role="status">Enviada a {sent.email}. Vence el {date(sent.expiresAt)}.</p>}
-  </section>;
+  </section></dialog>, document.body);
 }
 
 export function WalletActivity({ user }) {
