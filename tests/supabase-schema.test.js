@@ -242,6 +242,11 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('.meeting-route.background { display: none; }');
   });
 
+  it('hides ended scheduled meetings from the meetings list while retaining their calendar event', () => {
+    expect(schema).toMatch(/function public\.get_my_meetings[\s\S]*not \(m\.status='ENDED' and m\.scheduled_ends_at is not null\)/);
+    expect(schema).toMatch(/function public\.get_calendar_events[\s\S]*from public\.calendar_events e/);
+  });
+
   it('supports floating meetings, mobile chat, natural self preview and the shared money rocket', () => {
     expect(meetingStudio).toContain('video.requestPictureInPicture');
     expect(meetingStudio).toContain("document.addEventListener('visibilitychange'");

@@ -1025,7 +1025,8 @@ begin
   into v_result from (
     select m meeting,m.updated_at activity_at from public.meetings m
     left join public.meeting_participants p on p.meeting_id=m.id and p.user_id=v_user
-    where m.host_id=v_user or (p.user_id=v_user and p.status<>'DENIED')
+    where (m.host_id=v_user or (p.user_id=v_user and p.status<>'DENIED'))
+      and not (m.status='ENDED' and m.scheduled_ends_at is not null)
     order by m.updated_at desc limit 40
   ) visible;
   return v_result;
