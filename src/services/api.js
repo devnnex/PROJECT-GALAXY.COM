@@ -1,6 +1,6 @@
 import { authorizeRealtime, supabase } from './supabase';
 
-const APPS_SCRIPT_MAIL_URL = 'https://script.google.com/macros/s/AKfycbwZCcsDhGpWpDcix4A1NNg7UYX_DuzuiyOu4Zlhe3kQZPumAmZt5nsu42sODPI77Uvv/exec';
+const APPS_SCRIPT_MAIL_URL = 'https://script.google.com/macros/s/AKfycby17GwaFQ5wFk_dqF7zZyLBPNl5igMEdvnmg3cxQRITaB4CAXeb8RdY3Cqe7yPwuOVl/exec';
 
 const parameterNames = Object.freeze({
   modules: 'p_modules', title: 'p_title', password: 'p_password', waitingRoom: 'p_waiting_room',
@@ -109,7 +109,13 @@ export const api = {
         headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
         body: JSON.stringify({ action: 'registration_invitation', token: invitation.token }),
       });
-      const result = await response.json();
+      const responseBody = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseBody);
+      } catch {
+        throw new Error('Apps Script devolvió una página HTML. Publica la versión nueva como Web App, ejecutada por el propietario y con acceso para cualquiera.');
+      }
       if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'Apps Script no confirmó el envío.');
       return { expiresAt: invitation.expiresAt };
     } catch (error) {
