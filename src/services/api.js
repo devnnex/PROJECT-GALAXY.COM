@@ -65,6 +65,12 @@ function toParams(payload = {}) {
 async function rpc(name, payload = {}) {
   const { data, error } = await supabase.rpc(name, toParams(payload));
   if (error) throw friendlyError(error);
+  if (['get_current_user', 'update_profile', 'update_profile_avatar', 'get_bootstrap_data'].includes(name)) {
+    const { data: session } = await supabase.auth.getSession();
+    const language = session.session?.user?.user_metadata?.language === 'en' ? 'en' : 'es';
+    if (name === 'get_bootstrap_data' && data?.user) data.user.language = language;
+    else if (data) data.language = language;
+  }
   return data;
 }
 
@@ -151,6 +157,11 @@ export const api = {
   bootstrap: (modules = ['user']) => rpc('get_bootstrap_data', { modules }),
   me: currentUser,
   updateProfile: (payload) => rpc('update_profile', payload),
+  async setInterfaceLanguage(language) {
+    const { error } = await supabase.auth.updateUser({ data: { language: language === 'en' ? 'en' : 'es' } });
+    if (error) throw friendlyError(error);
+    return rpc('get_current_user');
+  },
   async uploadProfileAvatar(file) {
     if (!globalThis.File || !(file instanceof globalThis.File) || !PROFILE_AVATAR_TYPES.has(file.type)) throw new Error('Selecciona una imagen JPG, PNG o WebP.');
     if (!file.size || file.size > PROFILE_AVATAR_MAX_BYTES) throw new Error('La foto de perfil debe pesar como máximo 5 MB.');

@@ -29,7 +29,7 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(schema).toMatch(/function public\.join_meeting[\s\S]*public\.require_active_membership\(\)/);
     expect(schema).toMatch(/function public\.has_active_membership[\s\S]*status='ACTIVE'/);
     expect(app).toContain("['marketplace', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id)");
-    expect(app).toContain('availableNavigation = isAdmin ? navigation : memberNavigation');
+    expect(app).toContain('(isAdmin ? navigation : memberNavigation).map');
     expect(app).toContain('useEffect(() => { reloadMembership().catch(() => {}); }, [user.id])');
     expect(app).toContain('canCreate={isAdmin}');
     expect(app).toContain("page === 'meetings' ? 'active' : 'background'");

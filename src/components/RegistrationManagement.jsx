@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { MailPlus, Send, Trash2, X } from 'lucide-react';
+import { Eye, EyeOff, MailPlus, Send, Trash2, X } from 'lucide-react';
 import { api } from '../services/api';
 import { MEMBERSHIP_EMOJI } from '../membership-badges';
 
 const amount = value => Number(value || 0).toFixed(2);
 const date = value => new Date(value).toLocaleString('es-CO');
 const entryLabel = kind => kind === 'MEMBERSHIP_PURCHASE' ? 'Tu membresía' : kind === 'REFERRAL_COMMISSION' ? 'Comisión por referido · 10%' : 'Ingreso de membresía';
+const walletTier = balance => balance <= 0 ? 'zero' : balance <= 200 ? 'violet' : balance < 400 ? 'indigo' : balance < 600 ? 'cyan' : balance < 800 ? 'aqua' : 'emerald';
 
 export function DeleteUserDialog({ account, onClose, onDeleted }) {
   const dialog = useRef(null);
@@ -65,6 +66,8 @@ export function InvitationForm({ users, toast, onClose }) {
 
 export function WalletActivity({ user }) {
   const [data, setData] = useState(null); const [error, setError] = useState('');
+  const balanceVisibilityKey = `galaxy_wallet_balance_hidden_${user.id}`;
+  const [balanceHidden, setBalanceHidden] = useState(() => { try { return localStorage.getItem(balanceVisibilityKey) === 'true'; } catch { return false; } });
   useEffect(() => {
     let active = true;
     const load = () => api.getWalletActivity().then(result => { if (active) { setData(result); setError(''); } }).catch(err => { if (active) setError(err.message); });
@@ -72,10 +75,15 @@ export function WalletActivity({ user }) {
     return () => { active = false; clearInterval(timer); };
   }, [user.id]);
   const wallet = data?.wallet || user.wallet || {};
-  return <div className="page-stack"><header className="page-header"><div><p className="eyebrow">WALLET</p><h1>Wallet</h1><p>Ingresos de membresías y comisiones por referidos. Se actualiza cada 15 segundos.</p></div></header>
-    <section className="wallet-hero"><div><p>BALANCE DISPONIBLE</p><h2>{amount(wallet.availableBalance)} <span>{wallet.currency || 'USDT'}</span></h2><small>Saldo contable de membresías confirmadas por el administrador.</small></div></section>
-    <section className="surface registration-panel"><p>Pendiente: {amount(wallet.pendingBalance)} · Total ganado: {amount(wallet.totalEarned)} · Total gastado: {amount(wallet.totalSpent)} {wallet.currency || 'USDT'}</p></section>
-    <section className="surface registration-panel"><h2>Movimientos y vencimientos</h2>{error && <p role="alert">{error}</p>}{!data && !error && <p>Cargando…</p>}{data?.entries.length === 0 && <p>Aún no hay movimientos de membresías.</p>}
-      {data?.entries.map(entry => { const purchase = entry.kind === 'MEMBERSHIP_PURCHASE'; const displayedAmount = purchase ? Math.abs(Number(entry.grossAmount ?? entry.amount)) : Number(entry.amount); return <article className={`membership-ledger-row ${purchase ? 'membership-payment' : displayedAmount >= 0 ? 'membership-income' : ''}`} key={entry.id}><div><strong>{entryLabel(entry.kind)}</strong><p>{entry.memberName} · {MEMBERSHIP_EMOJI[entry.planCode]} {entry.planCode}</p><small>{date(entry.createdAt)} · Valor de membresía: {amount(entry.grossAmount)} USDT</small><p>{entry.memberDeleted ? 'Cuenta eliminada · vencimiento histórico: ' : new Date(entry.expiresAt) <= new Date() ? 'Membresía vencida: ' : 'Membresía vigente hasta: '}{date(entry.expiresAt)}</p></div><div className="membership-ledger-amount"><small>{purchase ? 'PAGO CONFIRMADO' : displayedAmount >= 0 ? 'ABONO RECIBIDO' : 'MOVIMIENTO'}</small><strong>{purchase ? '✓ ' : displayedAmount >= 0 ? '+' : ''}{amount(displayedAmount)} USDT</strong></div></article>; })}
+  const language = user.language === 'en' ? 'en' : 'es'; const english = language === 'en';
+  const availableBalance = Number(wallet.availableBalance || 0); const tier = walletTier(availableBalance); const currency = wallet.currency || 'USDT';
+  const toggleBalance = () => setBalanceHidden(current => { const next = !current; try { localStorage.setItem(balanceVisibilityKey, String(next)); } catch {} return next; });
+  const privateAmount = value => balanceHidden ? '****' : amount(value);
+  const displayedBalance = balanceHidden ? '****' : amount(availableBalance);
+  return <div className="page-stack"><header className="page-header"><div><p className="eyebrow">WALLET</p><h1>Wallet</h1><p>{english ? 'Membership income and referral commissions. Updated every 15 seconds.' : 'Ingresos de membresías y comisiones por referidos. Se actualiza cada 15 segundos.'}</p></div></header>
+    {tier === 'zero' ? <section className="wallet-hero wallet-zero"><div><p>{english ? 'AVAILABLE BALANCE' : 'BALANCE DISPONIBLE'}</p><h2>{displayedBalance} <span>{currency}</span></h2><small>{english ? 'Verified balance in your account.' : 'Saldo verificado en tu cuenta.'}</small></div><button className="wallet-visibility" type="button" onClick={toggleBalance} aria-label={balanceHidden ? (english ? 'Show balance' : 'Mostrar balance') : (english ? 'Hide balance' : 'Ocultar balance')}>{balanceHidden ? <Eye /> : <EyeOff />}</button></section> : <section className={`wallet-hero earning-wallet tone-${tier}`}><div className="earning-wallet-glow" aria-hidden="true" /><div className="earning-wallet-main"><div className="earning-wallet-brand"><span>PROJECT GALAXY</span><i /></div><div className="earning-wallet-balance"><p>{english ? 'TOTAL BALANCE' : 'BALANCE TOTAL'}</p><h2>{displayedBalance} <span>{currency}</span></h2></div><strong className="earning-wallet-owner">{user.name}</strong></div><div className="earning-wallet-side"><button className="wallet-visibility" type="button" onClick={toggleBalance} aria-label={balanceHidden ? (english ? 'Show balance' : 'Mostrar balance') : (english ? 'Hide balance' : 'Ocultar balance')}>{balanceHidden ? <Eye /> : <EyeOff />}</button><span className="earning-wallet-currency">{currency}</span><strong>{english ? 'EARNING' : 'GANANCIAS'}</strong></div></section>}
+    <section className="surface registration-panel wallet-summary"><p>{english ? 'Pending' : 'Pendiente'}: {privateAmount(wallet.pendingBalance)} · {english ? 'Total earned' : 'Total ganado'}: {privateAmount(wallet.totalEarned)} · {english ? 'Total spent' : 'Total gastado'}: {privateAmount(wallet.totalSpent)} {currency}</p></section>
+    <section className="surface registration-panel"><h2>{english ? 'Transactions and expirations' : 'Movimientos y vencimientos'}</h2>{error && <p role="alert">{error}</p>}{!data && !error && <p>{english ? 'Loading…' : 'Cargando…'}</p>}{data?.entries.length === 0 && <p>{english ? 'There are no membership transactions yet.' : 'Aún no hay movimientos de membresías.'}</p>}
+      {data?.entries.map(entry => { const purchase = entry.kind === 'MEMBERSHIP_PURCHASE'; const displayedAmount = purchase ? Math.abs(Number(entry.grossAmount ?? entry.amount)) : Number(entry.amount); return <article className={`membership-ledger-row ${purchase ? 'membership-payment' : displayedAmount >= 0 ? 'membership-income' : ''}`} key={entry.id}><div><strong>{english ? (purchase ? 'Your membership' : entry.kind === 'REFERRAL_COMMISSION' ? 'Referral commission · 10%' : 'Membership income') : entryLabel(entry.kind)}</strong><p>{entry.memberName} · {MEMBERSHIP_EMOJI[entry.planCode]} {entry.planCode}</p><small>{new Date(entry.createdAt).toLocaleString(english ? 'en-US' : 'es-CO')} · {english ? 'Membership value' : 'Valor de membresía'}: {privateAmount(entry.grossAmount)} USDT</small><p>{english ? (entry.memberDeleted ? 'Deleted account · historical expiration: ' : new Date(entry.expiresAt) <= new Date() ? 'Expired membership: ' : 'Membership active until: ') : (entry.memberDeleted ? 'Cuenta eliminada · vencimiento histórico: ' : new Date(entry.expiresAt) <= new Date() ? 'Membresía vencida: ' : 'Membresía vigente hasta: ')}{new Date(entry.expiresAt).toLocaleString(english ? 'en-US' : 'es-CO')}</p></div><div className="membership-ledger-amount"><small>{english ? (purchase ? 'CONFIRMED PAYMENT' : displayedAmount >= 0 ? 'PAYMENT RECEIVED' : 'TRANSACTION') : (purchase ? 'PAGO CONFIRMADO' : displayedAmount >= 0 ? 'ABONO RECIBIDO' : 'MOVIMIENTO')}</small><strong>{purchase ? '✓ ' : displayedAmount >= 0 ? '+' : ''}{privateAmount(displayedAmount)} USDT</strong></div></article>; })}
     </section></div>;
 }

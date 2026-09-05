@@ -360,7 +360,7 @@ describe('Supabase contract', () => {
     expect(api).toContain("rpc('update_profile_avatar'");
     expect(api).toContain("PROFILE_AVATAR_MAX_BYTES = 5 * 1024 * 1024");
     expect(api).toContain("upsert: true");
-    expect(app).toContain('api.updateProfile(values)');
+    expect(app).toContain('api.updateProfile(profile)');
     expect(app).toMatch(/type=["']file["']/i);
     expect(app).toContain('api.uploadProfileAvatar');
     expect(app).toContain('api.removeProfileAvatar');
