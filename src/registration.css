@@ -43,3 +43,79 @@
 .wallet-hero.earning-wallet{--earn-start:#d19aff;--earn-end:#9955ff;position:relative;isolation:isolate;display:grid;grid-template-columns:minmax(0,1fr) 30%;gap:0;width:min(100%,720px);min-height:300px;padding:0;border:1px solid #ffffff24;border-radius:32px;background:linear-gradient(145deg,#303131,#1e1f20);overflow:visible;box-shadow:0 20px 50px #0005;margin-top:12px;color:#f5f5f5}.earning-wallet.tone-indigo{--earn-start:#a5bbff;--earn-end:#8572ff}.earning-wallet.tone-cyan{--earn-start:#9ceaff;--earn-end:#51bcff}.earning-wallet.tone-aqua{--earn-start:#88ffe2;--earn-end:#50daca}.earning-wallet.tone-emerald{--earn-start:#7dffd8;--earn-end:#b8ff69}.earning-wallet-glow{position:absolute;inset:0 30% 10% 4%;background:var(--earn-start);filter:blur(35px);opacity:.18;z-index:-1;border-radius:40px}.earning-wallet-main{position:relative;display:flex;flex-direction:column;justify-content:space-between;min-width:0;padding:28px 32px 32px;color:#10141a;transform:translateY(-12px)}.earning-wallet-main:before{content:'';position:absolute;inset:0 -20px 0 12px;z-index:-1;background:linear-gradient(155deg,var(--earn-start),var(--earn-end));border-radius:32px 42px 36px 32px;transform:skewX(-12deg);box-shadow:inset 0 1px 0 #ffffff70}.earning-wallet-brand{display:flex;align-items:center;gap:10px;font-size:10px;font-weight:700;letter-spacing:.15em}.earning-wallet-brand i{width:6px;height:6px;border-radius:50%;background:currentColor}.earning-wallet-balance{padding:28px 0}.earning-wallet .earning-wallet-balance p{font-size:10px;letter-spacing:.08em;color:#172330;margin:0 0 9px}.earning-wallet .earning-wallet-balance h2{font-size:clamp(28px,4vw,48px);letter-spacing:-.06em;line-height:1.1;overflow-wrap:anywhere;margin:0;color:#10141a;font-variant-numeric:tabular-nums}.earning-wallet .earning-wallet-balance h2 span{display:block;font-size:12px;letter-spacing:.12em;margin-top:8px;color:#25353b}.earning-wallet-owner{font-size:14px;font-weight:500;overflow-wrap:anywhere;padding-right:20px}.earning-wallet-side{display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between;min-width:0;padding:20px 24px 28px 0}.earning-wallet-side>strong{font-size:clamp(14px,2.2vw,25px);font-style:italic;letter-spacing:-.04em}.earning-wallet-currency{font-size:13px;color:#b1b7b5;letter-spacing:.12em}.wallet-summary p{line-height:1.9;overflow-wrap:anywhere}
 .notification-filters{display:flex;gap:6px;margin:4px 0 12px;padding:4px;background:#ffffff05;border-radius:10px}.notification-filters button{display:flex;align-items:center;justify-content:center;gap:8px;flex:1;border:0;border-radius:7px;background:transparent;color:#aaa1b7;padding:9px;font-size:11px}.notification-filters button.active{color:#e6d8ff;background:#a375ef26}.notification-filters span{border-radius:12px;padding:1px 6px;background:#a375ef30}.notification-list{max-height:min(420px,55dvh);overflow-y:auto;overscroll-behavior:contain}.notification-list>button{width:100%;display:flex;gap:10px;align-items:center;text-align:left;padding:12px 7px;border:0;background:transparent;color:inherit;border-top:1px solid #ffffff0c}.notification-list .notice-icon{flex:none}.notification-list>button>div{min-width:0;overflow-wrap:anywhere}.notification-list>button.read{opacity:.55}.profile-language-field>span{display:flex;align-items:center;gap:8px}.profile-language-field svg{width:16px}.profile-language-field select{width:100%;min-height:44px;border:1px solid #ffffff20;background:#17121e;color:#ede7f7;border-radius:8px;padding:10px;font:inherit}.profile-editor{max-height:90dvh;overflow-y:auto}
 @media(max-width:600px){.wallet-hero.earning-wallet{min-height:245px;border-radius:24px;grid-template-columns:minmax(0,1fr) 29%}.earning-wallet-main{padding:24px 18px}.earning-wallet-main:before{inset:0 -4px 0 8px;border-radius:24px;transform:skewX(-8deg)}.earning-wallet-brand{font-size:8px;letter-spacing:.08em}.earning-wallet-side{padding:14px 12px 24px 0}.earning-wallet-side>strong{font-size:13px}.earning-wallet-owner{font-size:12px}.earning-wallet .earning-wallet-balance h2{font-size:clamp(24px,7vw,38px)}.wallet-visibility{width:36px;height:36px}.notifications-popover{max-width:calc(100vw - 24px);right:12px}.wallet-zero h2{font-size:clamp(24px,7vw,42px)}}
+
+/* Premium earning wallet */
+.wallet-hero.earning-wallet{
+  grid-template-columns:minmax(0,72%) minmax(0,28%);
+  width:min(100%,820px);
+  min-height:338px;
+  margin-top:14px;
+  overflow:hidden;
+  border:1px solid rgba(255,255,255,.2);
+  border-radius:34px;
+  background:
+    radial-gradient(circle at 78% 18%,color-mix(in srgb,var(--earn-start) 16%,transparent),transparent 29%),
+    linear-gradient(145deg,#262a2a 0%,#161819 60%,#0f1112 100%);
+  box-shadow:0 32px 80px rgba(0,0,0,.46),inset 0 1px 0 rgba(255,255,255,.12);
+}
+.earning-wallet-glow{inset:8% 31% 5% 2%;filter:blur(48px);opacity:.28}
+.earning-wallet-grid{position:absolute;inset:0 0 0 68%;z-index:-1;opacity:.16;background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px);background-size:24px 24px;mask-image:linear-gradient(90deg,transparent,#000)}
+.earning-wallet-main{z-index:1;min-width:0;padding:34px 48px 38px 46px;transform:none}
+.earning-wallet-main:before{inset:17px -34px 17px 17px;border-radius:30px 54px 44px 30px;transform:skewX(-9deg);background:linear-gradient(145deg,var(--earn-start),var(--earn-end));box-shadow:inset 0 1px 0 rgba(255,255,255,.72),0 20px 45px color-mix(in srgb,var(--earn-end) 25%,transparent)}
+.earning-wallet-main:after{content:'';position:absolute;inset:18px -32px auto 18px;height:48%;z-index:-1;border-radius:30px 48px 0 0;background:linear-gradient(125deg,rgba(255,255,255,.24),transparent 58%);transform:skewX(-9deg);pointer-events:none}
+.earning-wallet-brand{gap:12px;letter-spacing:0}
+.earning-wallet-emblem{display:grid;place-items:center;width:38px;height:38px;flex:0 0 auto;border:1px solid rgba(6,17,18,.2);border-radius:12px;background:rgba(255,255,255,.22);box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
+.earning-wallet-emblem svg{width:20px;height:20px;stroke-width:1.8}
+.earning-wallet-brand>span:last-child{display:flex;flex-direction:column;gap:4px;min-width:0}
+.earning-wallet-brand strong{font-size:13px;line-height:1;letter-spacing:.16em}
+.earning-wallet-brand small{font-size:9px;font-weight:700;letter-spacing:.18em;color:rgba(11,25,26,.62)}
+.earning-wallet-balance{padding:25px 0 21px}
+.earning-wallet .earning-wallet-balance p{margin:0 0 8px;font-size:12px;font-weight:700;letter-spacing:.14em;color:rgba(9,24,25,.66)}
+.earning-wallet .earning-wallet-balance h2{display:flex;align-items:flex-end;gap:12px;margin:0;color:#071416;font:650 clamp(48px,6vw,66px)/.98 'Manrope';letter-spacing:-.065em;text-shadow:0 1px 0 rgba(255,255,255,.22);font-variant-numeric:tabular-nums}
+.earning-wallet .earning-wallet-balance h2 .earning-wallet-amount{display:inline;min-width:0;margin:0;color:inherit;font-size:inherit;letter-spacing:inherit;overflow-wrap:anywhere}
+.earning-wallet .earning-wallet-balance h2 .earning-wallet-unit{display:inline-flex;margin:0 0 7px;color:rgba(7,25,27,.72);font-size:13px;font-weight:800;line-height:1;letter-spacing:.16em}
+.earning-wallet-balance>small{display:flex;align-items:center;gap:8px;color:rgba(7,25,27,.68);font-size:12px;font-weight:600}
+.earning-wallet-balance>small i{width:7px;height:7px;border-radius:50%;background:#067553;box-shadow:0 0 0 4px rgba(6,117,83,.12)}
+.earning-wallet-holder{display:flex;flex-direction:column;gap:5px;min-width:0}
+.earning-wallet-holder span{font-size:9px;font-weight:800;letter-spacing:.18em;color:rgba(7,25,27,.56)}
+.earning-wallet-holder strong{max-width:90%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:650 17px 'Manrope';letter-spacing:-.02em;color:#0a191a}
+.earning-wallet-side{z-index:2;align-items:stretch;padding:25px 24px 31px 22px}
+.earning-wallet-side-top{display:flex;align-items:center;justify-content:flex-end;gap:10px}
+.earning-wallet-status{display:flex;align-items:center;gap:7px;padding:7px 10px;border:1px solid rgba(255,255,255,.12);border-radius:999px;background:rgba(255,255,255,.055);color:#c9d0ce;font-size:9px;font-weight:700;letter-spacing:.13em}
+.earning-wallet-status i{width:6px;height:6px;border-radius:50%;background:var(--earn-start);box-shadow:0 0 10px var(--earn-start)}
+.earning-wallet .wallet-visibility{width:44px;height:44px;border-color:rgba(255,255,255,.18);background:rgba(255,255,255,.055);color:#eaf0ee;backdrop-filter:blur(10px)}
+.earning-wallet .wallet-visibility:hover{border-color:color-mix(in srgb,var(--earn-start) 60%,transparent);background:rgba(255,255,255,.1)}
+.earning-wallet-chip{display:grid;grid-template-columns:repeat(2,10px);gap:5px;align-self:flex-end;width:52px;height:40px;padding:7px 9px;border:1px solid rgba(255,255,255,.17);border-radius:11px;background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,.035));box-shadow:inset 0 1px 0 rgba(255,255,255,.12)}
+.earning-wallet-chip i{border:1px solid color-mix(in srgb,var(--earn-start) 60%,transparent);border-radius:3px;background:color-mix(in srgb,var(--earn-start) 20%,transparent)}
+.earning-wallet-title{display:flex;flex-direction:column;align-items:flex-end;gap:6px;text-align:right}
+.earning-wallet-title small{color:#919997;font-size:10px;font-weight:700;letter-spacing:.2em}
+.earning-wallet-title strong{font:700 clamp(22px,2.7vw,29px)/1 'Manrope';letter-spacing:-.04em;color:#f4f7f6;text-shadow:0 0 28px color-mix(in srgb,var(--earn-start) 28%,transparent)}
+.earning-wallet-title span{color:color-mix(in srgb,var(--earn-start) 75%,#fff);font-size:9px;font-weight:700;letter-spacing:.11em}
+
+@media(max-width:600px){
+  .wallet-hero.earning-wallet{grid-template-columns:minmax(0,69%) minmax(0,31%);min-height:300px;border-radius:26px}
+  .earning-wallet-main{padding:27px 21px 27px 22px}
+  .earning-wallet-main:before{inset:10px -13px 10px 10px;border-radius:21px 35px 30px 21px;transform:skewX(-6deg)}
+  .earning-wallet-main:after{inset:11px -12px auto 11px;transform:skewX(-6deg)}
+  .earning-wallet-emblem{width:32px;height:32px;border-radius:9px}
+  .earning-wallet-emblem svg{width:17px;height:17px}
+  .earning-wallet-brand{gap:8px}
+  .earning-wallet-brand strong{font-size:9px;letter-spacing:.1em}
+  .earning-wallet-brand small{font-size:7px;letter-spacing:.1em}
+  .earning-wallet-balance{padding:24px 0 18px}
+  .earning-wallet .earning-wallet-balance p{font-size:10px}
+  .earning-wallet .earning-wallet-balance h2{display:block;font-size:clamp(34px,10vw,45px)}
+  .earning-wallet .earning-wallet-balance h2 .earning-wallet-unit{display:block;margin:9px 0 0;font-size:10px}
+  .earning-wallet-balance>small{font-size:10px}
+  .earning-wallet-holder span{font-size:7px}
+  .earning-wallet-holder strong{font-size:13px}
+  .earning-wallet-side{padding:17px 12px 23px 7px}
+  .earning-wallet-side-top{gap:6px}
+  .earning-wallet-status{padding:6px 7px;font-size:7px;letter-spacing:.06em}
+  .earning-wallet .wallet-visibility{width:36px;height:36px}
+  .earning-wallet-chip{width:40px;height:31px;grid-template-columns:repeat(2,7px);gap:4px;padding:6px 7px;border-radius:8px}
+  .earning-wallet-title{gap:5px}
+  .earning-wallet-title small{font-size:7px;letter-spacing:.1em}
+  .earning-wallet-title strong{font-size:clamp(13px,4.3vw,18px)}
+  .earning-wallet-title span{font-size:6px;letter-spacing:.05em}
+}
