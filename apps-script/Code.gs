@@ -138,6 +138,10 @@ function doPost(event) {
 
 // Ejecuta esta función una vez desde el editor después de pegar Code.gs y el
 // manifiesto. Autoriza tanto MailApp como la consulta HTTPS de invitaciones.
+function resetGalaxyAuthorization() {
+  ScriptApp.invalidateAuth();
+}
+
 function authorizeMailAccess() {
   ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
   const response = UrlFetchApp.fetch(GALAXY_SUPABASE_URL + '/auth/v1/health', {
