@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Eye, EyeOff, MailPlus, Send, Trash2, X } from 'lucide-react';
+import { Eye, EyeOff, MailPlus, Orbit, Send, Trash2, X } from 'lucide-react';
 import { api } from '../services/api';
 import { MEMBERSHIP_EMOJI } from '../membership-badges';
 
@@ -82,9 +82,17 @@ export function WalletActivity({ user }) {
   const displayedBalance = balanceHidden ? '****' : amount(availableBalance);
   return <div className="page-stack"><header className="page-header"><div><p className="eyebrow">WALLET</p><h1>Wallet</h1><p>{english ? 'Membership income and referral commissions. Updated every 15 seconds.' : 'Ingresos de membresías y comisiones por referidos. Se actualiza cada 15 segundos.'}</p></div></header>
     {tier === 'zero' ? <section className="wallet-hero wallet-zero"><div><p>{english ? 'AVAILABLE BALANCE' : 'BALANCE DISPONIBLE'}</p><h2>{displayedBalance} <span>{currency}</span></h2><small>{english ? 'Verified balance in your account.' : 'Saldo verificado en tu cuenta.'}</small></div><button className="wallet-visibility" type="button" onClick={toggleBalance} aria-label={balanceHidden ? (english ? 'Show balance' : 'Mostrar balance') : (english ? 'Hide balance' : 'Ocultar balance')}>{balanceHidden ? <Eye /> : <EyeOff />}</button></section> : <section className={`wallet-hero earning-wallet tone-${tier}`}>
-      <div className="earning-wallet-glow" aria-hidden="true" />
-      <div className="earning-wallet-main"><div className="earning-wallet-balance"><h2>{displayedBalance}</h2><p>{english ? 'Total Balance' : 'Balance total'}</p></div><strong className="earning-wallet-owner">{user.name}</strong></div>
-      <div className="earning-wallet-side"><button className="wallet-visibility" type="button" onClick={toggleBalance} aria-label={balanceHidden ? (english ? 'Show balance' : 'Mostrar balance') : (english ? 'Hide balance' : 'Ocultar balance')}>{balanceHidden ? <Eye /> : <EyeOff />}</button><span className="earning-wallet-currency">{currency}</span><strong className="earning-wallet-logo">{english ? 'EARNINGS' : 'GANANCIAS'}</strong></div>
+      <div className="earning-wallet-glow" aria-hidden="true" /><div className="earning-wallet-grid" aria-hidden="true" />
+      <div className="earning-wallet-main">
+        <div className="earning-wallet-brand"><span className="earning-wallet-emblem"><Orbit /></span><span><strong>PROJECT GALAXY</strong><small>{english ? 'DIGITAL EARNINGS' : 'INGRESOS DIGITALES'}</small></span></div>
+        <div className="earning-wallet-balance"><p>{english ? 'TOTAL BALANCE' : 'BALANCE TOTAL'}</p><h2><span className="earning-wallet-amount">{displayedBalance}</span><span className="earning-wallet-unit">{currency}</span></h2><small><i />{english ? 'Available funds' : 'Fondos disponibles'}</small></div>
+        <div className="earning-wallet-holder"><span>{english ? 'ACCOUNT HOLDER' : 'TITULAR'}</span><strong>{user.name}</strong></div>
+      </div>
+      <div className="earning-wallet-side">
+        <div className="earning-wallet-side-top"><span className="earning-wallet-status"><i />{english ? 'ACTIVE' : 'ACTIVA'}</span><button className="wallet-visibility" type="button" onClick={toggleBalance} aria-label={balanceHidden ? (english ? 'Show balance' : 'Mostrar balance') : (english ? 'Hide balance' : 'Ocultar balance')}>{balanceHidden ? <Eye /> : <EyeOff />}</button></div>
+        <span className="earning-wallet-chip" aria-hidden="true"><i /><i /><i /><i /></span>
+        <div className="earning-wallet-title"><small>GALAXY WALLET</small><strong>{english ? 'EARNINGS' : 'GANANCIAS'}</strong><span>{currency} · DIGITAL ASSET</span></div>
+      </div>
     </section>}
     <section className="surface registration-panel wallet-summary"><p>{english ? 'Pending' : 'Pendiente'}: {privateAmount(wallet.pendingBalance)} · {english ? 'Total earned' : 'Total ganado'}: {privateAmount(wallet.totalEarned)} · {english ? 'Total spent' : 'Total gastado'}: {privateAmount(wallet.totalSpent)} {currency}</p></section>
     <section className="surface registration-panel"><h2>{english ? 'Transactions and expirations' : 'Movimientos y vencimientos'}</h2>{error && <p role="alert">{error}</p>}{!data && !error && <p>{english ? 'Loading…' : 'Cargando…'}</p>}{data?.entries.length === 0 && <p>{english ? 'There are no membership transactions yet.' : 'Aún no hay movimientos de membresías.'}</p>}

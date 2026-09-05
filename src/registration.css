@@ -157,3 +157,69 @@
   .earning-wallet-currency{margin-top:36px;font-size:11px}
   .earning-wallet-logo{margin-bottom:25px;font-size:clamp(13px,4.3vw,17px)}
 }
+
+/* Final fusion: premium details, centered card and pronounced diagonal break. */
+.wallet-hero.earning-wallet{
+  grid-template-columns:minmax(0,78%) minmax(0,22%);
+  width:min(100%,920px);
+  min-height:380px;
+  margin:16px auto 0;
+  border-radius:34px;
+  background:radial-gradient(circle at 74% 45%,color-mix(in srgb,var(--earn-start) 13%,transparent),transparent 28%),linear-gradient(145deg,#27302d 0%,#17201d 52%,#111414 100%);
+}
+.earning-wallet-glow{inset:10% 28% 5% 1%;filter:blur(42px);opacity:.32}
+.earning-wallet-grid{inset:0 0 0 73%;opacity:.13;background-size:27px 27px}
+.earning-wallet-main{padding:64px 68px 62px 72px;transform:none}
+.earning-wallet-main:before{inset:40px -18px 40px 28px;border-radius:32px 58px 48px 32px;transform:skewX(-11deg);background:linear-gradient(150deg,var(--earn-start),var(--earn-end));box-shadow:inset 0 1px 0 rgba(255,255,255,.68),0 18px 45px color-mix(in srgb,var(--earn-end) 24%,transparent)}
+.earning-wallet-main:after{content:'';position:absolute;inset:41px -17px auto 29px;height:43%;z-index:-1;border-radius:31px 54px 0 0;background:linear-gradient(125deg,rgba(255,255,255,.2),transparent 62%);transform:skewX(-11deg);pointer-events:none}
+.earning-wallet-brand{gap:14px}
+.earning-wallet-emblem{width:44px;height:44px;border-radius:13px}
+.earning-wallet-emblem svg{width:22px;height:22px}
+.earning-wallet-brand strong{font-size:14px;letter-spacing:.17em}
+.earning-wallet-brand small{font-size:10px;letter-spacing:.18em}
+.earning-wallet-balance{padding:20px 0 17px}
+.earning-wallet .earning-wallet-balance p{margin:0 0 10px;font-size:13px;font-weight:700;letter-spacing:.15em;text-transform:uppercase}
+.earning-wallet .earning-wallet-balance h2{display:flex;align-items:flex-end;gap:15px;font-size:clamp(58px,7vw,78px)}
+.earning-wallet .earning-wallet-balance h2 .earning-wallet-amount{display:inline;margin:0;color:inherit;font-size:inherit;letter-spacing:inherit}
+.earning-wallet .earning-wallet-balance h2 .earning-wallet-unit{display:inline-flex;margin:0 0 9px;color:rgba(7,25,27,.72);font-size:14px;font-weight:800;letter-spacing:.17em}
+.earning-wallet-balance>small{font-size:13px}
+.earning-wallet-holder{gap:6px}
+.earning-wallet-holder span{font-size:10px}
+.earning-wallet-holder strong{font-size:18px}
+.earning-wallet-side{align-items:stretch;padding:58px 27px 49px 24px}
+.earning-wallet-side-top{width:100%;gap:14px;justify-content:space-between}
+.earning-wallet-status{padding:9px 12px;font-size:9px}
+.earning-wallet .wallet-visibility{width:46px;height:46px;padding:12px}
+.earning-wallet-chip{width:52px;height:42px;margin-top:17px;padding:8px 10px;align-self:flex-end}
+.earning-wallet-title{align-items:center;margin-top:auto;gap:8px;text-align:center}
+.earning-wallet-title small{font-size:10px;letter-spacing:.19em}
+.earning-wallet-title strong{font:900 italic clamp(21px,2.65vw,30px)/1 "Arial Black","Arial Narrow",Arial,sans-serif;letter-spacing:-.075em;transform:skewX(-7deg) scaleX(1.04);text-shadow:0 2px 18px rgba(255,255,255,.1)}
+.earning-wallet-title span{font-size:9px;letter-spacing:.09em}
+
+@media(max-width:600px){
+  .wallet-hero.earning-wallet{grid-template-columns:minmax(0,70%) minmax(0,30%);min-height:310px;margin-top:8px;border-radius:26px}
+  .earning-wallet-main{padding:42px 21px 40px 27px}
+  .earning-wallet-main:before{inset:20px -11px 20px 12px;border-radius:23px 39px 34px 24px;transform:skewX(-8deg)}
+  .earning-wallet-main:after{inset:21px -10px auto 13px;transform:skewX(-8deg)}
+  .earning-wallet-brand{gap:8px}
+  .earning-wallet-emblem{width:32px;height:32px;border-radius:9px}
+  .earning-wallet-emblem svg{width:17px;height:17px}
+  .earning-wallet-brand strong{font-size:9px;letter-spacing:.1em}
+  .earning-wallet-brand small{font-size:7px;letter-spacing:.1em}
+  .earning-wallet-balance{padding:23px 0 18px}
+  .earning-wallet .earning-wallet-balance p{font-size:9px;letter-spacing:.1em}
+  .earning-wallet .earning-wallet-balance h2{display:block;font-size:clamp(39px,11vw,52px)}
+  .earning-wallet .earning-wallet-balance h2 .earning-wallet-unit{display:block;margin:8px 0 0;font-size:10px}
+  .earning-wallet-balance>small{font-size:10px}
+  .earning-wallet-holder span{font-size:7px}
+  .earning-wallet-holder strong{font-size:14px}
+  .earning-wallet-side{padding:30px 12px 31px 8px}
+  .earning-wallet-side-top{flex-direction:column-reverse;align-items:flex-end;gap:12px}
+  .earning-wallet-status{padding:7px 8px;font-size:7px}
+  .earning-wallet .wallet-visibility{width:38px;height:38px;padding:9px}
+  .earning-wallet-chip{width:40px;height:32px;margin-top:14px;padding:6px 8px}
+  .earning-wallet-title{gap:6px}
+  .earning-wallet-title small{font-size:7px;letter-spacing:.1em}
+  .earning-wallet-title strong{font-size:clamp(13px,4.2vw,17px)}
+  .earning-wallet-title span{font-size:6px;letter-spacing:.04em}
+}
