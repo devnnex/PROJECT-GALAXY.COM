@@ -263,6 +263,19 @@ create table if not exists public.calendar_events (
 );
 
 alter table public.meetings add column if not exists scheduled_ends_at timestamptz;
+-- Backfill legacy scheduled rooms so completed entries disappear from
+-- "Mis reuniones" while their calendar record follows its normal retention.
+update public.meetings meeting
+set scheduled_ends_at=scheduled.ends_at,
+  status=case when scheduled.ends_at<=now() then 'ENDED' else meeting.status end,
+  ended_at=case when scheduled.ends_at<=now() then coalesce(meeting.ended_at,scheduled.ends_at) else meeting.ended_at end
+from (
+  select meeting_id,max(ends_at) ends_at
+  from public.calendar_events
+  where meeting_id is not null
+  group by meeting_id
+) scheduled
+where meeting.id=scheduled.meeting_id and meeting.scheduled_ends_at is null;
 -- The calendar table predates this consolidated schema and uses series_id for
 -- weekly recurrences. CREATE TABLE IF NOT EXISTS does not add missing columns,
 -- so keep the original column explicit for existing and fresh projects.

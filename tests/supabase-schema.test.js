@@ -243,6 +243,7 @@ describe('Supabase contract', () => {
   });
 
   it('hides ended scheduled meetings from the meetings list while retaining their calendar event', () => {
+    expect(schema).toMatch(/update public\.meetings meeting[\s\S]*set scheduled_ends_at=scheduled\.ends_at[\s\S]*where meeting\.id=scheduled\.meeting_id and meeting\.scheduled_ends_at is null/);
     expect(schema).toMatch(/function public\.get_my_meetings[\s\S]*not \(m\.status='ENDED' and m\.scheduled_ends_at is not null\)/);
     expect(schema).toMatch(/function public\.get_calendar_events[\s\S]*from public\.calendar_events e/);
   });
