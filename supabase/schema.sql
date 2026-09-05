@@ -191,7 +191,7 @@ create table if not exists public.meetings (
   title text not null check (char_length(title) between 1 and 140),
   waiting_room boolean not null default true,
   locked boolean not null default false,
-  permissions jsonb not null default '{"screenShare":"ALL","chat":true,"reactions":true,"hostCanMute":true}'::jsonb,
+  permissions jsonb not null default '{"screenShare":"ALL","chat":true,"reactions":true,"hostCanMute":true,"collaborationEnabled":true}'::jsonb,
   status text not null default 'ACTIVE' check (status in ('ACTIVE','ENDED')),
   starts_at timestamptz not null default now(),
   ended_at timestamptz,
@@ -263,6 +263,10 @@ create table if not exists public.calendar_events (
 );
 
 alter table public.meetings add column if not exists scheduled_ends_at timestamptz;
+alter table public.meetings alter column permissions set default '{"screenShare":"ALL","chat":true,"reactions":true,"hostCanMute":true,"collaborationEnabled":true}'::jsonb;
+update public.meetings
+set permissions=jsonb_set(coalesce(permissions,'{}'::jsonb),'{collaborationEnabled}','true'::jsonb,true)
+where not coalesce(permissions,'{}'::jsonb) ? 'collaborationEnabled';
 -- Backfill legacy scheduled rooms so completed entries disappear from
 -- "Mis reuniones" while their calendar record follows its normal retention.
 update public.meetings meeting
@@ -720,6 +724,7 @@ language sql stable set search_path = public as $$
     'roomCode', p_meeting.room_code, 'status', p_meeting.status, 'waitingRoom', p_meeting.waiting_room,
     'locked', p_meeting.locked, 'host', p_meeting.host_id = p_user, 'hostId', p_meeting.host_id,
     'participantMicsLocked',coalesce(p_meeting.permissions->>'participantMicsLocked','false')='true',
+    'collaborationEnabled',coalesce(p_meeting.permissions->>'collaborationEnabled','true')='true',
     'startsAt', p_meeting.starts_at, 'endedAt', p_meeting.ended_at,
     'scheduledEndsAt',p_meeting.scheduled_ends_at);
 $$;
@@ -1088,6 +1093,17 @@ begin
   return jsonb_build_object('meetingId',p_meeting_id,'participantMicsLocked',v_locked);
 end; $$;
 
+create or replace function public.set_meeting_collaboration_enabled(p_meeting_id uuid,p_enabled boolean) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_admin uuid:=public.require_admin(); v_enabled boolean:=coalesce(p_enabled,true);
+begin
+  update public.meetings
+  set permissions=jsonb_set(coalesce(permissions,'{}'::jsonb),'{collaborationEnabled}',to_jsonb(v_enabled),true)
+  where id=p_meeting_id and host_id=v_admin and status='ACTIVE';
+  if not found then raise exception 'Solo el administrador anfitrión puede controlar la colaboración.' using errcode='P0001'; end if;
+  return jsonb_build_object('meetingId',p_meeting_id,'collaborationEnabled',v_enabled);
+end; $$;
+
 create or replace function public.end_meeting(p_meeting_id uuid) returns jsonb language plpgsql security definer set search_path=public,auth as $$
 declare v_deleted_messages integer:=0;
 begin
@@ -1118,7 +1134,7 @@ begin
   values(p_meeting_id,v_user,'HOST','ADMITTED',now(),null,'{}'::jsonb)
   on conflict(meeting_id,user_id) do update set role='HOST',status='ADMITTED',joined_at=now(),left_at=null,permissions='{}'::jsonb;
   update public.meetings set status='ACTIVE',starts_at=now(),ended_at=null,locked=false,
-    permissions=jsonb_set(coalesce(permissions,'{}'::jsonb),'{participantMicsLocked}','false'::jsonb,true)
+    permissions=jsonb_set(jsonb_set(coalesce(permissions,'{}'::jsonb),'{participantMicsLocked}','false'::jsonb,true),'{collaborationEnabled}','true'::jsonb,true)
   where id=p_meeting_id returning * into v_meeting;
   select value into v_ice from public.app_settings where key='ice_servers';
   return public.meeting_summary(v_meeting,v_user)||jsonb_build_object(
@@ -1416,13 +1432,13 @@ grant execute on function public.get_turn_provider_config() to service_role;
 
 revoke execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),
   public.require_admin(),public.is_current_session_valid(),public.get_admin_users(),public.set_user_access(uuid,boolean),
-  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),
+  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),public.set_meeting_collaboration_enabled(uuid,boolean),
   public.cleanup_old_calendar_events(),public.get_calendar_events(timestamptz,timestamptz),
   public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
 from public,anon,authenticated;
 grant execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),public.is_current_session_valid(),
   public.get_admin_users(),public.set_user_access(uuid,boolean),
-  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),
+  public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),public.set_meeting_collaboration_enabled(uuid,boolean),
   public.get_calendar_events(timestamptz,timestamptz),
   public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
 to authenticated;

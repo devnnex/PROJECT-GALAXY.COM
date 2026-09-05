@@ -13,7 +13,7 @@ const appHtml = readFileSync(new URL('../app.html', import.meta.url), 'utf8');
 
 const publicRpc = [
   'get_current_user', 'update_profile', 'update_profile_avatar', 'get_bootstrap_data', 'create_meeting', 'join_meeting', 'get_my_meetings',
-  'get_meeting_state', 'admit_meeting_participant', 'deny_meeting_participant', 'set_meeting_locked', 'set_participant_mics_locked',
+  'get_meeting_state', 'admit_meeting_participant', 'deny_meeting_participant', 'set_meeting_locked', 'set_participant_mics_locked', 'set_meeting_collaboration_enabled',
   'restart_meeting', 'remove_ended_meeting',
   'end_meeting', 'get_community_members', 'get_meeting_invite_candidates', 'mark_meeting_invitation_seen',
   'invite_to_meeting', 'get_meeting_messages',
@@ -225,6 +225,21 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('senderName={item.senderName}');
     expect(meetingStyles).toContain('.floating-chat-message');
     expect(meetingStyles).toContain('.reaction-sender');
+  });
+
+  it('supports unread mobile chat and administrator-controlled collaboration without native dialogs', () => {
+    expect(schema).toContain('function public.set_meeting_collaboration_enabled');
+    expect(schema).toContain("'{collaborationEnabled}'");
+    expect(schema).toContain("'collaborationEnabled'");
+    expect(api).toContain("setMeetingCollaborationEnabled: (payload) => rpc('set_meeting_collaboration_enabled', payload)");
+    expect(meetingClient).toContain("type: 'collab-access'");
+    expect(meetingStudio).toContain('unreadMessages');
+    expect(meetingStudio).toContain('Dejar de dibujar');
+    expect(meetingStudio).toContain('Detener control guiado');
+    expect(meetingStudio).toContain('MeetingConfirmationModal');
+    expect(meetingStudio).not.toMatch(/\b(?:alert|prompt|confirm)\s*\(/);
+    expect(meetingStyles).toContain('.mobile-chat-fab i');
+    expect(meetingStyles).toContain('background:#36bf76');
   });
 
   it('keeps presenter voice alive while the shared-audio context changes state', () => {

@@ -245,6 +245,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (message.type === 'ice') return this.acceptIce(message);
     if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.source, senderName: this.participants.get(message.source)?.name, emoji: message.emoji }); return; }
     if (message.type === 'participant-mics-lock') { await this.handleParticipantMicsLock(message); return; }
+    if (message.type === 'collab-access') { await this.handleCollaborationAccess(message); return; }
     if (message.type?.startsWith('collab-')) {
       if (!message.source || !this.participants.has(message.source)) return;
       this.callbacks.onCollaboration?.(message); return;
@@ -262,6 +263,15 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (sender?.role !== 'HOST') return;
     const state = await api.getMeetingState({ meetingId: this.roomId }).catch(() => null);
     if (state) this.callbacks.onParticipantMicsLock?.({ locked: Boolean(state.participantMicsLocked), by: sender.name });
+  }
+
+  async handleCollaborationAccess(message) {
+    if (!message?.source) return;
+    if (!this.participants.has(message.source)) await this.syncPresence();
+    const sender = this.participants.get(message.source);
+    if (sender?.role !== 'HOST') return;
+    const state = await api.getMeetingState({ meetingId: this.roomId }).catch(() => null);
+    if (state) this.callbacks.onCollaborationAccess?.({ enabled: state.collaborationEnabled !== false, by: sender.name });
   }
 
   async handlePersistedMessage(messageId, announce = true) {
@@ -321,6 +331,12 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (this.role !== 'HOST') return null;
     const result = await api.setParticipantMicsLocked({ meetingId: this.roomId, locked: Boolean(locked) });
     await this.broadcast('signal', { type: 'participant-mics-lock', source: this.selfId });
+    return result;
+  }
+  async setCollaborationEnabled(enabled) {
+    if (this.role !== 'HOST') return null;
+    const result = await api.setMeetingCollaborationEnabled({ meetingId: this.roomId, enabled: Boolean(enabled) });
+    await this.broadcast('signal', { type: 'collab-access', source: this.selfId });
     return result;
   }
   endMeeting() { if (this.role === 'HOST') return this.broadcast('meeting-ended', { by: this.identity.name }); return undefined; }
