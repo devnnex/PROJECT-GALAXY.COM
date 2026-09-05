@@ -99,7 +99,10 @@ export const api = {
   },
   inspectInvitation: (token) => rpc('get_registration_invitation', { token }),
   async inviteUser(payload) {
-    const invitation = await rpc('create_registration_invitation', payload);
+    const invitation = await rpc('create_registration_invitation', {
+      ...payload,
+      referrerId: payload.referrerId || null,
+    });
     try {
       const response = await fetch(APPS_SCRIPT_MAIL_URL, {
         method: 'POST', redirect: 'follow',

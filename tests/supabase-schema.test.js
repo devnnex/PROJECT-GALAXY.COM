@@ -359,6 +359,7 @@ describe('Supabase contract', () => {
     expect(api).not.toMatch(/pollMeetingRealtime|postMeetingSignals|service[_-]?role/i);
     expect(api).toContain("action: 'registration_invitation'");
     expect(api).toContain("rpc('create_registration_invitation'");
+    expect(api).toContain('referrerId: payload.referrerId || null');
     expect(api).toContain("rpc('revoke_registration_invitation'");
   });
 });

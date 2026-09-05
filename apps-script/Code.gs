@@ -1,5 +1,5 @@
 const GALAXY_SUPABASE_URL = 'https://xdsqtuubsptpzwadecha.supabase.co';
-const GALAXY_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6Inhkc3F0dXVic3B0cHp3YWRlY2hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NjQ0MjgsImV4cCI6MjEwMjQ0MDQyOH0.KAoFXQ3cIk8TW4zfVGrg860GNOErOtcyPVcwh0jpPx0';
+const GALAXY_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhkc3F0dXVic3B0cHp3YWRlY2hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NjQ0MjgsImV4cCI6MjEwMjQ0MDQyOH0.KAoFXQ3cIk8TW4zfVGrg860GNOErOtcyPVcwh0jpPx0';
 const GALAXY_REGISTRATION_URL = 'https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html';
 
 /*
@@ -136,10 +136,17 @@ function doPost(event) {
   return jsonOutput_({});
 }
 
-// Ejecuta esta función una vez desde el editor para autorizar MailApp y revisar
-// cuántos destinatarios quedan disponibles en la cuenta de Google.
+// Ejecuta esta función una vez desde el editor después de pegar Code.gs y el
+// manifiesto. Autoriza tanto MailApp como la consulta HTTPS de invitaciones.
 function authorizeMailAccess() {
-  return MailApp.getRemainingDailyQuota();
+  const response = UrlFetchApp.fetch(GALAXY_SUPABASE_URL + '/auth/v1/health', {
+    method: 'get',
+    muteHttpExceptions: true,
+  });
+  return {
+    remainingDailyQuota: MailApp.getRemainingDailyQuota(),
+    supabaseReachable: response.getResponseCode() >= 200 && response.getResponseCode() < 500,
+  };
 }
 
 function buildMessages_(user, emailData, action) {

@@ -78,7 +78,7 @@ La confirmación sigue perteneciendo a Supabase Auth. El Web App de `apps-script
    - `GALAXY_HOOK_KEY`: secreto aleatorio de al menos 32 caracteres, distinto de cualquier clave de Supabase.
    - `SUPABASE_URL`: `https://xdsqtuubsptpzwadecha.supabase.co`.
    - `APP_REDIRECT_URL`: `https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html`.
-3. Ejecuta manualmente `authorizeMailAccess` una vez y acepta exclusivamente el permiso para enviar correo.
+3. Ejecuta manualmente `authorizeMailAccess` una vez y acepta los permisos para enviar correo y conectarse al endpoint HTTPS de Supabase.
 4. Usa **Deploy → New deployment → Web app**. Selecciona **Execute as: Me** y permite acceso a **Anyone**. Copia la URL terminada en `/exec`.
 5. En **Authentication → Hooks**, crea **Send Email → HTTPS** con esta URL, sustituyendo el valor por el secreto real:
 

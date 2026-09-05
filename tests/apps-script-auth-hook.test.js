@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 const code = readFileSync(new URL('../apps-script/Code.gs', import.meta.url), 'utf8');
 const manifest = JSON.parse(readFileSync(new URL('../apps-script/appsscript.json', import.meta.url), 'utf8'));
+const runtimeConfig = readFileSync(new URL('../src/runtime-config.js', import.meta.url), 'utf8');
 
 function hookRuntime() {
   const sent = [];
@@ -38,6 +39,12 @@ describe('Apps Script Supabase Auth mail hook', () => {
     expect(code).not.toMatch(/service[_-]?role|sb_secret_|SUPABASE_SERVICE/i);
   });
 
+  it('uses the same valid public Supabase key as the application', () => {
+    const scriptKey = code.match(/GALAXY_SUPABASE_ANON_KEY = '([^']+)'/)?.[1];
+    const applicationKey = runtimeConfig.match(/SUPABASE_ANON_KEY: '([^']+)'/)?.[1];
+    expect(scriptKey).toBe(applicationKey);
+  });
+
   it('validates the shared secret and immutable Auth fields before sending', () => {
     expect(code).toContain("requireProperty_(properties, 'GALAXY_HOOK_KEY')");
     expect(code).toContain('expectedKey.length < 32');
@@ -49,7 +56,10 @@ describe('Apps Script Supabase Auth mail hook', () => {
   });
 
   it('limits mail scope, duplicates and quota consumption', () => {
-    expect(manifest.oauthScopes).toEqual(['https://www.googleapis.com/auth/script.send_mail']);
+    expect(manifest.oauthScopes).toEqual([
+      'https://www.googleapis.com/auth/script.send_mail',
+      'https://www.googleapis.com/auth/script.external_request',
+    ]);
     expect(code).toContain('CacheService.getScriptCache()');
     expect(code).toContain('lock.tryLock(500)');
     expect(code).toContain('MailApp.getRemainingDailyQuota()');
