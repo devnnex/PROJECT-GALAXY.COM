@@ -54,7 +54,8 @@ describe('Apps Script Supabase Auth mail hook', () => {
     expect(code).toContain('lock.tryLock(500)');
     expect(code).toContain('MailApp.getRemainingDailyQuota()');
     expect(code).toContain('MailApp.sendEmail({');
-    expect(code).not.toMatch(/GmailApp|UrlFetchApp/);
+    expect(code).not.toMatch(/GmailApp|service[_-]?role/i);
+    expect(code).toContain("'/rest/v1/rpc/get_registration_invitation'");
   });
 
   it('turns a valid signup hook into a Supabase-owned confirmation link', () => {

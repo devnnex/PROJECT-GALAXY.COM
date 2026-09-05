@@ -11,7 +11,7 @@ beforeAll(async () => {
   db = new PGlite({ extensions: { pgcrypto } });
   await db.exec(`create extension pgcrypto; create schema auth;
     create role anon; create role authenticated; create role service_role;
-    create table auth.users(id uuid primary key default gen_random_uuid(), email text unique, raw_app_meta_data jsonb default '{}');
+    create table auth.users(id uuid primary key default gen_random_uuid(), email text unique, raw_user_meta_data jsonb default '{}');
     create table public.profiles(id uuid primary key references auth.users on delete cascade, name text, status text default 'ACTIVE',role text default 'USER');
     create table public.wallets(user_id uuid primary key references public.profiles on delete cascade, available_balance numeric default 0,total_earned numeric default 0,total_spent numeric default 0);
     create table public.membership_plans(code text primary key,name text,price_usd numeric,duration_months integer,active boolean default true);
@@ -37,7 +37,7 @@ beforeAll(async () => {
 }, 30000);
 afterAll(async () => { await db?.close(); });
 const invite = async (email, refer = null) => (await scalar('select public.create_registration_invitation($1,$2,$3) result', [email, 'MONTHLY', refer])).result;
-const register = (email, token) => scalar('insert into auth.users(email,raw_app_meta_data) values($1,$2) returning id', [email, JSON.stringify({ registration_token: token })]);
+const register = (email, token) => scalar('insert into auth.users(email,raw_user_meta_data) values($1,$2) returning id', [email, JSON.stringify({ registration_token: token })]);
 
 it('blocks public signup and forged/wrong-email invitations atomically', async () => {
   await expect(register('public@example.com', '')).rejects.toThrow('invitación');
@@ -52,6 +52,13 @@ it('expires invitations after seven minutes and revokes replaced links', async (
   await expect(register('expired@example.com',i.token)).rejects.toThrow('invitación');
   const old = await invite('replaced@example.com'); await invite('replaced@example.com');
   await expect(register('replaced@example.com',old.token)).rejects.toThrow('invitación');
+});
+it('exposes only a valid invitation to anonymous registration and lets its admin revoke it', async () => {
+  const i = await invite('inspect@example.com');
+  const visible = (await scalar('select public.get_registration_invitation($1) result',[i.token])).result;
+  expect(visible.email).toBe('inspect@example.com');
+  await db.query('select public.revoke_registration_invitation($1)',[i.token]);
+  await expect(db.query('select public.get_registration_invitation($1)',[i.token])).rejects.toThrow('vencida');
 });
 it('credits 100% once, activates the selected membership and rejects replay', async () => {
   const i = await invite('solo@example.com'); const user = await register('solo@example.com',i.token);

@@ -355,7 +355,10 @@ describe('Supabase contract', () => {
     expect(api).toContain("code === 'unexpected_failure'");
   });
 
-  it('contains no Apps Script transport in the browser API', () => {
-    expect(api).not.toMatch(/script\.google|pollMeetingRealtime|postMeetingSignals/);
+  it('uses Apps Script only as validated invitation mail transport', () => {
+    expect(api).not.toMatch(/pollMeetingRealtime|postMeetingSignals|service[_-]?role/i);
+    expect(api).toContain("action: 'registration_invitation'");
+    expect(api).toContain("rpc('create_registration_invitation'");
+    expect(api).toContain("rpc('revoke_registration_invitation'");
   });
 });

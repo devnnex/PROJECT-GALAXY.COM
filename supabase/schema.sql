@@ -1362,6 +1362,13 @@ drop policy if exists profile_avatars_owner_delete on storage.objects;
 create policy profile_avatars_owner_delete on storage.objects for delete to authenticated using (
   bucket_id='profile-avatars' and name=auth.uid()::text||'/profile' and public.is_current_session_valid()
 );
+drop policy if exists profile_avatars_admin_delete on storage.objects;
+create policy profile_avatars_admin_delete on storage.objects for delete to authenticated using (
+  bucket_id='profile-avatars' and exists(
+    select 1 from public.profiles administrator
+    where administrator.id=auth.uid() and administrator.role='ADMIN' and administrator.status='ACTIVE'
+  )
+);
 
 -- Autoriza canales privados Realtime solo a miembros admitidos de meeting:<uuid>.
 drop policy if exists galaxy_meeting_realtime_read on realtime.messages;
@@ -1449,6 +1456,30 @@ begin
  return jsonb_build_object('id',v_inv.id,'token',v_token,'email',p_email,'expiresAt',v_inv.expires_at,'planName',v_plan.name);
 end; $$;
 
+create or replace function public.get_registration_invitation(p_token text) returns jsonb
+language plpgsql stable security definer set search_path=public,extensions as $$
+declare v_email text; v_plan_code text; v_plan_name text; v_expires_at timestamptz;
+begin
+ if coalesce(p_token,'') !~ '^[0-9a-f]{64}$' then raise exception 'Invitación inválida o vencida.' using errcode='P0001'; end if;
+ select invitation.email,invitation.plan_code,plan.name,invitation.expires_at
+ into v_email,v_plan_code,v_plan_name,v_expires_at
+ from public.registration_invitations invitation
+ join public.membership_plans plan on plan.code=invitation.plan_code
+ where invitation.token_hash=encode(digest(lower(p_token),'sha256'),'hex')
+   and invitation.consumed_at is null and invitation.revoked_at is null
+   and invitation.expires_at>clock_timestamp();
+ if not found then raise exception 'Invitación inválida, utilizada o vencida. Solicita una nueva.' using errcode='P0001'; end if;
+ return jsonb_build_object('email',v_email,'plan_code',v_plan_code,'planName',v_plan_name,'expires_at',v_expires_at);
+end; $$;
+
+create or replace function public.revoke_registration_invitation(p_token text) returns void
+language plpgsql security definer set search_path=public,extensions as $$
+declare v_admin uuid:=public.require_admin();
+begin
+ update public.registration_invitations set revoked_at=now()
+ where created_by=v_admin and token_hash=encode(digest(lower(coalesce(p_token,'')),'sha256'),'hex') and consumed_at is null;
+end; $$;
+
 -- Runs after the existing profile/wallet trigger, in the same Auth transaction.
 -- app_metadata is writable only by the server, never by public signup callers.
 create or replace function public.accept_registration_invitation() returns trigger
@@ -1456,7 +1487,7 @@ language plpgsql security definer set search_path=public,extensions,auth as $$
 declare v_inv public.registration_invitations; v_owner uuid; v_commission numeric(12,2); v_expiry timestamptz;
 begin
  select * into v_inv from public.registration_invitations
- where token_hash=encode(digest(coalesce(new.raw_app_meta_data->>'registration_token',''),'sha256'),'hex')
+ where token_hash=encode(digest(coalesce(new.raw_user_meta_data->>'registration_token',''),'sha256'),'hex')
  and email=lower(new.email) and consumed_at is null and revoked_at is null and expires_at>clock_timestamp() for update;
  if not found or v_inv.expires_at<=clock_timestamp() then raise exception 'Se requiere una invitación vigente.'; end if;
  select id into v_owner from auth.users where lower(email)='elkin56ty@gmail.com';
@@ -1511,6 +1542,8 @@ begin
  update public.registration_invitations set email='deleted-'||id::text,token_hash='deleted-'||id::text where member_id=p_user_id;
  delete from auth.users where id=p_user_id;
 end; $$;
-revoke all on function public.create_registration_invitation(text,text,uuid),public.accept_registration_invitation(),public.get_wallet_activity(),public.delete_registered_user(uuid) from public,anon,authenticated;
-grant execute on function public.create_registration_invitation(text,text,uuid),public.get_wallet_activity(),public.delete_registered_user(uuid) to authenticated;
+revoke all on function public.create_registration_invitation(text,text,uuid),public.get_registration_invitation(text),public.revoke_registration_invitation(text),public.accept_registration_invitation(),public.get_wallet_activity(),public.delete_registered_user(uuid) from public,anon,authenticated;
+grant usage on schema public to anon;
+grant execute on function public.get_registration_invitation(text) to anon,authenticated;
+grant execute on function public.create_registration_invitation(text,text,uuid),public.revoke_registration_invitation(text),public.get_wallet_activity(),public.delete_registered_user(uuid) to authenticated;
 commit;

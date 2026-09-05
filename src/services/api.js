@@ -1,5 +1,7 @@
 import { authorizeRealtime, supabase } from './supabase';
 
+const APPS_SCRIPT_MAIL_URL = 'https://script.google.com/macros/s/AKfycbx4KKDbcz1iYk8kbBoI7fEiXG48SlTnI6Q-_XrIq4ROoH0MOvlipcqWEm-hTcASNeF1/exec';
+
 const parameterNames = Object.freeze({
   modules: 'p_modules', title: 'p_title', password: 'p_password', waitingRoom: 'p_waiting_room',
   roomCode: 'p_room_code', meetingId: 'p_meeting_id', participantId: 'p_participant_id',
@@ -95,15 +97,41 @@ export const api = {
     if (error) throw friendlyError(error);
     return { user: await currentUser(), session: data.session };
   },
-  inspectInvitation: (token) => invokeSecure('registration', { action: 'inspect', token }, 'No se pudo validar la invitación.'),
-  inviteUser: (payload) => invokeSecure('registration', { action: 'invite', ...payload }, 'No se pudo enviar la invitación.'),
-  deleteUser: (userId) => invokeSecure('registration', { action: 'delete', userId }, 'No se pudo conectar con el servicio de eliminación. Comprueba tu conexión y que la función registration esté desplegada con el origen de esta app permitido.'),
+  inspectInvitation: (token) => rpc('get_registration_invitation', { token }),
+  async inviteUser(payload) {
+    const invitation = await rpc('create_registration_invitation', payload);
+    try {
+      const response = await fetch(APPS_SCRIPT_MAIL_URL, {
+        method: 'POST', redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+        body: JSON.stringify({ action: 'registration_invitation', token: invitation.token }),
+      });
+      const result = await response.json();
+      if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'Apps Script no confirmó el envío.');
+      return { expiresAt: invitation.expiresAt };
+    } catch (error) {
+      await rpc('revoke_registration_invitation', { token: invitation.token }).catch(() => {});
+      throw new Error(error?.message || 'No fue posible enviar el correo de invitación.');
+    }
+  },
+  async deleteUser(userId) {
+    const { error: storageError } = await supabase.storage.from(PROFILE_AVATAR_BUCKET).remove([`${userId}/profile`]);
+    if (storageError && !/not found|does not exist/i.test(storageError.message || '')) throw friendlyError(storageError);
+    await rpc('delete_registered_user', { userId });
+    return { deleted: true };
+  },
   getWalletActivity: () => rpc('get_wallet_activity'),
   async register({ name, username, password, token }) {
-    const result = await invokeSecure('registration', { action: 'register', name, username, password, token }, 'No se pudo completar el registro.');
+    const invitation = await rpc('get_registration_invitation', { token });
+    const redirect = new URL('index.html', new URL(import.meta.env.BASE_URL, globalThis.location.origin));
+    const { data, error } = await supabase.auth.signUp({
+      email: invitation.email, password,
+      options: { emailRedirectTo: redirect.href, data: { name: name.trim(), username: username.trim().toLowerCase(), registration_token: token } },
+    });
+    if (error) throw friendlyError(error);
     history.replaceState(null, '', location.pathname + location.search);
-    try { return await api.login({ email: result.email, password }); }
-    catch { return { registered: true, email: result.email }; }
+    if (!data.session) return { user: null, session: null, requiresConfirmation: true, email: invitation.email };
+    return { user: await currentUser(), session: data.session };
   },
   async logout() {
     await rpc('release_user_session').catch(() => {});

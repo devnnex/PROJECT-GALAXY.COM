@@ -3,7 +3,3 @@ verify_jwt = true
 
 [functions.scanner-download]
 verify_jwt = true
-
-[functions.registration]
-# Public token redemption; administrative actions validate JWT and role internally.
-verify_jwt = false

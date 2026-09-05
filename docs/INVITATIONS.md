@@ -3,18 +3,10 @@
 Los cambios del repositorio requieren publicar el frontend, aplicar SQL y desplegar la función. No se han aplicado automáticamente al proyecto remoto.
 
 1. En Supabase SQL Editor ejecuta `supabase/schema.sql` completo. Conserva las cuentas existentes. Debe existir previamente la cuenta `elkin56ty@gmail.com`, destinataria de los ingresos. El trigger nuevo rechaza cualquier alta sin una invitación válida entregada por la función del servidor, incluso si se llama directamente a signup.
-2. En el proyecto actual de Apps Script pega el contenido completo de `apps-script/Code.gs` en `Code.gs`. Este único archivo incluye el hook existente y el envío de invitaciones; no necesitas otro archivo `.gs`. Configura estas propiedades del script:
-   - `GALAXY_INVITATION_KEY`: un secreto aleatorio de al menos 32 caracteres, exclusivo para este envío.
-   - `APP_REGISTRATION_URL`: URL HTTPS pública exacta de la aplicación, por ejemplo `https://tu-sitio/dist/index.html`, sin fragmento ni parámetros.
-   Las propiedades del hook de Auth existente se conservan. Publica una nueva versión de la aplicación web, ejecutada como propietario y accesible para cualquiera; la clave compartida autentica cada solicitud de invitación. Autoriza MailApp con la cuenta remitente.
-3. Configura los secretos de Supabase para la función:
-   La URL `/exec` de Apps Script ya está configurada en la constante `APPS_SCRIPT_MAIL_URL`, en la primera línea de `supabase/functions/registration/index.ts`. No necesitas crear un secreto para esta URL. Si cambia, edita esa línea y vuelve a desplegar la función.
-   - `APPS_SCRIPT_MAIL_KEY`: el mismo valor que `GALAXY_INVITATION_KEY`.
-   - `APP_REGISTRATION_URL`: exactamente la misma URL que en Apps Script.
-   - `APP_ALLOWED_ORIGINS`: orígenes del frontend separados por comas, sin rutas.
-   `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` son las variables del entorno de Edge Functions. Ninguna clave privilegiada va en Vite ni en Apps Script.
-4. Despliega `supabase functions deploy registration`. Su configuración `verify_jwt = false` permite aceptar invitaciones sin sesión; enviar y eliminar exigen JWT válido, sesión vigente y rol ADMIN dentro de la función y SQL.
-5. Publica el resultado de `npm run build` usando el procedimiento actual del proyecto. Puedes desactivar adicionalmente **Allow new users to sign up** en Auth; las invitaciones usan la API administrativa del servidor y el login de cuentas existentes se conserva.
+2. En el proyecto actual de Apps Script pega el contenido completo de `apps-script/Code.gs` en `Code.gs`. Este único archivo incluye el hook existente y el envío de invitaciones; no necesitas otro archivo `.gs`. Ejecuta `authorizeMailAccess` una vez para autorizar MailApp. Después crea una versión nueva desde **Implementar → Administrar implementaciones → Editar → Nueva versión**, ejecutada como propietario y accesible para cualquiera. Mantén la misma URL `/exec`.
+3. Publica el resultado de `npm run build` usando el procedimiento actual del proyecto. No desactives **Allow new users to sign up** en Auth: el trigger de `schema.sql` bloquea cualquier alta que no incluya un token vigente, de un solo uso y ligado al correo invitado. El login no muestra registro público.
+
+El envío y la eliminación ya no usan una Edge Function. No necesitas desplegar `registration`, configurar `APPS_SCRIPT_MAIL_KEY`, `GALAXY_INVITATION_KEY`, `APP_REGISTRATION_URL` ni exponer una clave `service_role`. Apps Script valida el token mediante el RPC público limitado `get_registration_invitation`; nunca puede seleccionar otro destinatario ni crear invitaciones.
 
 ## Comportamiento
 

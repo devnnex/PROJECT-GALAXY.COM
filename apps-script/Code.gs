@@ -1,3 +1,7 @@
+const GALAXY_SUPABASE_URL = 'https://xdsqtuubsptpzwadecha.supabase.co';
+const GALAXY_SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6Inhkc3F0dXVic3B0cHp3YWRlY2hhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY4NjQ0MjgsImV4cCI6MjEwMjQ0MDQyOH0.KAoFXQ3cIk8TW4zfVGrg860GNOErOtcyPVcwh0jpPx0';
+const GALAXY_REGISTRATION_URL = 'https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html';
+
 /*
  * PROJECT GALAXY · Supabase Send Email Auth Hook
  *
@@ -62,7 +66,9 @@ function doPost(event) {
       const invitationPayload = JSON.parse(invitationBody);
       if (invitationPayload.action === 'registration_invitation') return sendRegistrationInvitation_(invitationPayload);
     } catch (error) {
-      if (invitationBody.indexOf('registration_invitation') !== -1) return jsonOutput_({ ok: false });
+      if (invitationBody.indexOf('registration_invitation') !== -1) {
+        return jsonOutput_({ ok: false, error: String(error && error.message || 'No se pudo enviar la invitación.') });
+      }
     }
   }
   const properties = PropertiesService.getScriptProperties();
@@ -240,23 +246,44 @@ function jsonOutput_(value) {
 
 // Registration invitations: mail transport only.
 function sendRegistrationInvitation_(payload) {
-  const properties = PropertiesService.getScriptProperties();
-  const secret = requireProperty_(properties, 'GALAXY_INVITATION_KEY');
-  if (secret.length < 32 || !constantTimeEqual_(String(payload.key || ''), secret)) throw new Error('No autorizado.');
-  const expected = requireHttpsUrl_(requireProperty_(properties, 'APP_REGISTRATION_URL'));
-  const link = String(payload.link || '');
-  if (link.split('#')[0] !== expected || !/#registration=[a-f0-9]{64}$/.test(link)) throw new Error('Enlace inválido.');
-  const email = String(payload.email || '');
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || /[\r\n,;]/.test(email)) throw new Error('Correo inválido.');
-  if (new Date(payload.expiresAt).getTime() <= Date.now() || !isFinite(new Date(payload.expiresAt).getTime())) throw new Error('Invitación vencida.');
+  const token = String(payload && payload.token || '').toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(token)) throw new Error('Token de invitación inválido.');
+  const invitation = verifyRegistrationInvitation_(token);
+  const email = String(invitation.email || '');
+  const expiresAt = new Date(invitation.expires_at).getTime();
+  if (!isEmail_(email) || !isFinite(expiresAt) || expiresAt <= Date.now()) throw new Error('La invitación ya no está vigente.');
+  const link = GALAXY_REGISTRATION_URL + '#registration=' + token;
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) throw new Error('Correo ocupado.');
   try {
-    const cache = CacheService.getScriptCache(); const fingerprint = digestHex_(link);
+    const cache = CacheService.getScriptCache(); const fingerprint = digestHex_('registration|' + token);
     if (cache.get(fingerprint)) return jsonOutput_({ ok: true });
     if (MailApp.getRemainingDailyQuota() < 1) throw new Error('Cuota de correo agotada.');
-    MailApp.sendEmail({ to: email, subject: 'Tu invitación a PROJECT GALAXY', name: 'PROJECT GALAXY', body: 'Te invitamos a registrarte con la membresía ' + String(payload.planName || '') + '.\n\n' + link + '\n\nEl enlace vence 7 minutos después de su creación y solo se puede usar una vez. Completa tu registro antes del vencimiento.' });
+    const planName = String(invitation.planName || invitation.plan_code || 'seleccionada');
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Tu invitación a PROJECT GALAXY',
+      name: 'PROJECT GALAXY',
+      body: 'Te invitamos a registrarte con la membresía ' + planName + '.\n\n' + link + '\n\nEl enlace vence 7 minutos después de su creación y solo se puede usar una vez.',
+      htmlBody: '<!doctype html><html><body style="margin:0;background:#08070d;color:#f7f4ff;font-family:Arial,sans-serif"><div style="max-width:560px;margin:0 auto;padding:40px 24px"><p style="color:#c8a8ff;letter-spacing:2px;font-size:12px">PROJECT GALAXY</p><h1>Tu acceso está listo</h1><p style="color:#c9c3d6;line-height:1.65">Fuiste invitado con la membresía <strong>' + escapeHtml_(planName) + '</strong>. Este enlace vence en 7 minutos.</p><p style="margin:32px 0"><a href="' + escapeHtml_(link) + '" style="display:inline-block;padding:14px 22px;border-radius:999px;background:#9b6cff;color:#fff;text-decoration:none;font-weight:700">Completar registro</a></p><p style="color:#777181;font-size:12px">El enlace es personal y solo puede utilizarse una vez.</p></div></body></html>',
+    });
     cache.put(fingerprint, 'sent', 420);
-    return jsonOutput_({ ok: true });
+    return jsonOutput_({ ok: true, expiresAt: invitation.expires_at });
   } finally { lock.releaseLock(); }
+}
+
+function verifyRegistrationInvitation_(token) {
+  const response = UrlFetchApp.fetch(GALAXY_SUPABASE_URL + '/rest/v1/rpc/get_registration_invitation', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { apikey: GALAXY_SUPABASE_ANON_KEY, Authorization: 'Bearer ' + GALAXY_SUPABASE_ANON_KEY },
+    payload: JSON.stringify({ p_token: token }),
+    muteHttpExceptions: true,
+  });
+  let result;
+  try { result = JSON.parse(response.getContentText() || '{}'); } catch (error) { result = {}; }
+  if (response.getResponseCode() !== 200 || !result.email) {
+    throw new Error(String(result.message || 'Supabase rechazó o no reconoce esta invitación.'));
+  }
+  return result;
 }
