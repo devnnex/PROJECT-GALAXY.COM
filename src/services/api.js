@@ -1,6 +1,6 @@
 import { authorizeRealtime, supabase } from './supabase';
 
-const APPS_SCRIPT_MAIL_URL = 'https://script.google.com/macros/s/AKfycby17GwaFQ5wFk_dqF7zZyLBPNl5igMEdvnmg3cxQRITaB4CAXeb8RdY3Cqe7yPwuOVl/exec';
+const APPS_SCRIPT_MAIL_URL = 'https://script.google.com/macros/s/AKfycbwRqZg3wBJX8sz7ZC8q7NZhwW-Za57ymNJTOvBNfBhsTb-qSc107C-V7uhigHKGXPEj/exec';
 
 const parameterNames = Object.freeze({
   modules: 'p_modules', title: 'p_title', password: 'p_password', waitingRoom: 'p_waiting_room',
