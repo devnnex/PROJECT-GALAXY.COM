@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Check, Copy, Eraser, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Pencil, PhoneOff, PictureInPicture2, Plus, Reply, RotateCcw, Send, ShieldCheck, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { Camera, CameraOff, Check, Clock3, Copy, Eraser, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Pencil, PhoneOff, PictureInPicture2, Plus, Reply, RotateCcw, Send, ShieldCheck, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 import { onOnlineUsersChange, primeRealtime, releaseRealtimePrime } from '../services/supabase';
@@ -389,22 +389,49 @@ function MeetingLobby({ busy, meetings, initialCode, onCreate, onJoin, onResume,
   const [tab, setTab] = useState(initialCode || !canCreate ? 'join' : 'create');
   const [create, setCreate] = useState({ title: '', password: '', waitingRoom: true });
   const [join, setJoin] = useState({ roomCode: initialCode, password: '' });
+  const [historyNow, setHistoryNow] = useState(Date.now());
+  useEffect(() => { const timer = setInterval(() => setHistoryNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
+  const visibleMeetings = meetings.filter((item) => {
+    if (item.status !== 'ENDED') return false;
+    if (!item.scheduledEndsAt) return true;
+    const closedAt = new Date(item.endedAt || item.scheduledEndsAt).getTime();
+    return Number.isFinite(closedAt) && historyNow - closedAt < 60_000;
+  });
   return <div className="meeting-lobby">
     <section className="meeting-lobby-card surface"><p className="eyebrow">MEETING CENTER</p><h1>Reuniones privadas para tu comunidad</h1><p>{canCreate ? 'Crea una sala persistente o entra con el código de una invitación.' : 'Entra con el código o abre un enlace de invitación compartido por el administrador.'}</p><div className="meeting-lobby-tabs">{canCreate && <button className={tab === 'create' ? 'active' : ''} onClick={() => setTab('create')}><Plus /> Crear reunión</button>}<button className={tab === 'join' ? 'active' : ''} onClick={() => setTab('join')}><LogIn /> Unirse</button></div>
       {tab === 'create' ? <form onSubmit={(event) => { event.preventDefault(); onCreate(create); }}><label>Título<input required value={create.title} onChange={(event) => setCreate({ ...create, title: event.target.value })} placeholder="Reunión de equipo" /></label><label>Contraseña opcional<input type="password" minLength="6" value={create.password} onChange={(event) => setCreate({ ...create, password: event.target.value })} placeholder="Mínimo 6 caracteres" /></label><label className="meeting-check"><input type="checkbox" checked={create.waitingRoom} onChange={(event) => setCreate({ ...create, waitingRoom: event.target.checked })} /><span><strong>Sala de espera</strong><small>El anfitrión admite a cada participante.</small></span></label><button className="primary-button" disabled={busy}><VideoSurfaceIcon /> {busy ? 'Creando…' : 'Crear e iniciar'}</button></form>
         : <form onSubmit={(event) => { event.preventDefault(); onJoin(join); }}><label>Código de reunión<input required value={join.roomCode} onChange={(event) => setJoin({ ...join, roomCode: event.target.value.toUpperCase() })} placeholder="ABCD-1234" /></label><label>Contraseña, si aplica<input type="password" value={join.password} onChange={(event) => setJoin({ ...join, password: event.target.value })} /></label><button className="primary-button" disabled={busy}><LogIn /> {busy ? 'Conectando…' : 'Entrar a la reunión'}</button></form>}
     </section>
-    <aside className="meeting-history surface"><div className="panel-heading"><span>Mis reuniones</span><span className="count-pill">{meetings.length}</span></div>{meetings.length ? meetings.map((item) => {
+    <aside className="meeting-history surface"><div className="panel-heading"><span>Mis reuniones</span><span className="count-pill">{visibleMeetings.length}</span></div>{visibleMeetings.length ? visibleMeetings.map((item) => {
       const ended = item.status === 'ENDED';
       return <div className={`meeting-history-item ${ended ? 'ended' : ''}`} key={item.id}>
         <button className="meeting-history-main" disabled={!item.roomCode || ended} onClick={() => onResume(item)}><span className={`meeting-status-dot ${item.status.toLowerCase()}`} /><span><strong>{item.title}</strong><small>{ended ? `Finalizada · ${item.host ? 'Tú la creaste' : 'Participaste'}` : `${item.host ? 'Anfitrión' : 'Participante'} · ${item.roomCode || 'Código anterior no disponible'}`}</small></span><LogIn /></button>
         {ended && <div className="meeting-history-actions">{item.host && <button disabled={busy} title="Reiniciar reunión" aria-label={`Reiniciar ${item.title}`} onClick={() => onRestart(item)}><RotateCcw /></button>}<button className="history-delete" disabled={busy} title={item.host ? 'Eliminar reunión definitivamente' : 'Quitar de mi historial'} aria-label={`${item.host ? 'Eliminar' : 'Quitar'} ${item.title}`} onClick={() => onRemove(item)}><Trash2 /></button></div>}
       </div>;
-    }) : <p className="muted">Tus reuniones aparecerán aquí.</p>}</aside>
+    }) : <p className="muted">No hay reuniones finalizadas.</p>}</aside>
   </div>;
 }
 
 function VideoSurfaceIcon() { return <Users />; }
+
+function formatMeetingDuration(startedAt, now) {
+  const started = new Date(startedAt).getTime();
+  const elapsed = Number.isFinite(started) ? Math.max(0, Math.floor((now - started) / 1000)) : 0;
+  const hours = Math.floor(elapsed / 3600); const minutes = Math.floor((elapsed % 3600) / 60); const seconds = elapsed % 60;
+  return [hours, minutes, seconds].map((value) => String(value).padStart(2, '0')).join(':');
+}
+
+function MeetingDuration({ startedAt }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
+  const duration = formatMeetingDuration(startedAt, now);
+  const [hours, minutes, seconds] = duration.split(':');
+  return <time className="meeting-duration" dateTime={`PT${hours}H${minutes}M${seconds}S`} aria-label={`Duración de la reunión ${duration}`}><Clock3 />{duration}</time>;
+}
 
 function ChatPanel({ messages, user, replyTo, setReplyTo, onSend, onReact }) {
   const [body, setBody] = useState(''); const [emojiOpen, setEmojiOpen] = useState(false); const [sentPulse, setSentPulse] = useState(false); const endRef = useRef(null); const inputRef = useRef(null); const sentTimer = useRef(null);
@@ -511,7 +538,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (navigator.vibrate && document.visibilityState === 'visible') navigator.vibrate(32);
     setTimeout(() => setFloatingMessages((items) => items.filter((item) => item.id !== id)), 5200);
   };
-  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 13_200 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
+  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
@@ -622,7 +649,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       onCollaborationAccess: ({ enabled, by }) => { if (isCurrent(client)) enforceCollaborationAccess(enabled, by, true); },
       onForceMute: ({ by }) => { if (!isCurrent(client)) return; const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); saveMediaPreferences({ mic: false }); client.setPresence({ mic: false, speaking: false }); toast(`${by || 'El anfitrión'} silenció tu micrófono.`, 'info'); },
       onParticipantMicsLock: ({ locked, by }) => { if (isCurrent(client)) enforceParticipantMicLock(locked, normalized.role, by, true); },
-      onMeetingEnded: async ({ by }) => { if (!isCurrent(client)) return; await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); toast(`${by || 'El anfitrión'} finalizó la reunión.`, 'info'); },
+      onMeetingEnded: async ({ by }) => { if (!isCurrent(client)) return; await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); api.getMyMeetings().then(setMeetings).catch(() => {}); toast(`${by || 'El anfitrión'} finalizó la reunión.`, 'info'); },
     });
     client.setPresence({ mic: activeMedia.mic, camera: activeMedia.camera, sharing: false, handRaised, speaking: false }); connection.current = client;
     try {
@@ -822,7 +849,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const toggleLock = async () => { try { const result = await api.setMeetingLocked({ meetingId: meeting.meetingId, locked: !meeting.locked }); setMeeting({ ...meeting, locked: result.locked }); toast(result.locked ? 'Sala bloqueada.' : 'Sala desbloqueada.'); } catch (error) { toast(error.message, 'error'); } };
   const toggleParticipantMics = async () => { try { const result = await connection.current?.setParticipantMicsLocked(!participantMicsLocked); if (!result) return; setParticipantMicsLocked(Boolean(result.participantMicsLocked)); setMeeting((current) => ({ ...current, participantMicsLocked: Boolean(result.participantMicsLocked) })); toast(result.participantMicsLocked ? 'Todos los participantes fueron silenciados y no podrán activar el micrófono.' : 'Los participantes ya pueden activar sus micrófonos.'); } catch (error) { toast(error.message, 'error'); } };
   const toggleCollaborationAccess = async () => { try { const result = await connection.current?.setCollaborationEnabled(!collaborationEnabled); if (!result) return; enforceCollaborationAccess(result.collaborationEnabled); setMeeting((current) => ({ ...current, collaborationEnabled: result.collaborationEnabled })); toast(result.collaborationEnabled ? 'Las herramientas de colaboración están disponibles.' : 'Dibujo y control guiado quedaron pausados para todos.'); } catch (error) { toast(error.message, 'error'); } };
-  const endMeetingNow = async () => { try { await api.endMeeting({ meetingId: meeting.meetingId }); await connection.current?.endMeeting(); await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); toast('Reunión finalizada para todos.'); } catch (error) { toast(error.message, 'error'); } };
+  const endMeetingNow = async () => { try { await api.endMeeting({ meetingId: meeting.meetingId }); await connection.current?.endMeeting(); await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); api.getMyMeetings().then(setMeetings).catch(() => {}); toast('Reunión finalizada para todos.'); } catch (error) { toast(error.message, 'error'); } };
   const endMeeting = () => setConfirmation({ title: 'Finalizar la reunión para todos', body: 'La sala se cerrará para todos los participantes y esta acción no se puede deshacer.', confirmLabel: 'Finalizar reunión', danger: true, action: endMeetingNow });
   const leave = async () => { await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); toast(meeting?.role === 'HOST' ? 'Saliste; la reunión seguirá activa hasta que la finalices.' : 'Saliste de la reunión.'); api.getMyMeetings().then(setMeetings).catch(() => {}); };
   const restartMeetingNow = async (item) => { setBusy(true); try { const restarted = await api.restartMeeting({ meetingId: item.meetingId || item.id }); setMeetings((items) => [restarted, ...items.filter((current) => current.id !== item.id)]); await connectAccess(restarted); toast('Reunión reiniciada. Solo tú conservaste el acceso de anfitrión.'); } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); } };
@@ -834,7 +861,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   useEffect(() => {
     if (!joined || !meeting?.scheduledEndsAt) return undefined;
     const remaining = new Date(meeting.scheduledEndsAt).getTime() - Date.now();
-    const closeScheduledSession = async () => { await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); toast('La franja programada de esta reunión terminó.', 'info'); };
+    const closeScheduledSession = async () => { await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); api.getMyMeetings().then(setMeetings).catch(() => {}); toast('La franja programada de esta reunión terminó.', 'info'); };
     if (remaining <= 0) { closeScheduledSession(); return undefined; }
     const timer = setTimeout(closeScheduledSession, Math.min(remaining, 2_147_000_000));
     return () => clearTimeout(timer);
@@ -910,7 +937,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   return <section className={`meeting-page ${mobilePanelOpen ? 'mobile-panel-open' : ''}`}>
     {mobilePanelOpen && <button className="meeting-mobile-scrim" type="button" aria-label="Cerrar chat" onClick={() => setMobilePanelOpen(false)} />}
     <button className={`mobile-chat-fab ${mobilePanelOpen ? 'active' : ''} ${messagePulse ? 'message-pulse' : ''}`} type="button" disabled={!joined} onClick={() => { setSideTab('chat'); setMobilePanelOpen((open) => !open); }}><MessageCircle /><span>{mobilePanelOpen ? 'Cerrar chat' : 'Abrir chat'}</span>{unreadMessages > 0 && <i aria-label={`${unreadMessages} mensajes sin leer`}>{unreadMessages}</i>}</button>
-    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1></div><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={copyInvite}><Copy /> {meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
+    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={copyInvite}><Copy /> {meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
     <div className="meeting-grid">
       <div className="meeting-stage">
         {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span>{sharing && shareHasAudio && <button className={`presentation-audio-toggle ${shareAudioEnabled ? 'active' : ''}`} type="button" aria-pressed={shareAudioEnabled} title={shareAudioEnabled ? 'Silenciar sonido de la pantalla compartida' : 'Activar sonido de la pantalla compartida'} onClick={toggleSharedAudio}>{shareAudioEnabled ? <Volume2 /> : <VolumeX />}<span>{shareAudioEnabled ? 'Sonido compartido' : 'Sonido silenciado'}</span></button>}<CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} onPoint={sendCollaborationPoint} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
