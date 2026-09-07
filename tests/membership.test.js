@@ -87,4 +87,14 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(registrationManagement).not.toContain("Number(entry.amount) >= 0 ? '+' : ''");
     expect(registrationStyles).toContain('.membership-ledger-row.membership-payment');
   });
+
+  it('celebrates each newly credited referral commission in a realtime wallet', () => {
+    expect(api).toContain("rpc('confirm_registration_invitation_sent'");
+    expect(api).toContain('onWalletChange(userId, callback)');
+    expect(registrationManagement).toContain('api.onWalletChange(user.id, load)');
+    expect(registrationManagement).toContain('galaxy_wallet_celebrated_commission_');
+    expect(registrationManagement).toContain('¡Felicitaciones!');
+    expect(registrationStyles).toContain('@keyframes wallet-confetti-fall');
+    expect(registrationStyles).toContain('@keyframes wallet-neon-celebration');
+  });
 });

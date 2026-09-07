@@ -36,11 +36,18 @@ beforeAll(async () => {
   await db.exec('begin;\n' + schema.slice(schema.indexOf(marker)));
 }, 30000);
 afterAll(async () => { await db?.close(); });
-const invite = async (email, refer = null) => (await scalar('select public.create_registration_invitation($1,$2,$3) result', [email, 'MONTHLY', refer])).result;
+const createInvitation = async (email, refer = null) => (await scalar('select public.create_registration_invitation($1,$2,$3) result', [email, 'MONTHLY', refer])).result;
+const invite = async (email, refer = null) => {
+  const invitation = await createInvitation(email, refer);
+  await db.query('select public.confirm_registration_invitation_sent($1)', [invitation.token]);
+  return invitation;
+};
 const register = (email, token) => scalar('insert into auth.users(email,raw_user_meta_data) values($1,$2) returning id', [email, JSON.stringify({ registration_token: token })]);
 
 it('blocks public signup and forged/wrong-email invitations atomically', async () => {
   await expect(register('public@example.com', '')).rejects.toThrow('invitación');
+  const unsent = await createInvitation('unsent@example.com');
+  await expect(register('unsent@example.com', unsent.token)).rejects.toThrow('invitación');
   const i = await invite('invited@example.com');
   await expect(register('wrong@example.com', i.token)).rejects.toThrow('invitación');
   expect((await scalar('select count(*)::int n from public.profiles')).n).toBe(2);
@@ -69,6 +76,15 @@ it('credits 100% once, activates the selected membership and rejects replay', as
 });
 it('splits 90/10 using the invitation price and isolates wallet history', async () => {
   const i = await invite('referred@example.com',referrer);
+  expect(Number((await scalar('select available_balance from public.wallets where user_id=$1',[referrer])).available_balance)).toBe(8);
+  expect((await scalar("select count(*)::int n from public.membership_ledger where kind='REFERRAL_COMMISSION' and member_id is null")).n).toBe(1);
+  await db.query('select public.confirm_registration_invitation_sent($1)',[i.token]);
+  expect(Number((await scalar('select available_balance from public.wallets where user_id=$1',[referrer])).available_balance)).toBe(8);
+  await db.exec(`set test.user_id='${referrer}'`);
+  const pendingActivity = (await scalar('select public.get_wallet_activity() result')).result;
+  expect(pendingActivity.entries[0].registrationPending).toBe(true);
+  expect(pendingActivity.entries[0].invitationEmail).toBe('referred@example.com');
+  await db.exec(`set test.user_id='${owner}'`);
   await db.exec("update public.membership_plans set price_usd=999 where code='MONTHLY'");
   await register('referred@example.com',i.token);
   expect(Number((await scalar('select available_balance from public.wallets where user_id=$1',[owner])).available_balance)).toBe(152);

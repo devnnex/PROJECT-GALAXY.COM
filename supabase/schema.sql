@@ -708,6 +708,7 @@ language sql stable security definer set search_path=public,auth as $$
     p_topic='user:'||(select auth.uid())::text
     or (p_topic='community:online' and p_extension='presence' and public.has_active_membership((select auth.uid())))
     or p_topic like 'db:notifications:'||(select auth.uid())::text||':%'
+    or p_topic like 'db:wallet:'||(select auth.uid())::text||':%'
     or (public.has_active_membership((select auth.uid())) and exists(
       select 1 from public.meeting_participants p
       where p.user_id=(select auth.uid()) and (
@@ -1416,6 +1417,9 @@ exception when duplicate_object then null; end $$;
 do $$ begin
   alter publication supabase_realtime add table public.notifications;
 exception when duplicate_object then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table public.wallets;
+exception when duplicate_object then null; end $$;
 
 revoke all on all tables in schema public from anon;
 revoke usage on schema public from anon;
@@ -1454,6 +1458,7 @@ create table if not exists public.registration_invitations (
  consumed_at timestamptz, revoked_at timestamptz,
  member_id uuid references public.profiles(id) on delete set null
 );
+alter table public.registration_invitations add column if not exists sent_at timestamptz;
 create table if not exists public.membership_ledger (
  id uuid primary key default gen_random_uuid(), invitation_id uuid not null references public.registration_invitations(id),
  beneficiary_id uuid references public.profiles(id) on delete set null,
@@ -1510,33 +1515,83 @@ begin
  where created_by=v_admin and token_hash=encode(digest(lower(coalesce(p_token,'')),'sha256'),'hex') and consumed_at is null;
 end; $$;
 
+-- The mail transport confirms delivery before the referral reward is posted.
+-- Repeating this RPC for the same token is safe and never pays twice.
+create or replace function public.confirm_registration_invitation_sent(p_token text) returns jsonb
+language plpgsql security definer set search_path=public,extensions,auth as $$
+declare v_admin uuid:=public.require_admin(); v_inv public.registration_invitations; v_commission numeric(12,2):=0; v_expiry timestamptz;
+begin
+ if coalesce(p_token,'') !~ '^[0-9a-f]{64}$' then raise exception 'Invitación inválida.' using errcode='P0001'; end if;
+ select * into v_inv from public.registration_invitations
+ where created_by=v_admin and token_hash=encode(digest(lower(p_token),'sha256'),'hex')
+   and consumed_at is null and revoked_at is null and expires_at>clock_timestamp() for update;
+ if not found then raise exception 'La invitación ya no está vigente.' using errcode='P0001'; end if;
+ if v_inv.sent_at is not null then
+   select coalesce(amount,0) into v_commission from public.membership_ledger
+   where invitation_id=v_inv.id and kind='REFERRAL_COMMISSION';
+   return jsonb_build_object('invitationId',v_inv.id,'sentAt',v_inv.sent_at,'commissionAmount',coalesce(v_commission,0),'referrerId',v_inv.referrer_id);
+ end if;
+ update public.registration_invitations set sent_at=now() where id=v_inv.id returning * into v_inv;
+ if v_inv.referrer_id is not null then
+   v_commission:=round(v_inv.price_usd*0.10,2);
+   v_expiry:=v_inv.sent_at+make_interval(months=>v_inv.duration_months);
+   perform 1 from public.wallets where user_id=v_inv.referrer_id for update;
+   insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
+   values(v_inv.id,v_inv.referrer_id,null,v_inv.plan_code,'REFERRAL_COMMISSION',v_inv.price_usd,v_commission,v_expiry);
+   update public.wallets set available_balance=available_balance+v_commission,total_earned=total_earned+v_commission
+   where user_id=v_inv.referrer_id;
+ end if;
+ return jsonb_build_object('invitationId',v_inv.id,'sentAt',v_inv.sent_at,'commissionAmount',v_commission,'referrerId',v_inv.referrer_id);
+end; $$;
+
+-- Preserve already-delivered links when upgrading an existing installation and
+-- immediately post any referral reward that was still waiting for registration.
+do $$
+declare v_reward record;
+begin
+ for v_reward in
+   select invitation.* from public.registration_invitations invitation
+   where invitation.sent_at is null and invitation.consumed_at is null and invitation.revoked_at is null
+     and invitation.expires_at>clock_timestamp() and invitation.referrer_id is not null
+     and not exists(select 1 from public.membership_ledger ledger where ledger.invitation_id=invitation.id and ledger.kind='REFERRAL_COMMISSION')
+   for update
+ loop
+   update public.registration_invitations set sent_at=created_at where id=v_reward.id;
+   insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
+   values(v_reward.id,v_reward.referrer_id,null,v_reward.plan_code,'REFERRAL_COMMISSION',v_reward.price_usd,round(v_reward.price_usd*0.10,2),v_reward.created_at+make_interval(months=>v_reward.duration_months));
+   update public.wallets set available_balance=available_balance+round(v_reward.price_usd*0.10,2),total_earned=total_earned+round(v_reward.price_usd*0.10,2)
+   where user_id=v_reward.referrer_id;
+ end loop;
+ update public.registration_invitations set sent_at=coalesce(consumed_at,created_at)
+ where sent_at is null and (consumed_at is not null or (revoked_at is null and expires_at>clock_timestamp()));
+end $$;
+
 -- Runs after the existing profile/wallet trigger, in the same Auth transaction.
 -- app_metadata is writable only by the server, never by public signup callers.
 create or replace function public.accept_registration_invitation() returns trigger
 language plpgsql security definer set search_path=public,extensions,auth as $$
-declare v_inv public.registration_invitations; v_owner uuid; v_commission numeric(12,2); v_expiry timestamptz;
+declare v_inv public.registration_invitations; v_owner uuid; v_commission numeric(12,2):=0; v_expiry timestamptz;
 begin
  select * into v_inv from public.registration_invitations
  where token_hash=encode(digest(coalesce(new.raw_user_meta_data->>'registration_token',''),'sha256'),'hex')
- and email=lower(new.email) and consumed_at is null and revoked_at is null and expires_at>clock_timestamp() for update;
+ and email=lower(new.email) and sent_at is not null and consumed_at is null and revoked_at is null and expires_at>clock_timestamp() for update;
  if not found or v_inv.expires_at<=clock_timestamp() then raise exception 'Se requiere una invitación vigente.'; end if;
  select id into v_owner from auth.users where lower(email)='elkin56ty@gmail.com';
  if v_owner is null then raise exception 'Cuenta propietaria no disponible.'; end if;
  v_expiry:=now()+make_interval(months=>v_inv.duration_months);
- v_commission:=case when v_inv.referrer_id is null then 0 else round(v_inv.price_usd*0.10,2) end;
+ select coalesce(amount,0) into v_commission from public.membership_ledger
+ where invitation_id=v_inv.id and kind='REFERRAL_COMMISSION';
+ v_commission:=coalesce(v_commission,0);
  insert into public.memberships(user_id,plan_code,status,starts_at,expires_at) values(new.id,v_inv.plan_code,'ACTIVE',now(),v_expiry);
  insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
  values(v_inv.id,v_owner,new.id,v_inv.plan_code,'MEMBERSHIP_INCOME',v_inv.price_usd,v_inv.price_usd-v_commission,v_expiry);
- if v_inv.referrer_id is not null then
- insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
- values(v_inv.id,v_inv.referrer_id,new.id,v_inv.plan_code,'REFERRAL_COMMISSION',v_inv.price_usd,v_commission,v_expiry);
- end if;
+ update public.membership_ledger set member_id=new.id,membership_expires_at=v_expiry
+ where invitation_id=v_inv.id and kind='REFERRAL_COMMISSION';
  insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
  values(v_inv.id,new.id,new.id,v_inv.plan_code,'MEMBERSHIP_PURCHASE',v_inv.price_usd,-v_inv.price_usd,v_expiry);
  -- Lock balances in a deterministic order for concurrent registrations.
- perform 1 from public.wallets where user_id in(v_owner,v_inv.referrer_id) order by user_id for update;
+ perform 1 from public.wallets where user_id=v_owner for update;
  update public.wallets set available_balance=available_balance+v_inv.price_usd-v_commission,total_earned=total_earned+v_inv.price_usd-v_commission where user_id=v_owner;
- update public.wallets set available_balance=available_balance+v_commission,total_earned=total_earned+v_commission where user_id=v_inv.referrer_id;
  update public.wallets set total_spent=total_spent+v_inv.price_usd where user_id=new.id;
  update public.registration_invitations set consumed_at=now(),member_id=new.id where id=v_inv.id;
  return new;
@@ -1550,9 +1605,12 @@ declare v_user uuid:=public.require_user();
 begin
  return jsonb_build_object('wallet',(public.get_current_user())->'wallet','entries',coalesce((
  select jsonb_agg(jsonb_build_object('id',l.id,'kind',l.kind,'amount',l.amount,'grossAmount',l.gross_amount,
- 'planCode',l.plan_code,'memberName',coalesce(p.name,'Usuario eliminado'),'createdAt',l.created_at,
- 'expiresAt',coalesce(m.expires_at,l.membership_expires_at),'memberDeleted',l.member_id is null) order by l.created_at desc)
- from public.membership_ledger l left join public.profiles p on p.id=l.member_id left join public.memberships m on m.user_id=l.member_id
+ 'planCode',l.plan_code,'memberName',coalesce(p.name,i.email,'Usuario eliminado'),'createdAt',l.created_at,
+ 'expiresAt',coalesce(m.expires_at,l.membership_expires_at),'invitationEmail',i.email,
+ 'registrationPending',l.kind='REFERRAL_COMMISSION' and l.member_id is null and i.consumed_at is null,
+ 'memberDeleted',l.member_id is null and i.consumed_at is not null) order by l.created_at desc)
+ from public.membership_ledger l join public.registration_invitations i on i.id=l.invitation_id
+ left join public.profiles p on p.id=l.member_id left join public.memberships m on m.user_id=l.member_id
  where l.beneficiary_id=v_user),'[]'::jsonb));
 end; $$;
 
@@ -1572,8 +1630,8 @@ begin
  update public.registration_invitations set email='deleted-'||id::text,token_hash='deleted-'||id::text where member_id=p_user_id;
  delete from auth.users where id=p_user_id;
 end; $$;
-revoke all on function public.create_registration_invitation(text,text,uuid),public.get_registration_invitation(text),public.revoke_registration_invitation(text),public.accept_registration_invitation(),public.get_wallet_activity(),public.delete_registered_user(uuid) from public,anon,authenticated;
+revoke all on function public.create_registration_invitation(text,text,uuid),public.get_registration_invitation(text),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.accept_registration_invitation(),public.get_wallet_activity(),public.delete_registered_user(uuid) from public,anon,authenticated;
 grant usage on schema public to anon;
 grant execute on function public.get_registration_invitation(text) to anon,authenticated;
-grant execute on function public.create_registration_invitation(text,text,uuid),public.revoke_registration_invitation(text),public.get_wallet_activity(),public.delete_registered_user(uuid) to authenticated;
+grant execute on function public.create_registration_invitation(text,text,uuid),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.get_wallet_activity(),public.delete_registered_user(uuid) to authenticated;
 commit;

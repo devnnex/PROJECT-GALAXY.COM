@@ -223,3 +223,29 @@
   .earning-wallet-title strong{font-size:clamp(13px,4.2vw,17px)}
   .earning-wallet-title span{font-size:6px;letter-spacing:.04em}
 }
+
+/* One-time celebration for each newly credited referral commission. */
+.wallet-celebration{position:fixed;inset:0;z-index:70;overflow:hidden;pointer-events:none}
+.wallet-confetti{position:absolute;inset:0;overflow:hidden}
+.wallet-confetti i{position:absolute;top:-24px;left:var(--confetti-x);width:9px;height:17px;border-radius:3px;background:var(--confetti-color);box-shadow:0 0 12px color-mix(in srgb,var(--confetti-color) 72%,transparent);animation:wallet-confetti-fall var(--confetti-duration) cubic-bezier(.16,.74,.35,1) var(--confetti-delay) both}
+.wallet-confetti i:nth-child(3n){width:12px;height:12px;border-radius:50%}
+.wallet-confetti i:nth-child(4n){width:18px;height:6px;border-radius:999px}
+.wallet-celebration-message{position:absolute;top:82px;left:50%;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:15px;width:min(520px,calc(100vw - 28px));padding:17px 18px;border:1px solid rgba(136,255,226,.42);border-radius:22px;background:radial-gradient(circle at 15% 20%,rgba(184,121,255,.3),transparent 36%),rgba(10,15,20,.91);color:#f8fbff;box-shadow:0 0 28px rgba(82,247,220,.28),0 18px 60px rgba(0,0,0,.48),inset 0 1px 0 rgba(255,255,255,.16);backdrop-filter:blur(24px) saturate(150%);transform:translateX(-50%);animation:wallet-congratulations-in .5s cubic-bezier(.2,.85,.25,1.2) both;pointer-events:auto}
+.wallet-celebration-icon{display:grid;place-items:center;width:49px;height:49px;border-radius:16px;background:linear-gradient(145deg,#c586ff,#58efd9);color:#10151c;box-shadow:0 0 24px rgba(116,231,223,.42)}
+.wallet-celebration-icon svg{width:24px;height:24px}
+.wallet-celebration-message>div{display:grid;gap:3px;min-width:0}
+.wallet-celebration-message>div>span{display:flex;align-items:center;gap:6px;color:#8effe9;font:700 9px 'Manrope';letter-spacing:.16em}
+.wallet-celebration-message>div>span svg{width:12px;height:12px}
+.wallet-celebration-message strong{font:700 22px/1.1 'Manrope';letter-spacing:-.035em}
+.wallet-celebration-message p{margin:2px 0 0;color:#cfd8dc;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.wallet-celebration-message>button{display:grid;place-items:center;width:34px;height:34px;border:1px solid rgba(255,255,255,.14);border-radius:50%;background:rgba(255,255,255,.06);color:#eef5f4;cursor:pointer}
+.wallet-celebration-message>button:hover{background:rgba(255,255,255,.13)}
+.wallet-celebration-message>button:focus-visible{outline:2px solid #8effe9;outline-offset:3px}
+.wallet-page.is-celebrating .wallet-hero.earning-wallet{animation:wallet-neon-celebration 1.25s ease-in-out 4;border-color:rgba(126,255,229,.7);box-shadow:0 0 28px rgba(82,247,220,.42),0 0 72px rgba(184,121,255,.3),0 32px 80px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.2)}
+.wallet-page.is-celebrating .earning-wallet-glow{opacity:.54;animation:wallet-neon-glow 1s ease-in-out infinite alternate}
+@keyframes wallet-confetti-fall{0%{opacity:0;transform:translate3d(-24px,-4vh,0) rotate(0)}8%{opacity:1}100%{opacity:0;transform:translate3d(42px,105vh,0) rotate(var(--confetti-spin))}}
+@keyframes wallet-congratulations-in{from{opacity:0;transform:translate(-50%,-18px) scale(.94)}to{opacity:1;transform:translate(-50%,0) scale(1)}}
+@keyframes wallet-neon-celebration{0%,100%{filter:saturate(1);transform:translateY(0)}50%{filter:saturate(1.28) brightness(1.08);transform:translateY(-3px)}}
+@keyframes wallet-neon-glow{from{filter:blur(42px);transform:scale(.98)}to{filter:blur(54px);transform:scale(1.06)}}
+@media(max-width:600px){.wallet-celebration-message{top:70px;gap:11px;padding:14px;border-radius:18px}.wallet-celebration-icon{width:42px;height:42px;border-radius:13px}.wallet-celebration-message strong{font-size:19px}.wallet-celebration-message p{font-size:11px}}
+@media(prefers-reduced-motion:reduce){.wallet-confetti{display:none}.wallet-celebration-message,.wallet-page.is-celebrating .wallet-hero.earning-wallet,.wallet-page.is-celebrating .earning-wallet-glow{animation:none}}

@@ -388,6 +388,9 @@ describe('Supabase contract', () => {
     expect(api).toContain("rpc('create_registration_invitation'");
     expect(api).toContain('referrerId: payload.referrerId || null');
     expect(api).toContain('const responseBody = await response.text()');
+    expect(api).toContain("rpc('confirm_registration_invitation_sent'");
     expect(api).toContain("rpc('revoke_registration_invitation'");
+    expect(schema).toContain('function public.confirm_registration_invitation_sent');
+    expect(schema).toContain('alter publication supabase_realtime add table public.wallets');
   });
 });

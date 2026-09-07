@@ -123,7 +123,8 @@ export const api = {
         throw new Error('Apps Script devolvió una página HTML. Publica la versión nueva como Web App, ejecutada por el propietario y con acceso para cualquiera.');
       }
       if (!response.ok || result?.ok !== true) throw new Error(result?.error || 'Apps Script no confirmó el envío.');
-      return { expiresAt: invitation.expiresAt };
+      const accounting = await rpc('confirm_registration_invitation_sent', { token: invitation.token });
+      return { expiresAt: invitation.expiresAt, commissionAmount: accounting.commissionAmount, referrerId: accounting.referrerId };
     } catch (error) {
       await rpc('revoke_registration_invitation', { token: invitation.token }).catch(() => {});
       throw new Error(error?.message || 'No fue posible enviar el correo de invitación.');
@@ -245,6 +246,16 @@ export const api = {
       if (!active) return;
       channel = supabase.channel(`db:notifications:${userId}:${crypto.randomUUID()}`, { config: { private: true } })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, callback)
+        .subscribe();
+    }).catch(() => {});
+    return () => { active = false; if (channel) supabase.removeChannel(channel); };
+  },
+  onWalletChange(userId, callback) {
+    let active = true; let channel = null;
+    authorizeRealtime().then(() => {
+      if (!active) return;
+      channel = supabase.channel(`db:wallet:${userId}:${crypto.randomUUID()}`, { config: { private: true } })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'wallets', filter: `user_id=eq.${userId}` }, callback)
         .subscribe();
     }).catch(() => {});
     return () => { active = false; if (channel) supabase.removeChannel(channel); };
