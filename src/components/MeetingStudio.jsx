@@ -13,8 +13,9 @@ const MONEY_CHARACTER_ASSET = `${import.meta.env.BASE_URL}assets/money-character
 const MONEY_ALIEN_ASSET = `${import.meta.env.BASE_URL}assets/money-alien-reaction.png`;
 const GALACTIC_TAKE_PROFIT_REACTION = 'GALACTIC_TAKE_PROFIT';
 const GALACTIC_ARMOR_STAGE_ONE = `${import.meta.env.BASE_URL}assets/ironman-stage-1-transparent.png`;
-const GALACTIC_ARMOR_STAGE_TWO = `${import.meta.env.BASE_URL}assets/ironman-stage-2-transparent.png`;
-const GALACTIC_ARMOR_STAGE_THREE = `${import.meta.env.BASE_URL}assets/ironman-stage-3-transparent.png`;
+const GALACTIC_ARMOR_BLUEPRINT = `${import.meta.env.BASE_URL}assets/ironman-blueprint-transition.png`;
+const GALACTIC_ARMOR_ACTION = `${import.meta.env.BASE_URL}assets/ironman-action-transition.png`;
+const GALACTIC_ARMOR_FINAL = `${import.meta.env.BASE_URL}assets/ironman-logo-transparent.png`;
 const PHOENIX_TRANSFORM_REACTION = 'PHOENIX_TRANSFORM';
 const PHOENIX_BASE_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-base-reaction.png`;
 const PHOENIX_SUPER_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-super-reaction.png`;
@@ -45,10 +46,13 @@ function PhoenixTransformReaction({ senderName }) {
 function GalacticTakeProfitReaction({ senderName }) {
   return <span className="galactic-take-profit-reaction" role="img" aria-label="Secuencia de armadura cósmica culminando en un Take Profit Galáctico">
     <img className="galactic-armor-stage galactic-armor-stage-one" src={GALACTIC_ARMOR_STAGE_ONE} alt="" />
-    <i className="galactic-armor-transition galactic-armor-transition-one" aria-hidden="true" />
-    <img className="galactic-armor-stage galactic-armor-stage-two" src={GALACTIC_ARMOR_STAGE_TWO} alt="" />
-    <i className="galactic-armor-transition galactic-armor-transition-two" aria-hidden="true" />
-    <img className="galactic-armor-stage galactic-armor-stage-three" src={GALACTIC_ARMOR_STAGE_THREE} alt="" />
+    <span className="galactic-thruster-rig" aria-hidden="true"><i className="galactic-thruster galactic-thruster-left-hand" /><i className="galactic-thruster galactic-thruster-right-hand" /><i className="galactic-thruster galactic-thruster-left-foot" /><i className="galactic-thruster galactic-thruster-right-foot" /></span>
+    <i className="galactic-armor-transition galactic-armor-transition-blueprint" aria-hidden="true" />
+    <img className="galactic-armor-stage galactic-armor-stage-blueprint" src={GALACTIC_ARMOR_BLUEPRINT} alt="" />
+    <i className="galactic-armor-transition galactic-armor-transition-action" aria-hidden="true" />
+    <img className="galactic-armor-stage galactic-armor-stage-action" src={GALACTIC_ARMOR_ACTION} alt="" />
+    <i className="galactic-armor-transition galactic-armor-transition-launch" aria-hidden="true" />
+    <img className="galactic-armor-stage galactic-armor-stage-final" src={GALACTIC_ARMOR_FINAL} alt="" />
     <span className="galactic-profit-burst" aria-hidden="true">
       <strong>TAKE PROFIT<br />GALÁCTICO</strong><em>ORO + USDT</em>
       <span className="galactic-profit-rain">
@@ -475,7 +479,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   }, [sideTab, mobilePanelOpen]);
   useEffect(() => {
     const finalForm = new Image(); finalForm.src = PHOENIX_SUPER_ASSET;
-    [GALACTIC_ARMOR_STAGE_ONE, GALACTIC_ARMOR_STAGE_TWO, GALACTIC_ARMOR_STAGE_THREE].forEach((source) => { const frame = new Image(); frame.src = source; });
+    [GALACTIC_ARMOR_STAGE_ONE, GALACTIC_ARMOR_BLUEPRINT, GALACTIC_ARMOR_ACTION, GALACTIC_ARMOR_FINAL].forEach((source) => { const frame = new Image(); frame.src = source; });
     const lightning = document.createElement('video'); lightning.preload = 'auto'; lightning.src = PHOENIX_LIGHTNING_ASSET; lightning.load();
     return () => { lightning.pause(); lightning.removeAttribute('src'); lightning.load(); };
   }, []);
@@ -507,7 +511,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (navigator.vibrate && document.visibilityState === 'visible') navigator.vibrate(32);
     setTimeout(() => setFloatingMessages((items) => items.filter((item) => item.id !== id)), 5200);
   };
-  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 9_700 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
+  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 13_200 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }

@@ -156,15 +156,19 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('@keyframes moneyAlienWarp');
   });
 
-  it('ships the synchronized triple-stage galactic take-profit reaction to every participant', () => {
+  it('ships the synchronized four-stage galactic take-profit transformation to every participant', () => {
     expect(meetingStudio).toContain("GALACTIC_TAKE_PROFIT_REACTION = 'GALACTIC_TAKE_PROFIT'");
     expect(meetingStudio).toContain('assets/ironman-stage-1-transparent.png');
-    expect(meetingStudio).toContain('assets/ironman-stage-2-transparent.png');
-    expect(meetingStudio).toContain('assets/ironman-stage-3-transparent.png');
+    expect(meetingStudio).toContain('assets/ironman-blueprint-transition.png');
+    expect(meetingStudio).toContain('assets/ironman-action-transition.png');
+    expect(meetingStudio).toContain('assets/ironman-logo-transparent.png');
     expect(meetingStudio).toContain('TAKE PROFIT');
     expect(meetingClient).toContain("'GALACTIC_TAKE_PROFIT'");
     expect(meetingStyles).toContain('@keyframes galacticArmorStageOne');
-    expect(meetingStyles).toContain('@keyframes galacticArmorStageTwo');
+    expect(meetingStyles).toContain('@keyframes galacticArmorBlueprint');
+    expect(meetingStyles).toContain('@keyframes galacticArmorAction');
+    expect(meetingStyles).toContain('@keyframes galacticArmorLaunch');
+    expect(meetingStyles).toContain('galactic-thruster-rig');
     expect(meetingStyles).toContain('@keyframes galacticArmorFinale');
     expect(meetingStyles).toContain('@keyframes galacticProfitMoney');
     expect(meetingStyles).toContain('galactic-profit-rain');
