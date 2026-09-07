@@ -158,15 +158,16 @@ describe('Supabase contract', () => {
 
   it('ships the synchronized triple-stage galactic take-profit reaction to every participant', () => {
     expect(meetingStudio).toContain("GALACTIC_TAKE_PROFIT_REACTION = 'GALACTIC_TAKE_PROFIT'");
-    expect(meetingStudio).toContain('assets/galactic-armor-stage-1.jpg');
-    expect(meetingStudio).toContain('assets/galactic-armor-stage-2.jpg');
-    expect(meetingStudio).toContain('assets/galactic-armor-stage-3.png');
+    expect(meetingStudio).toContain('assets/ironman-stage-1-transparent.png');
+    expect(meetingStudio).toContain('assets/ironman-stage-2-transparent.png');
+    expect(meetingStudio).toContain('assets/ironman-stage-3-transparent.png');
     expect(meetingStudio).toContain('TAKE PROFIT');
     expect(meetingClient).toContain("'GALACTIC_TAKE_PROFIT'");
     expect(meetingStyles).toContain('@keyframes galacticArmorStageOne');
     expect(meetingStyles).toContain('@keyframes galacticArmorStageTwo');
     expect(meetingStyles).toContain('@keyframes galacticArmorFinale');
     expect(meetingStyles).toContain('@keyframes galacticProfitMoney');
+    expect(meetingStyles).toContain('galactic-profit-rain');
   });
 
   it('ships the synchronized phoenix transformation with transparent lightning sound', () => {

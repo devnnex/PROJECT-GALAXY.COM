@@ -12,9 +12,9 @@ const MONEY_ROCKET_ASSET = `${import.meta.env.BASE_URL}assets/money-rocket-react
 const MONEY_CHARACTER_ASSET = `${import.meta.env.BASE_URL}assets/money-character-reaction.png`;
 const MONEY_ALIEN_ASSET = `${import.meta.env.BASE_URL}assets/money-alien-reaction.png`;
 const GALACTIC_TAKE_PROFIT_REACTION = 'GALACTIC_TAKE_PROFIT';
-const GALACTIC_ARMOR_STAGE_ONE = `${import.meta.env.BASE_URL}assets/galactic-armor-stage-1.jpg`;
-const GALACTIC_ARMOR_STAGE_TWO = `${import.meta.env.BASE_URL}assets/galactic-armor-stage-2.jpg`;
-const GALACTIC_ARMOR_STAGE_THREE = `${import.meta.env.BASE_URL}assets/galactic-armor-stage-3.png`;
+const GALACTIC_ARMOR_STAGE_ONE = `${import.meta.env.BASE_URL}assets/ironman-stage-1-transparent.png`;
+const GALACTIC_ARMOR_STAGE_TWO = `${import.meta.env.BASE_URL}assets/ironman-stage-2-transparent.png`;
+const GALACTIC_ARMOR_STAGE_THREE = `${import.meta.env.BASE_URL}assets/ironman-stage-3-transparent.png`;
 const PHOENIX_TRANSFORM_REACTION = 'PHOENIX_TRANSFORM';
 const PHOENIX_BASE_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-base-reaction.png`;
 const PHOENIX_SUPER_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-super-reaction.png`;
@@ -49,7 +49,13 @@ function GalacticTakeProfitReaction({ senderName }) {
     <img className="galactic-armor-stage galactic-armor-stage-two" src={GALACTIC_ARMOR_STAGE_TWO} alt="" />
     <i className="galactic-armor-transition galactic-armor-transition-two" aria-hidden="true" />
     <img className="galactic-armor-stage galactic-armor-stage-three" src={GALACTIC_ARMOR_STAGE_THREE} alt="" />
-    <span className="galactic-profit-burst" aria-hidden="true"><strong>TAKE PROFIT<br />GALÁCTICO</strong><b>₮</b><b>$</b><b>✦</b><b>₮</b><b>$</b><b>✦</b></span>
+    <span className="galactic-profit-burst" aria-hidden="true">
+      <strong>TAKE PROFIT<br />GALÁCTICO</strong><em>ORO + USDT</em>
+      <span className="galactic-profit-rain">
+        <b>$</b><b>USDT</b><b>$</b><b>USDT</b><b>$</b><b>USDT</b>
+        <i /><i /><i /><i /><i />
+      </span>
+    </span>
     <small className="reaction-sender">{senderName}</small>
   </span>;
 }
@@ -501,7 +507,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (navigator.vibrate && document.visibilityState === 'visible') navigator.vibrate(32);
     setTimeout(() => setFloatingMessages((items) => items.filter((item) => item.id !== id)), 5200);
   };
-  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 10_900 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
+  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 9_700 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
