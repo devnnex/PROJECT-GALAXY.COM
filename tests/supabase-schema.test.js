@@ -130,6 +130,10 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('autoGainControl: { ideal: true }');
     expect(meetingStudio).toContain('noiseSuppression: { ideal: true }');
     expect(meetingStudio).toContain('channelCount: { ideal: 1 }');
+    expect(meetingStudio).toContain('boost.gain.value = 3');
+    expect(meetingStudio).toContain("clarity.type = 'peaking'");
+    expect(meetingStudio).toContain('createDynamicsCompressor()');
+    expect(meetingStudio).toContain('createLongRangeMicrophoneStream(captured)');
     expect(meetingStudio).toContain('audio.muted = false');
     expect(meetingStudio).toContain("{ id: 'UFO'");
     expect(meetingStudio).toContain("{ id: 'ALIEN_BIRTHDAY'");

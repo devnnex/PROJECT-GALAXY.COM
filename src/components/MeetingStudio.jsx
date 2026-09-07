@@ -70,6 +70,9 @@ function voiceCaptureConstraints() {
     noiseSuppression: { ideal: true },
     autoGainControl: { ideal: true },
     channelCount: { ideal: 1 },
+    sampleRate: { ideal: 48000 },
+    sampleSize: { ideal: 16 },
+    latency: { ideal: 0.02 },
   };
 }
 
@@ -80,6 +83,44 @@ function meetingAudioContext() {
   if (!Context) return null;
   if (!sharedMeetingAudioContext || sharedMeetingAudioContext.state === 'closed') sharedMeetingAudioContext = new Context();
   return sharedMeetingAudioContext;
+}
+
+const longRangeMicrophoneCleanup = new WeakMap();
+
+function stopMeetingTrack(track) {
+  const cleanup = longRangeMicrophoneCleanup.get(track);
+  if (cleanup) cleanup(); else track?.stop();
+}
+
+function stopMeetingStream(stream) {
+  stream?.getTracks().forEach(stopMeetingTrack);
+}
+
+async function createLongRangeMicrophoneStream(capturedStream) {
+  const rawTrack = capturedStream?.getAudioTracks()[0]; const context = meetingAudioContext();
+  if (!rawTrack || !context) return capturedStream;
+  try { rawTrack.contentHint = 'speech'; } catch {}
+  try {
+    if (context.state === 'suspended') await context.resume();
+    if (context.state !== 'running') return capturedStream;
+    const source = context.createMediaStreamSource(new MediaStream([rawTrack]));
+    const highPass = context.createBiquadFilter(); highPass.type = 'highpass'; highPass.frequency.value = 75; highPass.Q.value = .7;
+    const clarity = context.createBiquadFilter(); clarity.type = 'peaking'; clarity.frequency.value = 2600; clarity.Q.value = .85; clarity.gain.value = 3.5;
+    const boost = context.createGain(); boost.gain.value = 3;
+    const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -24; compressor.knee.value = 20; compressor.ratio.value = 5; compressor.attack.value = .003; compressor.release.value = .24;
+    const destination = context.createMediaStreamDestination();
+    source.connect(highPass).connect(clarity).connect(boost).connect(compressor).connect(destination);
+    const processedTrack = destination.stream.getAudioTracks()[0];
+    if (!processedTrack) { source.disconnect(); highPass.disconnect(); clarity.disconnect(); boost.disconnect(); compressor.disconnect(); return capturedStream; }
+    try { processedTrack.contentHint = 'speech'; } catch {}
+    let closed = false;
+    const close = () => {
+      if (closed) return; closed = true; longRangeMicrophoneCleanup.delete(processedTrack); rawTrack.removeEventListener('ended', close);
+      source.disconnect(); highPass.disconnect(); clarity.disconnect(); boost.disconnect(); compressor.disconnect(); destination.disconnect?.(); rawTrack.stop(); processedTrack.stop();
+    };
+    rawTrack.addEventListener('ended', close, { once: true }); longRangeMicrophoneCleanup.set(processedTrack, close);
+    return new MediaStream([processedTrack, ...capturedStream.getVideoTracks()]);
+  } catch { return capturedStream; }
 }
 
 function primeMeetingAudio() {
@@ -519,8 +560,9 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     const preferences = readMediaPreferences(); let restoredMic = false; let restoredCamera = false;
     if ((preferences.mic || preferences.camera) && navigator.mediaDevices?.getUserMedia) {
       try {
-        const restored = await navigator.mediaDevices.getUserMedia({ audio: preferences.mic ? voiceCaptureConstraints() : false, video: Boolean(preferences.camera) });
-        mediaRef.current.getTracks().forEach((track) => track.stop()); mediaRef.current = restored; setMedia(restored);
+        const captured = await navigator.mediaDevices.getUserMedia({ audio: preferences.mic ? voiceCaptureConstraints() : false, video: Boolean(preferences.camera) });
+        const restored = preferences.mic ? await createLongRangeMicrophoneStream(captured) : captured;
+        stopMeetingStream(mediaRef.current); mediaRef.current = restored; setMedia(restored);
         restoredMic = restored.getAudioTracks().some((track) => track.readyState === 'live'); restoredCamera = restored.getVideoTracks().some((track) => track.readyState === 'live');
         setMic(restoredMic); setCamera(restoredCamera);
       } catch { toast('La reunión se reanudó. El navegador requiere que vuelvas a activar cámara o micrófono manualmente.', 'info'); }
@@ -607,11 +649,11 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     }
   };
 
-  const stopMedia = () => { mediaRef.current.getTracks().forEach((track) => track.stop()); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
+  const stopMedia = () => { stopMeetingStream(mediaRef.current); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
   const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
   useEffect(() => {
     const epoch = ++lifecycleEpoch.current;
-    return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); mediaRef.current.getTracks().forEach((track) => track.stop()); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
+    return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); stopMeetingStream(mediaRef.current); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
   }, []);
   useEffect(() => { onSessionChange?.({ active: joined || waiting, joined, waiting, title: meeting?.title || '', roomCode: meeting?.roomCode || '', mic, camera, sharing: Boolean(sharing), audioBlocked }); }, [joined, waiting, meeting?.title, meeting?.roomCode, mic, camera, sharing, audioBlocked, onSessionChange]);
   useEffect(() => {
@@ -717,7 +759,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     return new MediaStream([...(mixer.track ? [mixer.track] : []), ...screen.getVideoTracks()]);
   };
   const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharing ? await sharedLocalStream(sharing, next) : next); };
-  const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio' ? voiceCaptureConstraints() : false, video: kind === 'video' }); const track = captured.getTracks()[0]; const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); await publishMedia(new MediaStream([...retained, track])); return track; };
+  const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio' ? voiceCaptureConstraints() : false, video: kind === 'video' }); const prepared = kind === 'audio' ? await createLongRangeMicrophoneStream(captured) : captured; const track = prepared.getTracks()[0]; const replaced = mediaRef.current.getTracks().filter((item) => item.kind === kind); const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); replaced.forEach(stopMeetingTrack); await publishMedia(new MediaStream([...retained, track])); return track; };
   const toggleTrack = async (kind) => { try { const isAudio = kind === 'audio'; if (isAudio && meeting?.role !== 'HOST' && participantMicsLocked) { toast('El anfitrión bloqueó temporalmente los micrófonos.', 'info'); return; } const active = isAudio ? mic : camera; let track = mediaRef.current.getTracks().find((item) => item.kind === kind && item.readyState === 'live'); if (!track) track = await acquireTrack(kind); else track.enabled = !active; const enabled = track.enabled; if (isAudio) setMic(enabled); else setCamera(enabled); saveMediaPreferences(isAudio ? { mic: enabled } : { camera: enabled }); connection.current?.setPresence({ mic: isAudio ? enabled : mic, camera: isAudio ? camera : enabled, sharing: Boolean(sharing), handRaised, speaking: isAudio ? localSpeaking && enabled : localSpeaking }); } catch (error) { toast(error.message || 'No fue posible acceder al dispositivo.', 'error'); } };
   const stopShare = async () => {
     const owner = connection.current?.selfId;
