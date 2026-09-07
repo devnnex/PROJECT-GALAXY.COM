@@ -97,4 +97,15 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(registrationStyles).toContain('@keyframes wallet-confetti-fall');
     expect(registrationStyles).toContain('@keyframes wallet-neon-celebration');
   });
+
+  it('gives only the owner a confirmed global reset and uses the stacked commission-vault design', () => {
+    expect(schema).toContain('function public.reset_wallet_accounting()');
+    expect(schema).toContain("lower(email)='elkin56ty@gmail.com'");
+    expect(api).toContain("rpc('reset_wallet_accounting'");
+    expect(registrationManagement).toContain("confirmation !== 'RESETEAR'");
+    expect(registrationManagement).toContain("user.email?.toLowerCase() === 'elkin56ty@gmail.com'");
+    expect(registrationManagement).toContain('galaxy-wallet-ghost-back');
+    expect(registrationManagement).toContain('COMISIONES DISPONIBLES');
+    expect(registrationStyles).toContain('.wallet-hero.earning-wallet.galaxy-balance-card');
+  });
 });

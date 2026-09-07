@@ -20,7 +20,7 @@ const publicRpc = [
   'post_meeting_message', 'react_to_meeting_message',
   'get_meeting_message', 'request_meeting_mute', 'consume_meeting_command',
   'get_my_notifications', 'mark_notification_read', 'mark_all_notifications_read', 'respond_to_meeting_invitation',
-  'get_membership_center',
+  'get_membership_center', 'reset_wallet_accounting',
 ];
 
 describe('Supabase contract', () => {

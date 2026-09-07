@@ -13,7 +13,7 @@ beforeAll(async () => {
     create role anon; create role authenticated; create role service_role;
     create table auth.users(id uuid primary key default gen_random_uuid(), email text unique, raw_user_meta_data jsonb default '{}');
     create table public.profiles(id uuid primary key references auth.users on delete cascade, name text, status text default 'ACTIVE',role text default 'USER');
-    create table public.wallets(user_id uuid primary key references public.profiles on delete cascade, available_balance numeric default 0,total_earned numeric default 0,total_spent numeric default 0);
+    create table public.wallets(user_id uuid primary key references public.profiles on delete cascade,available_balance numeric default 0,pending_balance numeric default 0,total_earned numeric default 0,total_spent numeric default 0,updated_at timestamptz default now());
     create table public.membership_plans(code text primary key,name text,price_usd numeric,duration_months integer,active boolean default true);
     create table public.memberships(user_id uuid primary key references public.profiles on delete cascade,plan_code text,status text,starts_at timestamptz,expires_at timestamptz);
     create table public.calendar_events(created_by uuid references public.profiles);
@@ -105,4 +105,18 @@ it('protects admins and deletes the account while preserving anonymized benefici
   expect((await scalar('select count(*)::int n from public.memberships where user_id=$1',[user.id])).n).toBe(0);
   expect(Number((await scalar('select available_balance from public.wallets where user_id=$1',[referrer])).available_balance)).toBe(8);
   expect((await scalar("select count(*)::int n from public.membership_ledger where member_id is null")).n).toBe(2);
+});
+
+it('lets only the owner reset every wallet and ledger without deleting memberships', async () => {
+  const pending = await invite('fresh-start@example.com',referrer);
+  await db.exec(`set test.user_id='${referrer}'`);
+  await expect(db.query('select public.reset_wallet_accounting()')).rejects.toThrow('Forbidden');
+  await db.exec(`set test.user_id='${owner}'`);
+  const result = (await scalar('select public.reset_wallet_accounting() result')).result;
+  expect(result.walletsReset).toBeGreaterThan(0);
+  expect(result.entriesDeleted).toBeGreaterThan(0);
+  expect((await scalar('select count(*)::int n from public.wallets where available_balance<>0 or pending_balance<>0 or total_earned<>0 or total_spent<>0')).n).toBe(0);
+  expect((await scalar('select count(*)::int n from public.membership_ledger')).n).toBe(0);
+  expect((await scalar('select count(*)::int n from public.memberships')).n).toBeGreaterThan(0);
+  await expect(db.query('select public.get_registration_invitation($1)',[pending.token])).rejects.toThrow('vencida');
 });

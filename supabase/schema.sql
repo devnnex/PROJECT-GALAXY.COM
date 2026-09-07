@@ -1614,6 +1614,26 @@ begin
  where l.beneficiary_id=v_user),'[]'::jsonb));
 end; $$;
 
+-- Owner-only accounting reset. It preserves accounts and active memberships,
+-- but clears every wallet balance, its ledger history and pending test links.
+create or replace function public.reset_wallet_accounting() returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_admin uuid:=public.require_admin(); v_wallets integer:=0; v_entries integer:=0; v_invitations integer:=0;
+begin
+ if not exists(select 1 from auth.users where id=v_admin and lower(email)='elkin56ty@gmail.com') then
+   raise exception 'Solo la cuenta propietaria puede reiniciar la contabilidad.' using errcode='42501';
+ end if;
+ perform 1 from public.wallets order by user_id for update;
+ select count(*)::integer into v_entries from public.membership_ledger;
+ delete from public.membership_ledger;
+ update public.wallets set available_balance=0,pending_balance=0,total_earned=0,total_spent=0,updated_at=now();
+ get diagnostics v_wallets=row_count;
+ update public.registration_invitations set revoked_at=coalesce(revoked_at,now())
+ where consumed_at is null and revoked_at is null;
+ get diagnostics v_invitations=row_count;
+ return jsonb_build_object('walletsReset',v_wallets,'entriesDeleted',v_entries,'invitationsRevoked',v_invitations,'resetAt',now());
+end; $$;
+
 create or replace function public.delete_registered_user(p_user_id uuid) returns void
 language plpgsql security definer set search_path=public,auth as $$
 declare v_admin uuid:=public.require_admin();
@@ -1630,8 +1650,8 @@ begin
  update public.registration_invitations set email='deleted-'||id::text,token_hash='deleted-'||id::text where member_id=p_user_id;
  delete from auth.users where id=p_user_id;
 end; $$;
-revoke all on function public.create_registration_invitation(text,text,uuid),public.get_registration_invitation(text),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.accept_registration_invitation(),public.get_wallet_activity(),public.delete_registered_user(uuid) from public,anon,authenticated;
+revoke all on function public.create_registration_invitation(text,text,uuid),public.get_registration_invitation(text),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.accept_registration_invitation(),public.get_wallet_activity(),public.reset_wallet_accounting(),public.delete_registered_user(uuid) from public,anon,authenticated;
 grant usage on schema public to anon;
 grant execute on function public.get_registration_invitation(text) to anon,authenticated;
-grant execute on function public.create_registration_invitation(text,text,uuid),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.get_wallet_activity(),public.delete_registered_user(uuid) to authenticated;
+grant execute on function public.create_registration_invitation(text,text,uuid),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.get_wallet_activity(),public.reset_wallet_accounting(),public.delete_registered_user(uuid) to authenticated;
 commit;

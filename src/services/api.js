@@ -137,6 +137,7 @@ export const api = {
     return { deleted: true };
   },
   getWalletActivity: () => rpc('get_wallet_activity'),
+  resetWalletAccounting: () => rpc('reset_wallet_accounting'),
   async register({ name, username, password, token }) {
     const invitation = await rpc('get_registration_invitation', { token });
     const redirect = new URL('index.html', new URL(import.meta.env.BASE_URL, globalThis.location.origin));
