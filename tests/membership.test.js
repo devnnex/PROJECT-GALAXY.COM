@@ -106,6 +106,8 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(registrationManagement).toContain("user.email?.toLowerCase() === 'elkin56ty@gmail.com'");
     expect(registrationManagement).toContain('galaxy-wallet-ghost-back');
     expect(registrationManagement).toContain('COMISIONES DISPONIBLES');
+    expect(registrationManagement).toContain('assets/usdt-coin.png');
+    expect(registrationStyles).toContain('@keyframes usdtCoinSpin');
     expect(registrationStyles).toContain('.wallet-hero.earning-wallet.galaxy-balance-card');
   });
 });

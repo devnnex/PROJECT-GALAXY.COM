@@ -156,14 +156,17 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('@keyframes moneyAlienWarp');
   });
 
-  it('ships the animated money phoenix reaction to every participant', () => {
-    expect(meetingStudio).toContain("{ id: 'MONEY_PHOENIX'");
-    expect(meetingStudio).toContain('assets/money-phoenix-reaction.png');
-    expect(meetingClient).toContain("'MONEY_PHOENIX'");
-    expect(meetingStyles).toContain('@keyframes phoenixAscension');
-    expect(meetingStyles).toContain('@keyframes phoenixWingbeat');
-    expect(meetingStyles).toContain('@keyframes phoenixMoneyShower');
-    expect(meetingStyles).toContain('width: clamp(170px, 29vw, 285px); height: clamp(170px, 29vw, 285px)');
+  it('ships the synchronized triple-stage galactic take-profit reaction to every participant', () => {
+    expect(meetingStudio).toContain("GALACTIC_TAKE_PROFIT_REACTION = 'GALACTIC_TAKE_PROFIT'");
+    expect(meetingStudio).toContain('assets/galactic-armor-stage-1.jpg');
+    expect(meetingStudio).toContain('assets/galactic-armor-stage-2.jpg');
+    expect(meetingStudio).toContain('assets/galactic-armor-stage-3.png');
+    expect(meetingStudio).toContain('TAKE PROFIT');
+    expect(meetingClient).toContain("'GALACTIC_TAKE_PROFIT'");
+    expect(meetingStyles).toContain('@keyframes galacticArmorStageOne');
+    expect(meetingStyles).toContain('@keyframes galacticArmorStageTwo');
+    expect(meetingStyles).toContain('@keyframes galacticArmorFinale');
+    expect(meetingStyles).toContain('@keyframes galacticProfitMoney');
   });
 
   it('ships the synchronized phoenix transformation with transparent lightning sound', () => {
