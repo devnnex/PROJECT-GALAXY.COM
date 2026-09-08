@@ -261,4 +261,14 @@ export const api = {
     }).catch(() => {});
     return () => { active = false; if (channel) supabase.removeChannel(channel); };
   },
+  onAdminUserCreated(callback) {
+    let active = true; let channel = null;
+    authorizeRealtime().then(() => {
+      if (!active) return;
+      channel = supabase.channel(`db:admin-users:${crypto.randomUUID()}`, { config: { private: true } })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'profiles' }, callback)
+        .subscribe();
+    }).catch(() => {});
+    return () => { active = false; if (channel) supabase.removeChannel(channel); };
+  },
 };

@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { CONFIG } from './config';
 import { api } from './services/api';
+import { onOnlineUsersChange } from './services/supabase';
 import { feed, products } from './data';
 import { manualPayment, PAYMENT_CONTACT_EMAIL, PAYMENT_NETWORKS } from './payment-config';
 import NeuralCanvas from './components/NeuralCanvas';
@@ -173,9 +174,19 @@ function ProfilePage({ user, toast, onUserChange, navigate, membership }) {
 function AdminUsersPage({ toast }) {
   const [inviting, setInviting] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [users, setUsers] = useState([]); const [loading, setLoading] = useState(true); const [busyId, setBusyId] = useState('');
-  const load = async () => { setLoading(true); try { setUsers(await api.getAdminUsers()); } catch (error) { toast(error.message, 'error'); } finally { setLoading(false); } };
-  useEffect(() => { load(); }, []);
+  const load = async (showLoading = true) => { if (showLoading) setLoading(true); try { setUsers(await api.getAdminUsers()); } catch (error) { toast(error.message, 'error'); } finally { if (showLoading) setLoading(false); } };
+  useEffect(() => {
+    let refreshTimer;
+    const unsubscribeRegistrations = api.onAdminUserCreated(() => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => load(false), 80);
+    });
+    const unsubscribePresence = onOnlineUsersChange(setOnlineUserIds);
+    load();
+    return () => { clearTimeout(refreshTimer); unsubscribeRegistrations(); unsubscribePresence(); };
+  }, []);
   const toggle = async (account) => {
     const active = account.status !== 'ACTIVE'; setBusyId(account.id);
     try {
@@ -188,7 +199,10 @@ function AdminUsersPage({ toast }) {
     {deleting && <DeleteUserDialog account={deleting} onClose={() => setDeleting(null)} onDeleted={account => { setUsers(items => items.filter(item => item.id !== account.id)); setDeleting(null); toast('Usuario eliminado.'); }} />}
     {inviting && <InvitationForm users={users} toast={toast} onClose={() => setInviting(false)} />}
     <section className="surface admin-users-table"><div className="table-head"><span>USUARIO</span><span>ROL</span><span>SESIÓN</span><span>ACCESO</span><span>CONTROL</span></div>
-      {users.map((account) => <div className={`admin-user-row ${account.status !== 'ACTIVE' ? 'suspended' : ''}`} key={account.id}><span className="admin-user-identity"><ConstellationAvatar className="avatar avatar-sm" seed={account.id} name={account.name} src={account.avatar} membership={account.membership} /><span><strong>{account.name}</strong><small>{account.email}</small></span></span><span>{account.role === 'ADMIN' ? 'Administrador' : 'Miembro'}</span><span>{account.role === 'ADMIN' ? 'Sin límite' : account.sessionActive ? 'Activa' : 'Cerrada'}</span><span className={`account-state ${account.status.toLowerCase()}`}>{account.status === 'ACTIVE' ? 'Permitido' : 'Suspendido'}</span><label className="access-toggle"><input type="checkbox" checked={account.status === 'ACTIVE'} disabled={account.role === 'ADMIN' || busyId === account.id} onChange={() => toggle(account)} /><span /><em>{account.role === 'ADMIN' ? 'Protegido' : account.status === 'ACTIVE' ? 'Quitar acceso' : 'Dar acceso'}</em></label>{account.role !== 'ADMIN' && <button className="text-button delete-account" disabled={busyId === account.id} onClick={() => setDeleting(account)}><Trash2 size={14} /> Eliminar</button>}</div>)}
+      {users.map((account) => {
+        const online = onlineUserIds.has(account.id);
+        return <div className={`admin-user-row ${account.status !== 'ACTIVE' ? 'suspended' : ''}`} key={account.id}><span className="admin-user-identity"><span className="admin-user-avatar-shell" title={online ? 'Conectado ahora' : 'Desconectado'}><ConstellationAvatar className="avatar avatar-sm" seed={account.id} name={account.name} src={account.avatar} membership={account.membership} /><i className={`admin-user-presence-dot ${online ? 'online' : ''}`} role="status" aria-label={online ? `${account.name} está conectado` : `${account.name} está desconectado`} /></span><span><strong>{account.name}</strong><small>{account.email}</small></span></span><span>{account.role === 'ADMIN' ? 'Administrador' : 'Miembro'}</span><span>{account.role === 'ADMIN' ? 'Sin límite' : account.sessionActive ? 'Activa' : 'Cerrada'}</span><span className={`account-state ${account.status.toLowerCase()}`}>{account.status === 'ACTIVE' ? 'Permitido' : 'Suspendido'}</span><label className="access-toggle"><input type="checkbox" checked={account.status === 'ACTIVE'} disabled={account.role === 'ADMIN' || busyId === account.id} onChange={() => toggle(account)} /><span /><em>{account.role === 'ADMIN' ? 'Protegido' : account.status === 'ACTIVE' ? 'Quitar acceso' : 'Dar acceso'}</em></label>{account.role !== 'ADMIN' && <button className="text-button delete-account" disabled={busyId === account.id} onClick={() => setDeleting(account)}><Trash2 size={14} /> Eliminar</button>}</div>;
+      })}
       {!loading && !users.length && <EmptyState icon={Users} title="No hay usuarios" text="Las cuentas registradas aparecerán aquí." />}
     </section></div>;
 }

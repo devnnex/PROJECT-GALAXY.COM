@@ -55,6 +55,16 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('flex: 0 0 48px!important');
   });
 
+  it('updates the admin user list on registration and shows live presence', () => {
+    expect(schema).toContain('alter publication supabase_realtime add table public.profiles');
+    expect(api).toContain('onAdminUserCreated(callback)');
+    expect(api).toContain("event: 'INSERT', schema: 'public', table: 'profiles'");
+    expect(app).toContain('api.onAdminUserCreated');
+    expect(app).toContain('onOnlineUsersChange(setOnlineUserIds)');
+    expect(app).toContain('onlineUserIds.has(account.id)');
+    expect(app).toContain('admin-user-presence-dot');
+  });
+
   it('delivers actionable meeting notifications to both sides', () => {
     expect(schema).toContain("'MEETING_JOIN_REQUEST'");
     expect(schema).toContain("'MEETING_INVITE'");
