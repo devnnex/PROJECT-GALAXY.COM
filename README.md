@@ -19,6 +19,8 @@ npm run build
 
 Para desarrollo usa `npm run dev`. Para probar la compilación estática usa `npm run serve-root`.
 
+El módulo **GALAXY MACRO LIVE** requiere además un worker backend persistente con Trading Economics. Su migración, variables privadas, despliegue, comprobación de conexión y simulación segura están en [`docs/GALAXY_MACRO_LIVE.md`](docs/GALAXY_MACRO_LIVE.md). Mientras se obtiene la licencia del proveedor permanece intencionalmente inactivo; los únicos pasos futuros están registrados en [`docs/GALAXY_MACRO_LIVE_STATUS.md`](docs/GALAXY_MACRO_LIVE_STATUS.md).
+
 ## Seguridad
 
 La anon key de Supabase es una credencial pública diseñada para el navegador. La protección real está en Supabase Auth, funciones `security definer`, permisos explícitos y Row Level Security. No añadas nunca la `service_role` al repositorio ni al frontend.

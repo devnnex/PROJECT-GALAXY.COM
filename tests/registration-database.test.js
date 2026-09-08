@@ -33,7 +33,9 @@ beforeAll(async () => {
   const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8');
   const marker = '-- Migration: invitation-only registration and membership ledger.';
   expect(schema).toContain(marker);
-  await db.exec('begin;\n' + schema.slice(schema.indexOf(marker)));
+  const registrationMigration = schema.slice(schema.indexOf(marker));
+  const migrationEnd = registrationMigration.indexOf('\ncommit;');
+  await db.exec('begin;\n' + registrationMigration.slice(0, migrationEnd + '\ncommit;'.length));
 }, 30000);
 afterAll(async () => { await db?.close(); });
 const createInvitation = async (email, refer = null) => (await scalar('select public.create_registration_invitation($1,$2,$3) result', [email, 'MONTHLY', refer])).result;

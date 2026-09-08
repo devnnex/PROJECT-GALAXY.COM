@@ -11,6 +11,9 @@ const parameterNames = Object.freeze({
   status: 'p_status', token: 'p_token', active: 'p_active', from: 'p_from', to: 'p_to',
   description: 'p_description', kind: 'p_kind', startsAt: 'p_starts_at', endsAt: 'p_ends_at',
   recurrence: 'p_recurrence', repeatUntil: 'p_repeat_until', avatar: 'p_avatar',
+  engine: 'p_engine', indicator: 'p_indicator', enabled: 'p_enabled', weight: 'p_weight',
+  surpriseThreshold: 'p_surprise_threshold', required: 'p_required', aliases: 'p_aliases',
+  aggregationWindowMs: 'p_aggregation_window_ms', lateUpdateWindowMs: 'p_late_update_window_ms',
 });
 
 const PROFILE_AVATAR_BUCKET = 'profile-avatars';
@@ -223,6 +226,11 @@ export const api = {
   reactToMeetingMessage: (payload) => rpc('react_to_meeting_message', payload),
   requestMeetingMute: (payload) => rpc('request_meeting_mute', payload),
   consumeMeetingCommand: (payload) => rpc('consume_meeting_command', payload),
+  getMacroDashboard: () => rpc('get_macro_dashboard'),
+  getMacroAdminConfig: () => rpc('get_macro_admin_config'),
+  updateMacroEngineConfig: (payload) => rpc('update_macro_engine_config', payload),
+  updateMacroRuntimeConfig: (payload) => rpc('update_macro_runtime_config', payload),
+  setMacroEngineEnabled: (payload) => rpc('set_macro_engine_enabled', payload),
   async heartbeatSession() {
     const state = await rpc('heartbeat_user_session');
     if (state?.status === 'DUPLICATE') {
@@ -257,6 +265,18 @@ export const api = {
       if (!active) return;
       channel = supabase.channel(`db:wallet:${userId}:${crypto.randomUUID()}`, { config: { private: true } })
         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'wallets', filter: `user_id=eq.${userId}` }, callback)
+        .subscribe();
+    }).catch(() => {});
+    return () => { active = false; if (channel) supabase.removeChannel(channel); };
+  },
+  onMacroChange(callback) {
+    let active = true; let channel = null;
+    authorizeRealtime().then(() => {
+      if (!active) return;
+      channel = supabase.channel(`db:macro:${crypto.randomUUID()}`, { config: { private: true } })
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'macro_signals' }, callback)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'macro_releases' }, callback)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'macro_feed_health' }, callback)
         .subscribe();
     }).catch(() => {});
     return () => { active = false; if (channel) supabase.removeChannel(channel); };

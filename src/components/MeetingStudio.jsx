@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 import { onOnlineUsersChange, primeRealtime, releaseRealtimePrime } from '../services/supabase';
 import ConstellationAvatar from './ConstellationAvatar';
+import GalaxyMacroLive from './GalaxyMacroLive';
 
 const EMOJIS = ['👍', '👏', '❤️', '😂', '🎉', '🔥'];
 const MESSAGE_EMOJIS = [...EMOJIS, '😊', '🙏', '🤔', '✅', '🚀', '💡'];
@@ -426,7 +427,7 @@ function CropEditor({ stream, initialCrop, onConfirm, onCancel }) {
   </div></div>;
 }
 
-function MeetingLobby({ busy, meetings, initialCode, onCreate, onJoin, onResume, onRestart, onRemove, canCreate }) {
+function MeetingLobby({ busy, meetings, initialCode, onCreate, onJoin, onResume, onRestart, onRemove, canCreate, toast }) {
   const [tab, setTab] = useState(initialCode || !canCreate ? 'join' : 'create');
   const [create, setCreate] = useState({ title: '', password: '', waitingRoom: true });
   const [join, setJoin] = useState({ roomCode: initialCode, password: '' });
@@ -450,6 +451,7 @@ function MeetingLobby({ busy, meetings, initialCode, onCreate, onJoin, onResume,
         {ended && <div className="meeting-history-actions">{item.host && <button disabled={busy} title="Reiniciar reunión" aria-label={`Reiniciar ${item.title}`} onClick={() => onRestart(item)}><RotateCcw /></button>}<button className="history-delete" disabled={busy} title={item.host ? 'Eliminar reunión definitivamente' : 'Quitar de mi historial'} aria-label={`${item.host ? 'Eliminar' : 'Quitar'} ${item.title}`} onClick={() => onRemove(item)}><Trash2 /></button></div>}
       </div>;
     }) : <p className="muted">No hay reuniones finalizadas.</p>}</aside>
+    <GalaxyMacroLive toast={toast} canManage={canCreate} />
   </div>;
 }
 
@@ -968,7 +970,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null;
   }, [joined]);
 
-  if (!meeting) return <><MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} onRestart={restartMeeting} onRemove={removeEndedMeeting} canCreate={canCreate} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} /></>;
+  if (!meeting) return <><MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} onRestart={restartMeeting} onRemove={removeEndedMeeting} canCreate={canCreate} toast={toast} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} /></>;
   if (waiting) return <div className="meeting-waiting surface"><span className="waiting-orbit" /><p className="eyebrow">SALA DE ESPERA</p><h1>{meeting.title}</h1><p>El anfitrión recibió tu solicitud. Esta pantalla entrará automáticamente cuando te admita.</p><strong>{meeting.roomCode}</strong><button className="secondary-button" onClick={() => disconnect(true)}>Cancelar</button></div>;
 
   const remoteEntries = Object.entries(remoteStreams); const isHost = meeting.role === 'HOST';
