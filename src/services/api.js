@@ -11,11 +11,24 @@ const parameterNames = Object.freeze({
   status: 'p_status', token: 'p_token', active: 'p_active', from: 'p_from', to: 'p_to',
   description: 'p_description', kind: 'p_kind', startsAt: 'p_starts_at', endsAt: 'p_ends_at',
   recurrence: 'p_recurrence', repeatUntil: 'p_repeat_until', avatar: 'p_avatar',
+  priceUsdt: 'p_price_usdt', imagePath: 'p_image_path', soldOut: 'p_sold_out',
 });
 
 const PROFILE_AVATAR_BUCKET = 'profile-avatars';
 const PROFILE_AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const PROFILE_AVATAR_MAX_BYTES = 5 * 1024 * 1024;
+const GALAXY_STORE_BUCKET = 'galaxy-store-products';
+const GALAXY_STORE_IMAGE_TYPES = new Map([
+  ['image/jpeg', 'jpg'], ['image/png', 'png'], ['image/webp', 'webp'],
+]);
+const GALAXY_STORE_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+
+function storeProductView(product) {
+  if (!product) return product;
+  const imagePath = product.imagePath || '';
+  const imageUrl = imagePath ? supabase.storage.from(GALAXY_STORE_BUCKET).getPublicUrl(imagePath).data.publicUrl : '';
+  return { ...product, priceUsdt: Number(product.priceUsdt || 0), imagePath, imageUrl };
+}
 
 function friendlyError(error) {
   if (!error) return new Error('La solicitud no pudo completarse.');
@@ -188,6 +201,47 @@ export const api = {
     const [membership, commerce] = await Promise.all([rpc('get_membership_center'), rpc('get_crypto_store')]);
     return { ...membership, products: commerce?.products || [], orders: [...(commerce?.orders || []), ...(membership?.orders || [])]
       .sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt)) };
+  },
+  async getGalaxyStore() {
+    const products = await rpc('get_galaxy_store');
+    return (products || []).map(storeProductView);
+  },
+  async saveGalaxyStoreProduct(payload) {
+    const title = String(payload.title || '').trim();
+    const description = String(payload.description || '').trim();
+    const priceUsdt = Number(payload.priceUsdt);
+    if (title.length < 2 || title.length > 120) throw new Error('El título debe tener entre 2 y 120 caracteres.');
+    if (!description || description.length > 1500) throw new Error('La descripción es obligatoria y no puede superar 1500 caracteres.');
+    if (!Number.isFinite(priceUsdt) || priceUsdt <= 0 || priceUsdt > 1_000_000) throw new Error('Ingresa un precio válido en USDT.');
+
+    const id = payload.id || crypto.randomUUID();
+    let imagePath = payload.imagePath || '';
+    let uploadedPath = '';
+    if (payload.image) {
+      const extension = GALAXY_STORE_IMAGE_TYPES.get(payload.image.type);
+      if (!extension) throw new Error('Selecciona una imagen JPG, PNG o WebP.');
+      if (!payload.image.size || payload.image.size > GALAXY_STORE_IMAGE_MAX_BYTES) throw new Error('La imagen del producto debe pesar como máximo 8 MB.');
+      uploadedPath = `${id}/${crypto.randomUUID()}.${extension}`;
+      const { error } = await supabase.storage.from(GALAXY_STORE_BUCKET).upload(uploadedPath, payload.image, {
+        upsert: false, contentType: payload.image.type, cacheControl: '31536000',
+      });
+      if (error) throw new Error('No fue posible subir la imagen del producto.');
+      imagePath = uploadedPath;
+    }
+    if (!imagePath) throw new Error('Selecciona una imagen para el producto.');
+
+    try {
+      const product = await rpc('save_galaxy_store_product', {
+        id, title, description, priceUsdt, imagePath, soldOut: Boolean(payload.soldOut),
+      });
+      if (uploadedPath && payload.imagePath && payload.imagePath !== uploadedPath) {
+        await supabase.storage.from(GALAXY_STORE_BUCKET).remove([payload.imagePath]).catch(() => {});
+      }
+      return storeProductView(product);
+    } catch (error) {
+      if (uploadedPath) await supabase.storage.from(GALAXY_STORE_BUCKET).remove([uploadedPath]).catch(() => {});
+      throw error;
+    }
   },
   getTurnCredentials: (meetingId) => invokeSecure('turn-credentials', { meetingId }, 'El relay TURN no está disponible.'),
   getScannerDownload: () => invokeSecure('scanner-download', {}, 'No fue posible preparar la descarga privada.'),

@@ -122,6 +122,21 @@ create table if not exists public.digital_products (
   updated_at timestamptz not null default now()
 );
 
+-- Independent catalog for Galaxy Store. These products are physical or
+-- manually delivered items and do not alter the existing digital entitlements.
+create table if not exists public.galaxy_store_products (
+  id uuid primary key default gen_random_uuid(),
+  title text not null check (char_length(title) between 2 and 120),
+  description text not null check (char_length(description) between 1 and 1500),
+  price_usdt numeric(12,2) not null check (price_usdt > 0 and price_usdt <= 1000000),
+  image_path text not null check (image_path ~ '^[0-9a-f-]{36}/[0-9a-f-]{36}\.(jpg|jpeg|png|webp)$'),
+  sold_out boolean not null default false,
+  active boolean not null default true,
+  created_by uuid not null references public.profiles(id) on delete restrict,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 insert into public.digital_products(code,name,description,price_usd,storage_bucket,storage_path,sort_order) values
   ('SCANNER_POWER_ELITE','Scanner Power Elite','Indicador privado para TradingView entregado como archivo Pine Script. Promoción recurrente renovada cada 24 horas.',650,'premium-downloads','SCANNER-POWER-ELITE.pine',1)
 on conflict (code) do update set name=excluded.name,description=excluded.description,price_usd=excluded.price_usd,
@@ -181,6 +196,10 @@ on conflict(id) do update set public=false,file_size_limit=excluded.file_size_li
 -- restricts each authenticated account to its single deterministic object.
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
 values('profile-avatars','profile-avatars',true,5242880,array['image/jpeg','image/png','image/webp'])
+on conflict(id) do update set public=true,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
+
+insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types)
+values('galaxy-store-products','galaxy-store-products',true,8388608,array['image/jpeg','image/png','image/webp'])
 on conflict(id) do update set public=true,file_size_limit=excluded.file_size_limit,allowed_mime_types=excluded.allowed_mime_types;
 
 create table if not exists public.meetings (
@@ -376,6 +395,8 @@ drop trigger if exists memberships_touch_updated_at on public.memberships;
 create trigger memberships_touch_updated_at before update on public.memberships for each row execute function public.touch_updated_at();
 drop trigger if exists digital_products_touch_updated_at on public.digital_products;
 create trigger digital_products_touch_updated_at before update on public.digital_products for each row execute function public.touch_updated_at();
+drop trigger if exists galaxy_store_products_touch_updated_at on public.galaxy_store_products;
+create trigger galaxy_store_products_touch_updated_at before update on public.galaxy_store_products for each row execute function public.touch_updated_at();
 drop trigger if exists crypto_payment_orders_touch_updated_at on public.crypto_payment_orders;
 create trigger crypto_payment_orders_touch_updated_at before update on public.crypto_payment_orders for each row execute function public.touch_updated_at();
 
@@ -514,6 +535,53 @@ language sql stable security definer set search_path=public,auth as $$
       and (s.conflict_until is null or s.conflict_until<=now())
   );
 $$;
+
+create or replace function public.get_galaxy_store() returns jsonb
+language plpgsql stable security definer set search_path=public,auth as $$
+declare v_user uuid:=public.require_user(); v_products jsonb;
+begin
+  if not exists(select 1 from public.profiles where id=v_user and status='ACTIVE') then
+    raise exception 'Tu cuenta debe estar activa para acceder a Galaxy Store.' using errcode='P0001';
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object(
+    'id',product.id,'title',product.title,'description',product.description,
+    'priceUsdt',product.price_usdt,'imagePath',product.image_path,'soldOut',product.sold_out,
+    'createdAt',product.created_at,'updatedAt',product.updated_at
+  ) order by product.created_at desc),'[]'::jsonb)
+  into v_products from public.galaxy_store_products product where product.active;
+  return v_products;
+end; $$;
+
+create or replace function public.save_galaxy_store_product(
+  p_id uuid,p_title text,p_description text,p_price_usdt numeric,p_image_path text,p_sold_out boolean
+) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare v_admin uuid:=public.require_admin(); v_product public.galaxy_store_products;
+begin
+  p_title:=trim(coalesce(p_title,''));
+  p_description:=trim(coalesce(p_description,''));
+  p_image_path:=trim(coalesce(p_image_path,''));
+  if p_id is null then raise exception 'No fue posible identificar el producto.' using errcode='P0001'; end if;
+  if char_length(p_title) not between 2 and 120 then raise exception 'El titulo debe tener entre 2 y 120 caracteres.' using errcode='P0001'; end if;
+  if char_length(p_description) not between 1 and 1500 then raise exception 'La descripcion es obligatoria y no puede superar 1500 caracteres.' using errcode='P0001'; end if;
+  if coalesce(p_price_usdt,0)<=0 or p_price_usdt>1000000 then raise exception 'Ingresa un precio valido en USDT.' using errcode='P0001'; end if;
+  if p_image_path !~ ('^'||p_id::text||'/[0-9a-f-]{36}\.(jpg|jpeg|png|webp)$') then
+    raise exception 'La ruta de imagen del producto no es valida.' using errcode='P0001';
+  end if;
+  if not exists(select 1 from storage.objects where bucket_id='galaxy-store-products' and name=p_image_path) then
+    raise exception 'Primero debes subir una imagen valida para el producto.' using errcode='P0001';
+  end if;
+  insert into public.galaxy_store_products(id,title,description,price_usdt,image_path,sold_out,created_by)
+  values(p_id,p_title,p_description,p_price_usdt,p_image_path,coalesce(p_sold_out,false),v_admin)
+  on conflict(id) do update set title=excluded.title,description=excluded.description,
+    price_usdt=excluded.price_usdt,image_path=excluded.image_path,sold_out=excluded.sold_out
+  returning * into v_product;
+  return jsonb_build_object(
+    'id',v_product.id,'title',v_product.title,'description',v_product.description,
+    'priceUsdt',v_product.price_usdt,'imagePath',v_product.image_path,'soldOut',v_product.sold_out,
+    'createdAt',v_product.created_at,'updatedAt',v_product.updated_at
+  );
+end; $$;
 
 -- Server-only bridge between encrypted Supabase Vault values and the TURN Edge
 -- Function. Execution is granted exclusively to service_role at the end.
@@ -1339,6 +1407,7 @@ alter table public.membership_plans enable row level security;
 alter table public.membership_payment_orders enable row level security;
 alter table public.memberships enable row level security;
 alter table public.digital_products enable row level security;
+alter table public.galaxy_store_products enable row level security;
 alter table public.crypto_payment_orders enable row level security;
 alter table public.product_entitlements enable row level security;
 alter table public.product_download_audit enable row level security;
@@ -1371,6 +1440,12 @@ drop policy if exists digital_products_authenticated_read on public.digital_prod
 create policy digital_products_authenticated_read on public.digital_products for select to authenticated using (
   active and exists(select 1 from public.profiles viewer where viewer.id=auth.uid() and viewer.role='ADMIN' and viewer.status='ACTIVE')
 );
+drop policy if exists galaxy_store_products_authenticated_read on public.galaxy_store_products;
+create policy galaxy_store_products_authenticated_read on public.galaxy_store_products for select to authenticated using (
+  active and public.is_current_session_valid() and exists(
+    select 1 from public.profiles viewer where viewer.id=auth.uid() and viewer.status='ACTIVE'
+  )
+);
 drop policy if exists crypto_orders_owner_read on public.crypto_payment_orders;
 create policy crypto_orders_owner_read on public.crypto_payment_orders for select to authenticated using (user_id=auth.uid());
 drop policy if exists product_entitlements_owner_read on public.product_entitlements;
@@ -1397,6 +1472,33 @@ create policy profile_avatars_owner_delete on storage.objects for delete to auth
 drop policy if exists profile_avatars_admin_delete on storage.objects;
 create policy profile_avatars_admin_delete on storage.objects for delete to authenticated using (
   bucket_id='profile-avatars' and exists(
+    select 1 from public.profiles administrator
+    where administrator.id=auth.uid() and administrator.role='ADMIN' and administrator.status='ACTIVE'
+  )
+);
+
+drop policy if exists galaxy_store_products_admin_insert on storage.objects;
+create policy galaxy_store_products_admin_insert on storage.objects for insert to authenticated with check (
+  bucket_id='galaxy-store-products' and public.is_current_session_valid() and exists(
+    select 1 from public.profiles administrator
+    where administrator.id=auth.uid() and administrator.role='ADMIN' and administrator.status='ACTIVE'
+  )
+);
+drop policy if exists galaxy_store_products_admin_update on storage.objects;
+create policy galaxy_store_products_admin_update on storage.objects for update to authenticated using (
+  bucket_id='galaxy-store-products' and public.is_current_session_valid() and exists(
+    select 1 from public.profiles administrator
+    where administrator.id=auth.uid() and administrator.role='ADMIN' and administrator.status='ACTIVE'
+  )
+) with check (
+  bucket_id='galaxy-store-products' and public.is_current_session_valid() and exists(
+    select 1 from public.profiles administrator
+    where administrator.id=auth.uid() and administrator.role='ADMIN' and administrator.status='ACTIVE'
+  )
+);
+drop policy if exists galaxy_store_products_admin_delete on storage.objects;
+create policy galaxy_store_products_admin_delete on storage.objects for delete to authenticated using (
+  bucket_id='galaxy-store-products' and public.is_current_session_valid() and exists(
     select 1 from public.profiles administrator
     where administrator.id=auth.uid() and administrator.role='ADMIN' and administrator.status='ACTIVE'
   )
@@ -1431,7 +1533,7 @@ alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke execute on functions from public, anon;
 revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.get_turn_provider_config(),public.membership_view(uuid),public.has_active_membership(uuid),public.require_active_membership(),public.get_membership_center(),public.get_crypto_store(),public.activate_membership_from_payment(uuid,text,text,numeric,jsonb),public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.update_profile_avatar(text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon, authenticated;
 grant usage on schema public to authenticated;
-grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications,public.membership_plans,public.membership_payment_orders,public.memberships,public.digital_products,public.crypto_payment_orders,public.product_entitlements to authenticated;
+grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications,public.membership_plans,public.membership_payment_orders,public.memberships,public.digital_products,public.galaxy_store_products,public.crypto_payment_orders,public.product_entitlements to authenticated;
 grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.update_profile_avatar(text),public.get_bootstrap_data(text[]),public.get_membership_center(),public.get_crypto_store(),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
 grant execute on function public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text) to authenticated;
 grant execute on function public.activate_membership_from_payment(uuid,text,text,numeric,jsonb) to service_role;
@@ -1449,6 +1551,10 @@ grant execute on function public.claim_user_session(),public.heartbeat_user_sess
   public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),public.set_meeting_collaboration_enabled(uuid,boolean),
   public.get_calendar_events(timestamptz,timestamptz),
   public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
+to authenticated;
+revoke all on function public.get_galaxy_store(),public.save_galaxy_store_product(uuid,text,text,numeric,text,boolean)
+from public,anon,authenticated;
+grant execute on function public.get_galaxy_store(),public.save_galaxy_store_product(uuid,text,text,numeric,text,boolean)
 to authenticated;
 
 -- Migration: invitation-only registration and membership ledger.
@@ -1658,4 +1764,5 @@ revoke all on function public.create_registration_invitation(text,text,uuid),pub
 grant usage on schema public to anon;
 grant execute on function public.get_registration_invitation(text) to anon,authenticated;
 grant execute on function public.create_registration_invitation(text,text,uuid),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.get_wallet_activity(),public.reset_wallet_accounting(),public.delete_registered_user(uuid) to authenticated;
+
 commit;

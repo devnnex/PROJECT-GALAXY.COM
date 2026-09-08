@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, ArrowRight, Bell, Bookmark, Boxes, CalendarDays, Check, ChevronDown, CircleDollarSign,
   Clock3, Compass, Copy, CreditCard, Eye, EyeOff, Heart, Home, KeyRound, Languages, LayoutGrid, LockKeyhole,
-  ImagePlus, LogOut, Menu, MessageCircle, Mic2, MoreHorizontal, Orbit, Package, Play, Plus, Radio,
+  ImagePlus, LogOut, Menu, MessageCircle, Mic2, MoreHorizontal, Orbit, Package, Plus, Radio,
   Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, TrendingUp, User,
   Users, Video, Volume2, WalletCards, X, Zap, Trash2,
 } from 'lucide-react';
@@ -17,6 +17,7 @@ import { DeleteUserDialog, InvitationForm, WalletActivity } from './components/R
 import MeetingStudio from './components/MeetingStudio';
 import CalendarPage from './components/CalendarPage';
 import ConstellationAvatar from './components/ConstellationAvatar';
+import GalaxyStore from './components/GalaxyStore';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
 
 const SCANNER_OWNER_EMAIL = 'elkin56ty@gmail.com';
@@ -25,13 +26,13 @@ const catalogFor = () => products;
 
 const navigation = [
   ['dashboard', 'Inicio', Home], ['discover', 'Descubrir', Compass], ['marketplace', 'Marketplace', ShoppingBag],
-  ['live', 'En vivo', Radio], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['messages', 'Mensajes', MessageCircle],
+  ['store', 'Galaxy Store', ShoppingBag], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['messages', 'Mensajes', MessageCircle],
   ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['users', 'Usuarios', Users], ['profile', 'Perfil', User],
 ];
-const memberNavigation = navigation.filter(([id]) => ['marketplace', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id));
+const memberNavigation = navigation.filter(([id]) => ['marketplace', 'store', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id));
 
 const navigationEnglish = {
-  dashboard: 'Home', discover: 'Discover', marketplace: 'Marketplace', live: 'Live', meetings: 'Meetings',
+  dashboard: 'Home', discover: 'Discover', marketplace: 'Marketplace', store: 'Galaxy Store', meetings: 'Meetings',
   calendar: 'Calendar', messages: 'Messages', wallet: 'Wallet', orders: 'Orders', users: 'Users', profile: 'Profile',
 };
 const languageFor = (user) => user?.language === 'en' ? 'en' : 'es';
@@ -126,8 +127,6 @@ function ProductModal({ product, onClose, toast, membershipCenter, user }) {
   };
   return <div className="modal-backdrop"><div className="product-modal glass" role="dialog" aria-modal="true"><button className="icon-button modal-close" onClick={onClose}><X /></button><div className={`product-modal-art ${product.tone} ${product.image ? 'has-product-image' : ''}`}>{product.image ? <img className="product-modal-image" src={product.image} alt={product.title} /> : <><div className="orb-art large" /><span>{product.mark}</span></>}{product.kind === 'automation-service' && <span className="automation-disclaimer modal">Resultados no garantizados</span>}</div><div className="product-modal-copy"><p className="eyebrow">{product.category}</p><h1>{product.title}</h1><p className="seller-line">Creado por <strong>{product.seller}</strong> · <Star /> {product.rating}</p><p>{product.description}</p>{product.promotionCycleHours && <div className="promotion-panel"><div><span>PRECIO PROMOCIONAL</span><s>{product.originalPrice} USDT</s><strong>{product.price} USDT</strong></div><PromotionCountdown /></div>}<ul><li><Check /> Confirmación manual</li><li><Check /> Pago directo en USDT</li><li><Check /> Soporte del creador</li></ul>{!checkout ? <div className="purchase-row"><div>{product.originalPrice && <s>{product.originalPrice} USDT</s>}<strong>{product.price} USDT</strong><span>Pago único</span></div><button className="primary-button" onClick={() => setCheckout(true)}>Adquirir <ArrowRight /></button></div> : !payment ? <div className="checkout-box"><div className="checkout-head"><div><p className="eyebrow">PAGO MANUAL</p><h3>Selecciona la red</h3></div><LockKeyhole /></div><div className="network-options">{Object.entries(PAYMENT_NETWORKS).map(([key, item]) => <button className={network === key ? 'selected' : ''} onClick={() => setNetwork(key)} key={key}><span>{item.label}</span><small>{item.note}</small></button>)}</div><div className="network-warning">Enviar USDT utilizando una red diferente puede provocar pérdida de fondos.</div><div className="checkout-total"><span>Total promocional</span><strong>{product.price} USDT</strong></div><button className="primary-button" onClick={createPayment}>Mostrar wallet y QR</button></div> : <div className="checkout-box"><div className="checkout-head"><div><p className="eyebrow">{payment.label}</p><h3>Datos para transferencia</h3></div><LockKeyhole /></div><img className="payment-wallet-qr" src={payment.qr} alt={`QR USDT ${payment.network}`} /><div className="payment-address"><span>WALLET · {payment.network}</span><code>{payment.payAddress}</code><button onClick={() => navigator.clipboard.writeText(payment.payAddress).then(() => toast('Dirección copiada.'))}><Copy /> Copiar dirección</button></div><div className="checkout-total"><span>Importe promocional</span><strong>{payment.payAmount} USDT</strong></div><div className="network-warning">Envía el comprobante y hash a {PAYMENT_CONTACT_EMAIL}. La confirmación no es automática.</div><button className="text-button" onClick={() => setPayment(null)}>Elegir otra red</button></div>}</div></div></div>;
 }
-
-function LivePage({ toast }) { const [following, setFollowing] = useState(false); return <div className="page-stack"><header className="page-header"><div><p className="eyebrow">XAUUSD LIVE DESK</p><h1>Operativas en vivo</h1><p>Acompañamiento profesional de lunes a viernes sobre Kill Zones, estructura y liquidez.</p></div><button className="primary-button compact" onClick={() => toast('Para transmitir a una audiencia configura el servicio SFU, TURN y señalización.', 'info')}><Radio /> Iniciar sesión</button></header><div className="live-feature surface"><div className="live-art"><div className="live-badge">LUNES A VIERNES</div><button className="play-button" onClick={() => toast('Esta pieza visual no representa una transmisión conectada.', 'info')}><Play /></button></div><div><span className="post-tag">XAUUSD · LIQUIDEZ</span><h2>Operativa acompañada para la Kill Zone de New York</h2><p>Estudia el oro digital con explicación de rango asiático, barridos de liquidez y apertura de sesión.</p><div className="person"><div className="avatar">MC</div><span>Galaxy Trading Desk</span><button onClick={() => setFollowing(!following)}>{following ? 'Siguiendo' : 'Seguir'}</button></div></div></div><div className="product-grid">{products.slice(0, 3).map((p, i) => <article className="stream-card surface" key={p.id}><div className={`stream-art ${p.tone}`}><span className="live-badge">LUNES A VIERNES</span><Radio /></div><span>Próxima sesión · {14 + i}:00</span><h3>{['Contexto de Asia y Londres', 'Liquidez y barridos en XAUUSD', 'Plan de ejecución para New York'][i]}</h3><p>{p.seller}</p></article>)}</div></div>; }
 
 function MessagesPage({ toast }) { const [active, setActive] = useState(0); const chats = ['London Desk', 'New York Desk', 'Liquidity Lab']; return <div className="messages-shell surface"><aside className="conversation-list"><div className="panel-heading"><h2>Mensajes</h2><button className="icon-button" onClick={() => toast('Selecciona un contacto para abrir una conversación existente.')}><Plus /></button></div><label className="search-field"><Search /><input placeholder="Buscar" /></label>{chats.map((name, i) => <button className={active === i ? 'active' : ''} onClick={() => setActive(i)} key={name}><div className="avatar">{name.slice(0, 2)}</div><div><strong>{name}</strong><span>{i ? 'Compartió una lectura de mercado' : 'Nos vemos en la Kill Zone ✦'}</span></div><time>{i + 2}m</time></button>)}</aside><section className="conversation"><div className="conversation-head"><div className="avatar">{chats[active].slice(0, 2)}</div><div><strong>{chats[active]}</strong><span>Presencia no conectada</span></div></div><div className="message-space"><span className="date-chip">HOY</span><div className="bubble incoming">¿Listo para revisar la liquidez de XAUUSD?<time>10:34</time></div><div className="bubble outgoing">Sí. Llevo el contexto de Asia para la sesión.<time>10:36</time></div><p className="realtime-note"><Zap /> Los mensajes remotos requieren el servicio realtime configurado.</p></div><form className="message-input" onSubmit={(e) => { e.preventDefault(); e.currentTarget.reset(); toast('Mensaje conservado solo en esta vista; el transporte realtime no está configurado.', 'info'); }}><button type="button" className="icon-button" onClick={() => toast('Los adjuntos requieren configurar el almacenamiento de archivos.', 'info')}><Plus /></button><input required placeholder="Comparte tu lectura de mercado…" /><button className="icon-button"><Send /></button></form></section></div>; }
 
@@ -319,7 +318,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   if (page === 'dashboard') content = <Dashboard user={user} navigate={navigate} openProduct={setSelectedProduct} />;
   else if (page === 'discover') content = <FeedPage toast={toast} />;
   else if (page === 'marketplace') content = <Marketplace onOpen={setSelectedProduct} user={user} />;
-  else if (page === 'live') content = <LivePage toast={toast} />;
+  else if (page === 'store') content = <GalaxyStore isAdmin={isAdmin} toast={toast} />;
   else if (page === 'meetings') content = null;
   else if (page === 'calendar') content = <CalendarPage toast={toast} onJoin={(request) => { setJoinRequest(request); navigate('meetings'); }} />;
   else if (page === 'messages') content = <MessagesPage toast={toast} />;
