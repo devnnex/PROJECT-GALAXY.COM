@@ -21,6 +21,8 @@ const PHOENIX_BASE_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-base-react
 const PHOENIX_SUPER_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-super-reaction.png`;
 const PHOENIX_LIGHTNING_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-lightning.webm`;
 const MCLAREN_PROFIT_ASSET = `${import.meta.env.BASE_URL}assets/mclaren-profit-reaction.png`;
+const GALAXY_DANCER_ASSET = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction.webm`;
+const GALAXY_DANCER_ICON = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction-icon.png`;
 const COSMIC_REACTIONS = [
   { id: MONEY_ROCKET_REACTION, label: 'Cohete de dinero', asset: MONEY_ROCKET_ASSET },
   { id: 'MONEY_CHARACTER', label: 'Personaje millonario', asset: MONEY_CHARACTER_ASSET },
@@ -29,7 +31,7 @@ const COSMIC_REACTIONS = [
   { id: PHOENIX_TRANSFORM_REACTION, label: 'Transformación del fénix', asset: PHOENIX_BASE_ASSET },
   { id: 'UFO', label: 'McLaren Profit', asset: MCLAREN_PROFIT_ASSET, launcherClass: 'mclaren-profit-launcher' },
   { id: 'ALIEN', label: 'Enviar alien', icon: '👽' },
-  { id: 'ALIEN_BIRTHDAY', label: 'Alien de cumpleaños', icon: '🎂' },
+  { id: 'ALIEN_BIRTHDAY', label: 'Muñeco bailarín', asset: GALAXY_DANCER_ICON, launcherClass: 'galaxy-dancer-launcher' },
 ];
 
 function PhoenixTransformReaction({ senderName }) {
@@ -139,7 +141,7 @@ function CosmicReaction({ reaction, senderName }) {
   if (reaction === PHOENIX_TRANSFORM_REACTION) return <PhoenixTransformReaction senderName={senderName || 'Participante'} />;
   if (reaction === 'UFO') return <span className="mclaren-profit-reaction" role="img" aria-label="McLaren acelerando con fuego, lluvia de billetes y meteorito Profit"><span className="mclaren-profit-machine"><img className="mclaren-profit-car" src={MCLAREN_PROFIT_ASSET} alt="" /><span className="mclaren-profit-exhaust" aria-hidden="true"><i /><i /><b /></span></span><span className="mclaren-profit-bills" aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ '--bill-left': `${4 + ((index * 37) % 92)}%`, '--bill-peak': `${6 + ((index * 23) % 29)}%`, '--bill-rotate': `${((index * 47) % 180) - 90}deg`, '--bill-delay': `${2.05 + (index % 8) * .1}s`, '--bill-duration': `${3.72 + (index % 5) * .2}s` }} />)}</span><span className="mclaren-profit-meteor" aria-hidden="true"><i /><b /></span><span className="mclaren-profit-firework" aria-hidden="true"><i /><b /><strong>PROFIT</strong></span>{sender}</span>;
   if (reaction === 'ALIEN') return <span className="alien-reaction" role="img" aria-label="Alien"><i>👽</i><b>¡Saludos, terrícola!</b>{sender}</span>;
-  if (reaction === 'ALIEN_BIRTHDAY') return <span className="alien-birthday-reaction" role="img" aria-label="Alien deseando feliz cumpleaños"><i>👽</i><b>Happy Birthday!</b><em>🎉</em><em>🎂</em>{sender}</span>;
+  if (reaction === 'ALIEN_BIRTHDAY') return <span className="galaxy-dancer-reaction" role="img" aria-label="Muñeco bailando"><video src={GALAXY_DANCER_ASSET} autoPlay muted playsInline preload="auto" controls={false} disablePictureInPicture />{sender}</span>;
   return <span><i className="reaction-symbol">{reaction}</i>{sender}</span>;
 }
 
@@ -581,7 +583,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (navigator.vibrate && document.visibilityState === 'visible') navigator.vibrate(32);
     setTimeout(() => setFloatingMessages((items) => items.filter((item) => item.id !== id)), 5200);
   };
-  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
+  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
