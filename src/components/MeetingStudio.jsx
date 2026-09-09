@@ -21,7 +21,7 @@ const PHOENIX_BASE_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-base-react
 const PHOENIX_SUPER_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-super-reaction.png`;
 const PHOENIX_LIGHTNING_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-lightning.webm`;
 const MCLAREN_PROFIT_ASSET = `${import.meta.env.BASE_URL}assets/mclaren-profit-reaction.png`;
-const GALAXY_DANCER_ASSET = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction.webm`;
+const GALAXY_DANCER_ASSET = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction.webp`;
 const GALAXY_DANCER_ICON = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction-icon.png`;
 const GALAXY_DANCER_SOUND = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction.mp3`;
 const COSMIC_REACTIONS = [
@@ -56,7 +56,7 @@ function GalaxyDancerReaction({ senderName }) {
     play(); window.addEventListener('galaxy:resume-meeting-audio', play); window.addEventListener('pointerdown', play, true);
     return () => { window.removeEventListener('galaxy:resume-meeting-audio', play); window.removeEventListener('pointerdown', play, true); audio.pause(); audio.currentTime = 0; };
   }, []);
-  return <span className="galaxy-dancer-reaction" role="img" aria-label="Muñeco bailando"><video src={GALAXY_DANCER_ASSET} autoPlay muted playsInline preload="auto" controls={false} disablePictureInPicture /><audio ref={audioRef} src={GALAXY_DANCER_SOUND} autoPlay preload="auto" /> <small className="reaction-sender">{senderName}</small></span>;
+  return <span className="galaxy-dancer-reaction" role="img" aria-label="Muñeco bailando"><picture><source srcSet={GALAXY_DANCER_ASSET} type="image/webp" /><img className="galaxy-dancer-visual" src={GALAXY_DANCER_ICON} alt="" /></picture><audio ref={audioRef} src={GALAXY_DANCER_SOUND} autoPlay preload="auto" /> <small className="reaction-sender">{senderName}</small></span>;
 }
 
 function GalacticTakeProfitReaction({ senderName }) {
