@@ -23,6 +23,7 @@ const PHOENIX_LIGHTNING_ASSET = `${import.meta.env.BASE_URL}assets/phoenix-light
 const MCLAREN_PROFIT_ASSET = `${import.meta.env.BASE_URL}assets/mclaren-profit-reaction.png`;
 const GALAXY_DANCER_ASSET = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction.webm`;
 const GALAXY_DANCER_ICON = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction-icon.png`;
+const GALAXY_DANCER_SOUND = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction.mp3`;
 const COSMIC_REACTIONS = [
   { id: MONEY_ROCKET_REACTION, label: 'Cohete de dinero', asset: MONEY_ROCKET_ASSET },
   { id: 'MONEY_CHARACTER', label: 'Personaje millonario', asset: MONEY_CHARACTER_ASSET },
@@ -44,6 +45,18 @@ function PhoenixTransformReaction({ senderName }) {
     return () => { window.removeEventListener('galaxy:resume-meeting-audio', play); window.removeEventListener('pointerdown', play, true); video.pause(); };
   }, []);
   return <span className="phoenix-transform-reaction" role="img" aria-label="Fénix transformándose con un estallido y rayos"><video ref={videoRef} src={PHOENIX_LIGHTNING_ASSET} autoPlay playsInline preload="auto" controls={false} disablePictureInPicture /><img className="phoenix-base-form" src={PHOENIX_BASE_ASSET} alt="" /><i aria-hidden="true" /><b aria-hidden="true" /><img className="phoenix-super-form" src={PHOENIX_SUPER_ASSET} alt="" /><small className="reaction-sender">{senderName}</small></span>;
+}
+
+function GalaxyDancerReaction({ senderName }) {
+  const audioRef = useRef(null);
+  useEffect(() => {
+    const audio = audioRef.current; if (!audio) return undefined;
+    audio.volume = .78; audio.currentTime = 0;
+    const play = () => audio.play().catch(() => {});
+    play(); window.addEventListener('galaxy:resume-meeting-audio', play); window.addEventListener('pointerdown', play, true);
+    return () => { window.removeEventListener('galaxy:resume-meeting-audio', play); window.removeEventListener('pointerdown', play, true); audio.pause(); audio.currentTime = 0; };
+  }, []);
+  return <span className="galaxy-dancer-reaction" role="img" aria-label="Muñeco bailando"><video src={GALAXY_DANCER_ASSET} autoPlay muted playsInline preload="auto" controls={false} disablePictureInPicture /><audio ref={audioRef} src={GALAXY_DANCER_SOUND} autoPlay preload="auto" /> <small className="reaction-sender">{senderName}</small></span>;
 }
 
 function GalacticTakeProfitReaction({ senderName }) {
@@ -141,7 +154,7 @@ function CosmicReaction({ reaction, senderName }) {
   if (reaction === PHOENIX_TRANSFORM_REACTION) return <PhoenixTransformReaction senderName={senderName || 'Participante'} />;
   if (reaction === 'UFO') return <span className="mclaren-profit-reaction" role="img" aria-label="McLaren acelerando con fuego, lluvia de billetes y meteorito Profit"><span className="mclaren-profit-machine"><img className="mclaren-profit-car" src={MCLAREN_PROFIT_ASSET} alt="" /><span className="mclaren-profit-exhaust" aria-hidden="true"><i /><i /><b /></span></span><span className="mclaren-profit-bills" aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ '--bill-left': `${4 + ((index * 37) % 92)}%`, '--bill-peak': `${6 + ((index * 23) % 29)}%`, '--bill-rotate': `${((index * 47) % 180) - 90}deg`, '--bill-delay': `${2.05 + (index % 8) * .1}s`, '--bill-duration': `${3.72 + (index % 5) * .2}s` }} />)}</span><span className="mclaren-profit-meteor" aria-hidden="true"><i /><b /></span><span className="mclaren-profit-firework" aria-hidden="true"><i /><b /><strong>PROFIT</strong></span>{sender}</span>;
   if (reaction === 'ALIEN') return <span className="alien-reaction" role="img" aria-label="Alien"><i>👽</i><b>¡Saludos, terrícola!</b>{sender}</span>;
-  if (reaction === 'ALIEN_BIRTHDAY') return <span className="galaxy-dancer-reaction" role="img" aria-label="Muñeco bailando"><video src={GALAXY_DANCER_ASSET} autoPlay muted playsInline preload="auto" controls={false} disablePictureInPicture />{sender}</span>;
+  if (reaction === 'ALIEN_BIRTHDAY') return <GalaxyDancerReaction senderName={senderName || 'Participante'} />;
   return <span><i className="reaction-symbol">{reaction}</i>{sender}</span>;
 }
 

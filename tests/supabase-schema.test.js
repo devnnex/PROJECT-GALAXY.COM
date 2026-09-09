@@ -149,6 +149,7 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain("{ id: 'UFO'");
     expect(meetingStudio).toContain("{ id: 'ALIEN_BIRTHDAY'");
     expect(meetingStudio).toContain('assets/galaxy-dancer-reaction.webm');
+    expect(meetingStudio).toContain('assets/galaxy-dancer-reaction.mp3');
     expect(meetingStudio).toContain('className="galaxy-dancer-reaction"');
     expect(meetingClient).toContain("'UFO', 'ALIEN', 'ALIEN_BIRTHDAY'");
     expect(meetingStyles).toContain('@keyframes ufoFlight');
