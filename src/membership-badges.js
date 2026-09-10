@@ -1,1 +1,1 @@
-export const MEMBERSHIP_EMOJI = Object.freeze({ MONTHLY: '🟣', QUARTERLY: '💠', SEMESTER: '🌟', ANNUAL: '💎' });
+export const MEMBERSHIP_EMOJI = Object.freeze({ MONTHLY: '🟣', QUARTERLY: '💠', SEMESTER: '🌟', ANNUAL: '💎', VIP_ANNUAL: '👑' });

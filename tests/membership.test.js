@@ -14,13 +14,24 @@ const registrationManagement = read('../src/components/RegistrationManagement.js
 const registrationStyles = read('../src/registration.css');
 
 describe('open Galaxy meetings and manual commerce', () => {
-  it('defines the four membership plans and Scanner product', () => {
+  it('defines the membership plans, including the two-person VIP plan, and Scanner product', () => {
     expect(schema).toContain("('MONTHLY','Órbita mensual',1,80");
     expect(schema).toContain("('QUARTERLY','Nexo trimestral',3,250");
     expect(schema).toContain("('SEMESTER','Horizonte semestral',6,499");
     expect(schema).toContain("('ANNUAL','Constelación anual',12,999");
+    expect(schema).toContain("('VIP_ANNUAL','Membresía VIP · 2 accesos',12,1500");
     expect(schema).toContain("('SCANNER_POWER_ELITE','Scanner Power Elite'");
     expect(schema).toContain(",650,'premium-downloads','SCANNER-POWER-ELITE.pine'");
+  });
+
+  it('shows the requested image promotions and routes VIP through the membership checkout', () => {
+    expect(app).toContain("import lotajesImage from '../LOTAJES.jpeg'");
+    expect(app).toContain("import vipMembershipImage from '../Membresia-VIP.jpeg'");
+    expect(app).toContain('lotajesOpen && <PromotionImageModal');
+    expect(app).toContain("page === 'marketplace' && <PromotionImageModal");
+    expect(app).toContain("product.kind === 'membership-vip'");
+    expect(productData).toContain("id: 'membership_vip'");
+    expect(productData).toContain('price: 1500');
   });
 
   it('opens member commerce and messaging while retaining administrator-only areas', () => {

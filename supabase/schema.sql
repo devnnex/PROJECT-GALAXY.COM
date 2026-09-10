@@ -46,7 +46,7 @@ insert into public.app_settings(key, value, is_secret) values
 on conflict (key) do nothing;
 
 create table if not exists public.membership_plans (
-  code text primary key check (code in ('MONTHLY','QUARTERLY','SEMESTER','ANNUAL')),
+  code text primary key check (code in ('MONTHLY','QUARTERLY','SEMESTER','ANNUAL','VIP_ANNUAL')),
   name text not null,
   duration_months integer not null check (duration_months in (1,3,6,12)),
   price_usd numeric(12,2) not null check (price_usd > 0),
@@ -58,11 +58,17 @@ create table if not exists public.membership_plans (
   updated_at timestamptz not null default now()
 );
 
+-- Keep existing installations compatible with the new VIP plan.
+alter table public.membership_plans drop constraint if exists membership_plans_code_check;
+alter table public.membership_plans add constraint membership_plans_code_check
+  check (code in ('MONTHLY','QUARTERLY','SEMESTER','ANNUAL','VIP_ANNUAL'));
+
 insert into public.membership_plans(code,name,duration_months,price_usd,badge_tone,features,sort_order) values
   ('MONTHLY','Órbita mensual',1,80,'VIOLET','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,1),
   ('QUARTERLY','Nexo trimestral',3,250,'CYAN','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,2),
   ('SEMESTER','Horizonte semestral',6,499,'AMBER','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,3),
-  ('ANNUAL','Constelación anual',12,999,'PLATINUM','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,4)
+  ('ANNUAL','Constelación anual',12,999,'PLATINUM','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,4),
+  ('VIP_ANNUAL','Membresía VIP · 2 accesos',12,1500,'PLATINUM','["Acceso anual para dos personas","Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,5)
 on conflict (code) do update set name=excluded.name,duration_months=excluded.duration_months,
   price_usd=excluded.price_usd,badge_tone=excluded.badge_tone,features=excluded.features,
   active=excluded.active,sort_order=excluded.sort_order,updated_at=now();

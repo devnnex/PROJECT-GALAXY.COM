@@ -19,6 +19,8 @@ import CalendarPage from './components/CalendarPage';
 import ConstellationAvatar from './components/ConstellationAvatar';
 import GalaxyStore from './components/GalaxyStore';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
+import lotajesImage from '../LOTAJES.jpeg';
+import vipMembershipImage from '../Membresia-VIP.jpeg';
 
 const SCANNER_OWNER_EMAIL = 'elkin56ty@gmail.com';
 const isScannerOwner = (user) => String(user?.email || '').trim().toLowerCase() === SCANNER_OWNER_EMAIL;
@@ -42,7 +44,17 @@ const membershipMarketplacePlans = [
   { code: 'QUARTERLY', name: 'Nexo trimestral', duration: '3 meses', price: 250, tone: 'cyan', note: 'Ritmo continuo' },
   { code: 'SEMESTER', name: 'Horizonte semestral', duration: '6 meses', price: 499, tone: 'amber', note: 'Mayor continuidad' },
   { code: 'ANNUAL', name: 'Constelación anual', duration: '12 meses', price: 999, tone: 'platinum', note: 'Acceso anual' },
+  { code: 'VIP_ANNUAL', name: 'Membresía VIP · 2 accesos', duration: '12 meses · 2 personas', price: 1500, tone: 'platinum', note: 'Acceso para ambos' },
 ];
+
+function PromotionImageModal({ image, alt, onClose, className = '' }) {
+  return <div className={`promotion-image-backdrop ${className}`} role="dialog" aria-modal="true" aria-label={alt}>
+    <div className="promotion-image-modal">
+      <img src={image} alt={alt} />
+      <button className="promotion-image-close" type="button" onClick={onClose} aria-label="Cerrar"><X /></button>
+    </div>
+  </div>;
+}
 
 function Brand() { return <div className="brand"><span className="brand-mark"><Orbit /></span><span>{CONFIG.APP_NAME}</span></div>; }
 
@@ -95,7 +107,7 @@ function PromotionCountdown({ compact = false }) {
   return <div className={`promotion-countdown ${compact ? 'compact' : ''}`}><Clock3 /><span><strong>{time}</strong><small>Se renueva cada 24 horas</small></span></div>;
 }
 
-function ProductCard({ product, onOpen }) { const [saved, setSaved] = useState(false); return <article className="product-card surface" onClick={() => onOpen(product)}><div className={`product-art ${product.tone} ${product.image ? 'has-product-image' : ''}`}>{product.image ? <img className="product-image" src={product.image} alt={product.title} /> : <><span className="product-mark">{product.mark}</span><div className="orb-art" /></>}{product.kind !== 'membership' && <button className={`icon-button ${saved ? 'saved' : ''}`} aria-label={saved ? 'Quitar de guardados' : 'Guardar'} onClick={(e) => { e.stopPropagation(); setSaved(!saved); }}><Bookmark fill={saved ? 'currentColor' : 'none'} /></button>}{product.originalPrice && <span className="promotion-ribbon">PROMOCIÓN</span>}{product.kind === 'automation-service' && <span className="automation-disclaimer">Resultados no garantizados</span>}</div><div className="product-info"><span>{product.category}</span><h3>{product.title}</h3><p>por {product.seller}</p><div className="product-price-row"><span className="promotional-price">{product.originalPrice && <s>{product.originalPrice} USDT</s>}<strong>{product.kind === 'membership' ? `Desde ${product.price}` : product.price} USDT</strong></span><small>{product.kind === 'membership' ? <><ShieldCheck /> Confirmación manual</> : <><Star /> {product.rating} ({product.reviews})</>}</small></div>{product.promotionCycleHours && <PromotionCountdown compact />}</div></article>; }
+function ProductCard({ product, onOpen }) { const [saved, setSaved] = useState(false); const membershipProduct = product.kind === 'membership' || product.kind === 'membership-vip'; return <article className="product-card surface" onClick={() => onOpen(product)}><div className={`product-art ${product.tone} ${product.image ? 'has-product-image' : ''}`}>{product.image ? <img className="product-image" src={product.image} alt={product.title} /> : <><span className="product-mark">{product.mark}</span><div className="orb-art" /></>}{membershipProduct && <span className="vip-card-label">VIP</span>}{!membershipProduct && <button className={`icon-button ${saved ? 'saved' : ''}`} aria-label={saved ? 'Quitar de guardados' : 'Guardar'} onClick={(e) => { e.stopPropagation(); setSaved(!saved); }}><Bookmark fill={saved ? 'currentColor' : 'none'} /></button>}{product.originalPrice && <span className="promotion-ribbon">PROMOCIÓN</span>}{product.kind === 'automation-service' && <span className="automation-disclaimer">Resultados no garantizados</span>}</div><div className="product-info"><span>{product.category}</span><h3>{product.title}</h3><p>por {product.seller}</p><div className="product-price-row"><span className="promotional-price">{product.originalPrice && <s>{product.originalPrice} USDT</s>}<strong>{membershipProduct ? `Desde ${product.price}` : product.price} USDT</strong></span><small>{membershipProduct ? <><ShieldCheck /> Confirmación manual</> : <><Star /> {product.rating} ({product.reviews})</>}</small></div>{product.promotionCycleHours && <PromotionCountdown compact />}</div></article>; }
 function ProductGrid({ items, onOpen }) { return <div className="product-grid">{items.map((p) => <ProductCard key={p.id} product={p} onOpen={onOpen} />)}</div>; }
 
 function MembershipMarketplaceCards({ product, onOpen }) {
@@ -119,7 +131,7 @@ function Marketplace({ onOpen, user }) {
 function ProductModal({ product, onClose, toast, membershipCenter, user }) {
   const [checkout, setCheckout] = useState(false); const [network, setNetwork] = useState(''); const [payment, setPayment] = useState(null);
   if (!product) return null;
-  if (product.kind === 'membership') return <MembershipCheckoutModal plans={membershipCenter?.plans || []} membership={membershipCenter?.membership} initialPlanCode={product.planCode} onClose={onClose} toast={toast} />;
+  if (product.kind === 'membership' || product.kind === 'membership-vip') return <MembershipCheckoutModal plans={membershipCenter?.plans || []} membership={membershipCenter?.membership} initialPlanCode={product.planCode || (product.kind === 'membership-vip' ? 'VIP_ANNUAL' : '')} onClose={onClose} toast={toast} />;
   if (product.kind === 'scanner' && isScannerOwner(user)) return <ScannerCheckoutModal product={product} onClose={onClose} toast={toast} />;
   const createPayment = () => {
     if (!network) return toast('Selecciona una red antes de continuar.', 'error');
@@ -234,13 +246,14 @@ function AppShell({ user, onUserChange, onLogout }) {
   const isAdmin = user.role === 'ADMIN'; const language = languageFor(user); const english = language === 'en';
   const availableNavigation = (isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
   const inviteToken = new URLSearchParams(location.search).get('invite') || '';
-  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null);
+  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(true); const [vipPromoOpen, setVipPromoOpen] = useState(false);
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [notificationItems, setNotificationItems] = useState([]); const [notificationFilter, setNotificationFilter] = useState('UNREAD'); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const [membershipCenter, setMembershipCenter] = useState({ membership: user.membership || { isActive: false }, plans: [], orders: [] });
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
   const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
+  useEffect(() => { if (page === 'marketplace') setVipPromoOpen(true); }, [page]);
   const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
   useEffect(() => { reloadMembership().catch(() => {}); }, [user.id]);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
@@ -334,6 +347,8 @@ function AppShell({ user, onUserChange, onLogout }) {
     <nav className="bottom-nav">{availableNavigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>
     {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} items={availableNavigation} />}
     <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} toast={toast} membershipCenter={membershipCenter} user={user} />
+    {lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
+    {!lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
     <Toast item={toastItem} />
   </div>;

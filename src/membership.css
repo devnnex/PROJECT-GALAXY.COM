@@ -23,3 +23,10 @@
 @media(max-width:520px){.membership-marketplace{padding:17px}.membership-marketplace-grid{gap:7px}.membership-marketplace-card{min-height:158px;padding:12px}.membership-marketplace-card>b{font-size:20px}.membership-marketplace-card>strong{font-size:12px}.membership-checkout{padding:22px 15px}.membership-checkout>header{align-items:flex-start}.membership-checkout-mark{width:45px;height:45px}.membership-plan-grid{grid-template-columns:1fr 1fr;gap:6px}.membership-plan-option{min-height:110px;padding:11px}.membership-plan-option strong{font-size:17px}.membership-network>div:last-child{grid-template-columns:1fr}.membership-countdown>span{min-width:57px}.membership-profile-card{padding:19px}.membership-profile-heading{align-items:flex-start;flex-wrap:wrap}.membership-profile-heading .membership-plan-badge{margin-left:0}.membership-gate-features{display:grid}.payment-amount{padding:17px}.payment-address code{font-size:9px}}
 
 .scanner-checkout-image{width:76px;height:92px;flex:0 0 auto;object-fit:cover;object-position:center top;border-radius:12px;border:1px solid rgba(175,128,246,.3);box-shadow:0 10px 35px rgba(66,31,124,.3)}
+.promotion-image-backdrop{position:fixed;inset:0;z-index:120;display:grid;place-items:center;padding:18px;background:rgba(3,2,6,.82);backdrop-filter:blur(8px)}
+.promotion-image-modal{position:relative;display:inline-block;max-width:94vw;max-height:92vh;line-height:0}
+.promotion-image-modal img{display:block;width:auto;max-width:94vw;height:auto;max-height:92vh;object-fit:contain;border-radius:10px;box-shadow:0 24px 90px rgba(0,0,0,.6)}
+.promotion-image-close{position:absolute;right:10px;top:10px;width:38px;height:38px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.28);border-radius:50%;background:rgba(5,4,9,.72);color:#fff;z-index:1}
+.promotion-image-close:hover{background:rgba(133,83,220,.9)}
+.vip-card-label{position:absolute;left:12px;top:12px;padding:5px 9px;border:1px solid rgba(255,255,255,.35);border-radius:999px;background:rgba(10,7,16,.72);color:#f5eaff;font:700 8px 'Manrope';letter-spacing:.16em}
+.product-art:not(.has-product-image) .vip-card-label{display:none}
