@@ -149,7 +149,7 @@
 .meeting-pip-source { position: fixed; left: -4px; bottom: -4px; z-index: -1; width: 2px; height: 2px; opacity: .001; pointer-events: none; }.meeting-pip-source.mirrored { transform: scaleX(-1); }
 .meeting-top-actions .secondary-button.active { border-color: rgba(99, 211, 160, .42); color: #8be0b4; background: rgba(65, 181, 128, .08); }
 .meeting-mobile-scrim,.mobile-chat-fab { display: none; }
-.collaboration-overlay { position: absolute; inset: 0; z-index: 7; width: 100%; height: 100%; pointer-events: none; touch-action: none; }
+.collaboration-overlay { position:absolute; z-index:7; left:0; top:0; width:100%; height:100%; pointer-events:none; touch-action:none; }
 .collaboration-overlay.active { pointer-events: auto; cursor: crosshair; }
 .collaboration-overlay.tool-select { cursor: default; }
 .annotation-shape { pointer-events:none; }.tool-select .annotation-shape { pointer-events:visibleStroke; cursor:pointer; }.tool-select .annotation-shape.selected { cursor:move; }
@@ -209,9 +209,10 @@
 .meeting-side-tabs { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); }
 .meeting-side-tabs button { min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 5px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #777080; font-size: 9px; }
 .meeting-side-tabs button.active { color: #c9b0f4; border-bottom-color: #885bd7; background: rgba(119, 72, 194, .06); }.meeting-side-tabs svg { width: 14px; }.meeting-side-tabs span { min-width: 17px; padding: 2px 5px; border-radius: 10px; background: rgba(125, 82, 202, .14); }
-.meeting-side .people-list { padding:0 14px; max-height:310px; overflow-x:hidden; overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(157,112,228,.58) transparent; }.meeting-side .people-list::-webkit-scrollbar { width:3px; }.meeting-side .people-list::-webkit-scrollbar-track { background:transparent; }.meeting-side .people-list::-webkit-scrollbar-thumb { border-radius:8px; background:rgba(157,112,228,.58); }.meeting-side .people-list .person { min-width:0; min-height:53px; height:auto; overflow:hidden; }.meeting-side .people-list .person>span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meeting-side .people-list { padding:0 14px; max-height:310px; overflow-x:hidden; overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(157,112,228,.58) transparent; }.meeting-side .people-list::-webkit-scrollbar { width:3px; }.meeting-side .people-list::-webkit-scrollbar-track { background:transparent; }.meeting-side .people-list::-webkit-scrollbar-thumb { border-radius:8px; background:rgba(157,112,228,.58); }.meeting-side .people-list .person { min-width:0; min-height:53px; height:auto; gap:7px; padding:0 9px 0 2px; overflow:hidden; }.meeting-side .people-list .person>span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .meeting-side .person > svg { width: 13px; }.meeting-side .host-mute { width: 27px; height: 27px; display: grid; place-items: center; border: 1px solid rgba(206, 91, 116, .2); border-radius: 6px; background: rgba(190, 64, 88, .08); color: #db6f84; }
-.people-list .participant-mic-indicator { width:15px; height:15px; flex:0 0 auto; color:#625d67; stroke-width:2.2; transition:color .18s,opacity .18s,transform .18s; }
+.meeting-side .people-list .participant-hand-indicator { width:17px; height:17px; flex:0 0 auto; color:#ffd75a; fill:rgba(255,215,90,.16); filter:drop-shadow(0 0 5px rgba(255,207,58,.45)); }
+.meeting-side .people-list .participant-mic-indicator { width:15px; height:15px; flex:0 0 auto; margin-right:4px; color:#625d67; stroke-width:2.2; transition:color .18s,opacity .18s,transform .18s; }
 .people-list .person.mic-off > .participant-mic-indicator { color:#625d67; opacity:.72; animation:none; }
 .people-list .person.mic-on > .participant-mic-indicator,.people-list .person.mic-on .host-mute svg { color:#68e7ad; opacity:1; filter:drop-shadow(0 0 5px rgba(81,235,166,.7)); animation:galaxyMicOnline 1.65s ease-in-out infinite; }
 .meeting-side .person.mic-on .host-mute.participant-mic-indicator { border-color:rgba(75,229,157,.38); background:radial-gradient(circle,rgba(59,202,132,.18),rgba(27,93,68,.08)); color:#68e7ad; box-shadow:inset 0 0 8px rgba(74,226,157,.08),0 0 10px rgba(64,211,145,.08); }
@@ -431,4 +432,5 @@
 
 @media (min-width: 1001px) {
   .control-dock { transform:translateX(-171px); }
+  .collaboration-overlay:focus,.collaboration-overlay:focus-visible { outline:none; }
 }

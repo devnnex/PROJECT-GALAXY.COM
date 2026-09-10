@@ -357,17 +357,22 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('width: 2.5');
     expect(meetingStyles).toContain('.analysis-tool-rail');
     expect(meetingStyles).toContain('.annotation-selection-box');
+    expect(meetingStudio).toContain("stage.querySelector('.video-surface.presentation video')");
+    expect(meetingStudio).toContain('aspectRatio={presentationAspectRatio}');
+    expect(meetingStyles).toContain('.collaboration-overlay:focus,.collaboration-overlay:focus-visible { outline:none; }');
   });
 
   it('uses capability detection and a mobile presentation fallback', () => {
     expect(meetingStudio).toContain('navigator.mediaDevices?.getDisplayMedia');
-    expect(meetingStudio).toContain("const attempts = [options, { video: true, audio: true }, { video: true }]");
+    expect(meetingStudio).toContain("mobile ? [{ video: true }, { video: true, audio: true }, options]");
     expect(meetingStudio).toContain("mediaSource: 'screen'");
     expect(meetingStudio).toContain('facingMode: { ideal: \'environment\' }');
     expect(meetingStudio).toContain('Cámara trasera o documento');
     expect(meetingStyles).toContain('.reaction-menu { position: fixed;');
     expect(meetingStyles).toContain('.share-menu.mobile-action-menu { display:block; }');
     expect(meetingStyles).toContain('.control-dock { transform:translateX(-171px); }');
+    expect(meetingStudio).toContain("matchMedia('(max-width: 1000px), (pointer: coarse)').matches");
+    expect(meetingStudio).toContain('onClick={handleShareClick}');
   });
 
   it('plays synchronized reaction audio for remote participants', () => {
@@ -392,6 +397,7 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('participantHandStates.current.get(peer.peerId) === false');
     expect(meetingStudio).toContain('insertEmoji');
     expect(meetingStudio).toContain('message-emoji-picker');
+    expect(meetingStudio).toContain('className="participant-hand-indicator"');
     expect(meetingStyles).toContain('.message-emoji-picker');
   });
 
