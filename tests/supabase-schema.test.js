@@ -227,7 +227,7 @@ describe('Supabase contract', () => {
   it('captures and mixes shared audio with the presenter microphone', () => {
     expect(meetingStudio).toContain('async function createSharedAudioMixer(displayStream, microphoneStream)');
     expect(meetingStudio).toContain('context.createMediaStreamDestination()');
-    expect(meetingStudio).toContain('getDisplayMedia({ video: true, audio:');
+    expect(meetingStudio).toContain('requestDisplayCapture({ video: true, audio:');
     expect(meetingStudio).toContain('sharedLocalStream(stream)');
     expect(meetingStudio).toContain('Pantalla, micrófono y audio disponible mezclados correctamente.');
     expect(meetingStudio).toContain('<RemoteAudioLayer streams={remoteStreams}');
@@ -265,6 +265,16 @@ describe('Supabase contract', () => {
     expect(meetingStudio).not.toMatch(/\b(?:alert|prompt|confirm)\s*\(/);
     expect(meetingStyles).toContain('.mobile-chat-fab i');
     expect(meetingStyles).toContain('background:#36bf76');
+  });
+
+  it('supports movable annotations and polished meeting controls without clipped panels', () => {
+    expect(meetingStudio).toContain('annotation-resize-handle');
+    expect(meetingStudio).toContain('onSelectionChange={setSelectedAnnotationId}');
+    expect(meetingStudio).toContain("className={`hand-control ${handRaised ? 'active raised' : ''}`}");
+    expect(meetingStudio).toContain("style={{ '--message-hue': messageHue(message.senderId) }}");
+    expect(meetingStyles).toContain('.meeting-stage-shell.has-analysis-tools');
+    expect(meetingStyles).toContain('scrollbar-color:#8f63dc');
+    expect(meetingStyles).toContain('overflow-x:hidden');
   });
 
   it('keeps presenter voice alive while the shared-audio context changes state', () => {
