@@ -19,7 +19,7 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(schema).toContain("('QUARTERLY','Nexo trimestral',3,250");
     expect(schema).toContain("('SEMESTER','Horizonte semestral',6,499");
     expect(schema).toContain("('ANNUAL','Constelación anual',12,999");
-    expect(schema).toContain("('VIP_ANNUAL','Membresía VIP · 2 accesos',12,1500");
+    expect(schema).toContain("('VIP_ANNUAL','Membresía VIP anual · 2 accesos',12,1500");
     expect(schema).toContain("('SCANNER_POWER_ELITE','Scanner Power Elite'");
     expect(schema).toContain(",650,'premium-downloads','SCANNER-POWER-ELITE.pine'");
   });

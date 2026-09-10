@@ -68,7 +68,7 @@ insert into public.membership_plans(code,name,duration_months,price_usd,badge_to
   ('QUARTERLY','Nexo trimestral',3,250,'CYAN','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,2),
   ('SEMESTER','Horizonte semestral',6,499,'AMBER','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,3),
   ('ANNUAL','Constelación anual',12,999,'PLATINUM','["Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,4),
-  ('VIP_ANNUAL','Membresía VIP · 2 accesos',12,1500,'PLATINUM','["Acceso anual para dos personas","Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,5)
+  ('VIP_ANNUAL','Membresía VIP anual · 2 accesos',12,1500,'PLATINUM','["Acceso anual para dos personas","Reuniones privadas","Sesiones LIVE","Chat y pantalla compartida"]'::jsonb,5)
 on conflict (code) do update set name=excluded.name,duration_months=excluded.duration_months,
   price_usd=excluded.price_usd,badge_tone=excluded.badge_tone,features=excluded.features,
   active=excluded.active,sort_order=excluded.sort_order,updated_at=now();

@@ -44,7 +44,7 @@ const membershipMarketplacePlans = [
   { code: 'QUARTERLY', name: 'Nexo trimestral', duration: '3 meses', price: 250, tone: 'cyan', note: 'Ritmo continuo' },
   { code: 'SEMESTER', name: 'Horizonte semestral', duration: '6 meses', price: 499, tone: 'amber', note: 'Mayor continuidad' },
   { code: 'ANNUAL', name: 'Constelación anual', duration: '12 meses', price: 999, tone: 'platinum', note: 'Acceso anual' },
-  { code: 'VIP_ANNUAL', name: 'Membresía VIP · 2 accesos', duration: '12 meses · 2 personas', price: 1500, tone: 'platinum', note: 'Acceso para ambos' },
+  { code: 'VIP_ANNUAL', name: 'Membresía VIP anual · 2 accesos', duration: 'Plan anual · 12 meses · 2 personas', price: 1500, tone: 'platinum', note: 'Acceso anual para ambos' },
 ];
 
 function PromotionImageModal({ image, alt, onClose, className = '' }) {
@@ -82,11 +82,13 @@ function Metric({ icon: Icon, label, value, note, tone }) { return <article clas
 
 function Dashboard({ user, navigate, openProduct }) {
   const wallet = user.wallet || {}; const currency = wallet.currency || 'USDT'; const level = Number(user.level || 1); const xp = Number(user.xp || 0);
+  const catalog = catalogFor(user); const vip = catalog.find((product) => product.id === 'membership_vip');
+  const dashboardProducts = [vip, ...catalog.filter((product) => product.id !== 'membership_vip' && product.id !== 'membership_sessions')].filter(Boolean).slice(0, 3);
   return <div className="page-stack">
     <header className="page-header"><div><p className="eyebrow">XAUUSD COMMAND CENTER</p><h1>Bienvenido de vuelta, {user.name.split(' ')[0]}.</h1><p>Prepárate para las operativas en vivo y la próxima Kill Zone.</p></div><button className="primary-button compact" onClick={() => navigate('discover')}><Plus /> Analizar</button></header>
     <div className="metrics"><Metric icon={WalletCards} label="Balance disponible" value={`${Number(wallet.availableBalance || 0).toFixed(2)} ${currency}`} note="Disponible en tu cuenta" /><Metric icon={Activity} label="Nivel actual" value={level} note="Progreso verificado" tone="blue" /><Metric icon={Sparkles} label="XP acumulados" value={xp} note="Sin estimaciones locales" tone="rose" /></div>
     <div className="dashboard-grid"><section className="surface activity-panel"><div className="section-title"><div><p className="eyebrow">MARKET CONTEXT</p><h2>Bitácora de sesión</h2></div></div><EmptyState icon={Activity} title="Sin análisis registrados" text="Aquí aparecerán tus lecturas de estructura, liquidez y operativas de XAUUSD." /></section><section className="surface next-meeting"><div className="section-title"><div><p className="eyebrow">KILL ZONE</p><h2>Sala de análisis</h2></div><Video /></div><div className="meeting-art"><span className="pulse-ring" /><Orbit /></div><h3>Operativas en vivo</h3><p>Acompañamiento de lunes a viernes para estudiar XAUUSD antes de London o New York.</p><button className="primary-button" onClick={() => navigate('meetings')}>Abrir sesiones <ArrowRight /></button></section></div>
-    <section><div className="section-title"><div><p className="eyebrow">TRADING TOOLKIT</p><h2>Herramientas para XAUUSD</h2></div><button className="text-button" onClick={() => navigate('marketplace')}>Marketplace <ArrowRight /></button></div><ProductGrid items={catalogFor(user).slice(0, 3)} onOpen={openProduct} /></section>
+    <section><div className="section-title"><div><p className="eyebrow">TRADING TOOLKIT</p><h2>Herramientas para XAUUSD</h2></div><button className="text-button" onClick={() => navigate('marketplace')}>Marketplace <ArrowRight /></button></div><ProductGrid items={dashboardProducts} onOpen={openProduct} /></section>
   </div>;
 }
 
@@ -348,7 +350,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} items={availableNavigation} />}
     <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} toast={toast} membershipCenter={membershipCenter} user={user} />
     {lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
-    {!lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
+    {!lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
     <Toast item={toastItem} />
   </div>;
