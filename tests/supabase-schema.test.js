@@ -332,6 +332,16 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('<CollaborationRequestModal');
     expect(meetingStudio).toContain('<CollaborationOverlay');
     expect(meetingStudio).toContain('Control guiado');
+    expect(meetingStudio).toContain('PRIMARY_ANALYSIS_TOOLS');
+    expect(meetingStudio).toContain('Línea de tendencia');
+    expect(meetingStudio).toContain('Canal paralelo');
+    expect(meetingStudio).toContain('Herramienta tridente');
+    expect(meetingStudio).toContain("event.key !== 'Delete'");
+    expect(meetingStudio).toContain("collaborate('collab-update'");
+    expect(meetingStudio).toContain("collaborate('collab-delete'");
+    expect(meetingStudio).toContain('width: 2.5');
+    expect(meetingStyles).toContain('.analysis-tool-rail');
+    expect(meetingStyles).toContain('.annotation-selection-box');
   });
 
   it('uses capability detection and a mobile presentation fallback', () => {

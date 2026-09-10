@@ -308,24 +308,100 @@ function RemoteAudioLayer({ streams, onBlockedChange }) {
   return <div className="remote-audio-layer" aria-hidden="true">{Object.entries(streams).map(([peerId, stream]) => <RemoteAudioTrack key={peerId} peerId={peerId} stream={stream} onBlocked={update} />)}</div>;
 }
 
-function CollaborationOverlay({ active, mode, color, strokes, cursors, onPoint, onFinish }) {
-  const ref = useRef(null); const drawing = useRef(null); const lastSent = useRef(0);
+const PRIMARY_ANALYSIS_TOOLS = [
+  { id: 'select', label: 'Seleccionar', glyph: '↖' },
+  { id: 'pen', label: 'Dibujo libre', glyph: '✎' },
+  { id: 'trend-line', label: 'Línea de tendencia', glyph: '╱' },
+  { id: 'horizontal-line', label: 'Línea horizontal', glyph: '─' },
+  { id: 'vertical-line', label: 'Línea vertical', glyph: '│' },
+];
+const MORE_ANALYSIS_TOOLS = [
+  { group: 'LÍNEAS', tools: [
+    { id: 'ray', label: 'Rayo', glyph: '↗' }, { id: 'info-line', label: 'Línea de información', glyph: '↗' },
+    { id: 'extended-line', label: 'Línea extendida', glyph: '╱' }, { id: 'trend-angle', label: 'Ángulo de tendencia', glyph: '∠' },
+    { id: 'horizontal-ray', label: 'Rayo horizontal', glyph: '→' }, { id: 'cross-line', label: 'Cruce de líneas', glyph: '┼' },
+  ] },
+  { group: 'CANALES', tools: [
+    { id: 'parallel-channel', label: 'Canal paralelo', glyph: '〽' }, { id: 'regression-trend', label: 'Tendencia de regresión', glyph: '▱' },
+    { id: 'top-bottom-plane', label: 'Plano superior/inferior', glyph: '≋' }, { id: 'disconnected-channel', label: 'Canal desconectado', glyph: '⌁' },
+  ] },
+  { group: 'TRIDENTES', tools: [
+    { id: 'pitchfork', label: 'Herramienta tridente', glyph: '⋔' }, { id: 'schiff-pitchfork', label: 'Tridente de Schiff', glyph: '⋔' },
+    { id: 'modified-schiff-pitchfork', label: 'Tridente de Schiff modificado', glyph: '⋔' },
+  ] },
+];
+
+function analysisGeometry(stroke) {
+  const points = stroke.points || []; const a = points[0]; const b = points[points.length - 1] || a;
+  if (!a || !b) return [];
+  const dx = b.x - a.x || .001; const dy = b.y - a.y || .001; const length = Math.hypot(dx, dy) || 1;
+  const nx = -dy / length * 38; const ny = dx / length * 38;
+  const far = (direction) => ({ x: a.x + dx * direction * 2200 / Math.max(Math.abs(dx), Math.abs(dy), 1), y: a.y + dy * direction * 2200 / Math.max(Math.abs(dx), Math.abs(dy), 1) });
+  switch (stroke.tool) {
+    case 'horizontal-line': return [[[0, a.y], [1000, a.y]]];
+    case 'horizontal-ray': return [[[a.x, a.y], [1000, a.y]]];
+    case 'vertical-line': return [[[a.x, 0], [a.x, 1000]]];
+    case 'cross-line': return [[[0, a.y], [1000, a.y]], [[a.x, 0], [a.x, 1000]]];
+    case 'ray': case 'info-line': return [[[a.x, a.y], [far(1).x, far(1).y]]];
+    case 'extended-line': { const start = far(-1); const end = far(1); return [[[start.x, start.y], [end.x, end.y]]]; }
+    case 'trend-angle': return [[[a.x, a.y], [b.x, b.y]], [[a.x, a.y], [b.x, a.y]]];
+    case 'parallel-channel': case 'regression-trend': case 'top-bottom-plane': case 'disconnected-channel': return [
+      [[a.x + nx, a.y + ny], [b.x + nx, b.y + ny]], [[a.x, a.y], [b.x, b.y]], [[a.x - nx, a.y - ny], [b.x - nx, b.y - ny]],
+    ];
+    case 'pitchfork': case 'schiff-pitchfork': case 'modified-schiff-pitchfork': return [
+      [[a.x, a.y], [b.x, b.y]], [[a.x, a.y], [b.x + nx, b.y + ny]], [[a.x, a.y], [b.x - nx, b.y - ny]],
+    ];
+    default: return [points.map((point) => [point.x, point.y])];
+  }
+}
+
+function AnnotationShape({ stroke, selected, selectable, onPointerDown, onDoubleClick }) {
+  const lines = analysisGeometry(stroke); const dash = stroke.tool === 'disconnected-channel' ? '12 9' : undefined;
+  return <g className={`annotation-shape ${selected ? 'selected' : ''}`} data-stroke-id={stroke.id} onPointerDown={onPointerDown} onDoubleClick={onDoubleClick}>
+    {lines.map((line, index) => <polyline key={index} points={line.map(([x, y]) => `${x},${y}`).join(' ')} fill="none" stroke={stroke.color} strokeWidth={stroke.width || 2.5} strokeDasharray={dash} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />)}
+    {selectable && lines.map((line, index) => <polyline className="annotation-hit-area" key={`hit-${index}`} points={line.map(([x, y]) => `${x},${y}`).join(' ')} fill="none" stroke="transparent" strokeWidth="18" vectorEffect="non-scaling-stroke" />)}
+    {selected && <rect className="annotation-selection-box" x={Math.min(...stroke.points.map((point) => point.x)) - 8} y={Math.min(...stroke.points.map((point) => point.y)) - 8} width={Math.max(16, Math.max(...stroke.points.map((point) => point.x)) - Math.min(...stroke.points.map((point) => point.x)) + 16)} height={Math.max(16, Math.max(...stroke.points.map((point) => point.y)) - Math.min(...stroke.points.map((point) => point.y)) + 16)} />}
+  </g>;
+}
+
+function CollaborationOverlay({ active, mode, tool = 'pen', color, strokes, cursors, onPoint, onChange, onDelete, onFinish }) {
+  const ref = useRef(null); const drawing = useRef(null); const dragging = useRef(null); const lastSent = useRef(0); const [selectedId, setSelectedId] = useState(null);
   const pointFor = (event) => { const rect = ref.current.getBoundingClientRect(); return { x: Math.max(0, Math.min(1000, (event.clientX - rect.left) / rect.width * 1000)), y: Math.max(0, Math.min(1000, (event.clientY - rect.top) / rect.height * 1000)) }; };
+  useEffect(() => {
+    if (!selectedId) return undefined;
+    const remove = (event) => { if (event.key !== 'Delete' && event.key !== 'Backspace') return; event.preventDefault(); onDelete?.(selectedId); setSelectedId(null); };
+    window.addEventListener('keydown', remove); return () => window.removeEventListener('keydown', remove);
+  }, [selectedId, onDelete]);
   const down = (event) => {
     if (!active) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId);
+    if (mode === 'draw' && tool === 'select') { setSelectedId(null); return; }
     const point = pointFor(event); const id = crypto.randomUUID(); drawing.current = mode === 'draw' ? id : null;
-    onPoint({ mode, strokeId: id, point, start: true, color });
+    onPoint({ mode, strokeId: id, point, start: true, color, tool });
   };
   const move = (event) => {
-    if (!active) return; if (mode === 'draw' && !drawing.current) return;
+    if (!active) return;
+    if (dragging.current) {
+      const point = pointFor(event); const dx = point.x - dragging.current.start.x; const dy = point.y - dragging.current.start.y;
+      onChange?.({ ...dragging.current.stroke, points: dragging.current.stroke.points.map((item) => ({ x: Math.max(0, Math.min(1000, item.x + dx)), y: Math.max(0, Math.min(1000, item.y + dy)) })) }); return;
+    }
+    if (mode === 'draw' && !drawing.current) return;
     const now = performance.now(); if (now - lastSent.current < 24) return; lastSent.current = now;
-    onPoint({ mode, strokeId: drawing.current, point: pointFor(event), start: false, color });
+    onPoint({ mode, strokeId: drawing.current, point: pointFor(event), start: false, color, tool });
   };
-  const up = (event) => { if (drawing.current) onFinish?.(drawing.current); drawing.current = null; event.currentTarget.releasePointerCapture?.(event.pointerId); };
-  return <svg ref={ref} className={`collaboration-overlay ${active ? 'active' : ''}`} viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
-    {strokes.map((stroke) => <polyline key={stroke.id} points={stroke.points.map((point) => `${point.x},${point.y}`).join(' ')} fill="none" stroke={stroke.color} strokeWidth={stroke.width || 5} strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />)}
+  const up = (event) => { if (drawing.current) onFinish?.(drawing.current); drawing.current = null; dragging.current = null; event.currentTarget.releasePointerCapture?.(event.pointerId); };
+  const startDrag = (event, stroke) => { if (tool !== 'select' || selectedId !== stroke.id) return; event.stopPropagation(); event.preventDefault(); dragging.current = { stroke, start: pointFor(event) }; event.currentTarget.setPointerCapture?.(event.pointerId); };
+  return <svg ref={ref} tabIndex="0" className={`collaboration-overlay ${active ? 'active' : ''} tool-${tool}`} viewBox="0 0 1000 1000" preserveAspectRatio="none" onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+    {strokes.map((stroke) => <AnnotationShape key={stroke.id} stroke={stroke} selected={selectedId === stroke.id} selectable={tool === 'select'} onPointerDown={(event) => startDrag(event, stroke)} onDoubleClick={(event) => { if (tool !== 'select') return; event.stopPropagation(); setSelectedId(stroke.id); ref.current?.focus(); }} />)}
     {Object.entries(cursors).map(([peerId, cursor]) => <g className="remote-cursor" key={peerId} transform={`translate(${cursor.x} ${cursor.y})`}><path d="M0 0L0 25L7 18L13 31L19 28L13 16L23 15Z" fill={cursor.color || '#b98cff'} stroke="#08070a" strokeWidth="2" /><text x="20" y="31">{cursor.name || 'Participante'}</text></g>)}
   </svg>;
+}
+
+function AnalysisToolRail({ tool, open, disabled, onToggle, onSelect }) {
+  return <div className="analysis-tool-rail glass" aria-label="Herramientas de análisis">
+    {PRIMARY_ANALYSIS_TOOLS.map((item) => <button type="button" className={tool === item.id ? 'active' : ''} disabled={disabled} title={item.label} aria-label={item.label} key={item.id} onClick={() => onSelect(item.id)}><span>{item.glyph}</span></button>)}
+    <button type="button" className={open ? 'active' : ''} disabled={disabled} title="Más herramientas" aria-label="Más herramientas" onClick={onToggle}><Plus /></button>
+    {open && <div className="analysis-tool-menu glass">{MORE_ANALYSIS_TOOLS.map((group) => <section key={group.group}><p>{group.group}</p>{group.tools.map((item) => <button type="button" className={tool === item.id ? 'active' : ''} key={item.id} onClick={() => onSelect(item.id)}><span>{item.glyph}</span>{item.label}</button>)}</section>)}</div>}
+  </div>;
 }
 
 function CollaborationRequestModal({ request, onRespond }) {
@@ -353,7 +429,8 @@ function sanitizeAnnotationStrokes(strokes) {
     if (!/^[0-9a-f-]{16,64}$/i.test(stroke?.id || '') || !Array.isArray(stroke.points)) return [];
     const points = stroke.points.slice(-2000).filter((point) => Number.isFinite(point?.x) && Number.isFinite(point?.y) && point.x >= 0 && point.x <= 1000 && point.y >= 0 && point.y <= 1000);
     if (!points.length) return [];
-    return [{ id: stroke.id, color: /^#[0-9a-f]{6}$/i.test(stroke.color || '') ? stroke.color : '#ffcf5a', width: 5, points }];
+    const allowedTools = new Set(['pen', ...PRIMARY_ANALYSIS_TOOLS.map((item) => item.id), ...MORE_ANALYSIS_TOOLS.flatMap((group) => group.tools.map((item) => item.id))]);
+    return [{ id: stroke.id, tool: allowedTools.has(stroke.tool) ? stroke.tool : 'pen', color: /^#[0-9a-f]{6}$/i.test(stroke.color || '') ? stroke.color : '#ffcf5a', width: 2.5, points }];
   });
 }
 
@@ -548,7 +625,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
   const [sideTab, setSideTab] = useState('people'); const [mobilePanelOpen, setMobilePanelOpen] = useState(false); const [messages, setMessages] = useState([]); const [floatingMessages, setFloatingMessages] = useState([]); const [unreadMessages, setUnreadMessages] = useState(0); const [messagePulse, setMessagePulse] = useState(false); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [pipActive, setPipActive] = useState(false);
-  const [audioBlocked, setAudioBlocked] = useState(false); const [shareHasAudio, setShareHasAudio] = useState(false); const [shareAudioEnabled, setShareAudioEnabled] = useState(true); const [participantMicsLocked, setParticipantMicsLocked] = useState(false); const [collaborationEnabled, setCollaborationEnabled] = useState(true); const [collaborationMode, setCollaborationMode] = useState(null); const [collaborationColor, setCollaborationColor] = useState('#ffcf5a');
+  const [audioBlocked, setAudioBlocked] = useState(false); const [shareHasAudio, setShareHasAudio] = useState(false); const [shareAudioEnabled, setShareAudioEnabled] = useState(true); const [participantMicsLocked, setParticipantMicsLocked] = useState(false); const [collaborationEnabled, setCollaborationEnabled] = useState(true); const [collaborationMode, setCollaborationMode] = useState(null); const [collaborationColor, setCollaborationColor] = useState('#ffcf5a'); const [annotationTool, setAnnotationTool] = useState('pen'); const [analysisToolsOpen, setAnalysisToolsOpen] = useState(false);
   const [collaborationRequest, setCollaborationRequest] = useState(null); const [requestedCollaboration, setRequestedCollaboration] = useState(null); const [collaborationPermission, setCollaborationPermission] = useState(null);
   const [annotationStrokes, setAnnotationStrokes] = useState([]); const [remoteCursors, setRemoteCursors] = useState({}); const [confirmation, setConfirmation] = useState(null);
 
@@ -602,19 +679,19 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
     if (notify && role !== 'HOST') toast(active ? `${by || 'El anfitrión'} silenció y bloqueó los micrófonos.` : `${by || 'El anfitrión'} permitió activar los micrófonos.`, 'info');
   };
-  const resetCollaboration = () => { collaborationGrants.current.clear(); collaborationRequestTimes.current.clear(); clearTimeout(requestTimer.current); setCollaborationMode(null); setCollaborationRequest(null); setRequestedCollaboration(null); setCollaborationPermission(null); setAnnotationStrokes([]); setRemoteCursors({}); };
+  const resetCollaboration = () => { collaborationGrants.current.clear(); collaborationRequestTimes.current.clear(); clearTimeout(requestTimer.current); setCollaborationMode(null); setAnnotationTool('pen'); setAnalysisToolsOpen(false); setCollaborationRequest(null); setRequestedCollaboration(null); setCollaborationPermission(null); setAnnotationStrokes([]); setRemoteCursors({}); };
   const enforceCollaborationAccess = (enabled, by = '', notify = false) => {
     const active = enabled !== false; collaborationEnabledRef.current = active; setCollaborationEnabled(active);
     if (!active) resetCollaboration();
     if (notify) toast(active ? `${by || 'El administrador'} habilitó las herramientas de colaboración.` : `${by || 'El administrador'} pausó las herramientas de colaboración.`, 'info');
   };
   const mergeAnnotationPoint = (message) => {
-    const { strokeId, point, start, color } = message; if (!/^[0-9a-f-]{16,64}$/i.test(strokeId || '') || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.x > 1000 || point.y < 0 || point.y > 1000) return;
+    const { strokeId, point, start, color, tool = 'pen' } = message; if (!/^[0-9a-f-]{16,64}$/i.test(strokeId || '') || !point || !Number.isFinite(point.x) || !Number.isFinite(point.y) || point.x < 0 || point.x > 1000 || point.y < 0 || point.y > 1000) return;
     const safeColor = /^#[0-9a-f]{6}$/i.test(color || '') ? color : '#ffcf5a';
     setAnnotationStrokes((items) => {
       const index = items.findIndex((item) => item.id === strokeId);
-      if (index < 0) return [...items.slice(-199), { id: strokeId, color: safeColor, width: 5, points: [point] }];
-      const next = [...items]; next[index] = { ...next[index], points: start ? [point] : [...next[index].points.slice(-1999), point] }; return next;
+      if (index < 0) return [...items.slice(-199), { id: strokeId, tool, color: safeColor, width: 2.5, points: [point] }];
+      const next = [...items]; const current = next[index]; const points = start ? [point] : tool === 'pen' ? [...current.points.slice(-1999), point] : [current.points[0], point]; next[index] = { ...current, tool, points }; return next;
     });
   };
   const handleCollaboration = (message) => {
@@ -656,6 +733,10 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     const authorized = message.source === owner || collaborationGrants.current.get(message.source) === message.mode;
     if (!authorized) return;
     if (message.type === 'collab-point' && message.mode === 'draw') mergeAnnotationPoint(message);
+    if (message.type === 'collab-update' && message.mode === 'draw') {
+      const stroke = sanitizeAnnotationStrokes([message.stroke])[0]; if (stroke) setAnnotationStrokes((items) => items.map((item) => item.id === stroke.id ? stroke : item));
+    }
+    if (message.type === 'collab-delete' && message.mode === 'draw' && /^[0-9a-f-]{16,64}$/i.test(message.strokeId || '')) setAnnotationStrokes((items) => items.filter((item) => item.id !== message.strokeId));
     if (message.type === 'collab-point' && message.mode === 'pointer') {
       if (!message.point || !Number.isFinite(message.point.x) || !Number.isFinite(message.point.y) || message.point.x < 0 || message.point.x > 1000 || message.point.y < 0 || message.point.y > 1000) return;
       const peer = client.participants.get(message.source);
@@ -876,6 +957,17 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     else setRemoteCursors((items) => ({ ...items, [connection.current.selfId]: { ...payload.point, color: collaborationColor, name: user.name } }));
     connection.current?.collaborate('collab-point', message);
   };
+  const chooseAnalysisTool = (tool) => { setAnnotationTool(tool); setCollaborationMode('draw'); setAnalysisToolsOpen(false); };
+  const updateAnnotation = (stroke) => {
+    const owner = presentationOwner.current; const safe = sanitizeAnnotationStrokes([stroke])[0]; if (!owner || !safe || !sharing) return;
+    setAnnotationStrokes((items) => items.map((item) => item.id === safe.id ? safe : item));
+    connection.current?.collaborate('collab-update', { presenterPeerId: owner, mode: 'draw', stroke: safe });
+  };
+  const deleteAnnotation = (strokeId) => {
+    const owner = presentationOwner.current; if (!owner || !sharing || !/^[0-9a-f-]{16,64}$/i.test(strokeId || '')) return;
+    setAnnotationStrokes((items) => items.filter((item) => item.id !== strokeId));
+    connection.current?.collaborate('collab-delete', { presenterPeerId: owner, mode: 'draw', strokeId });
+  };
   const clearAnnotations = () => { const owner = presentationOwner.current; if (!sharing || !owner) return; setAnnotationStrokes([]); connection.current?.collaborate('collab-clear', { presenterPeerId: owner, mode: 'draw' }); };
   const speakingChanged = useCallback((speaking) => { setLocalSpeaking(speaking); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised, speaking }); }, [mic, camera, sharing, handRaised]);
   const sendChat = async (body) => { try { const message = await api.postMeetingMessage({ meetingId: meeting.meetingId, body, replyToId: replyTo?.id || '' }); mergeMessage(message); connection.current?.chat(message); setReplyTo(null); return true; } catch (error) { toast(error.message, 'error'); return false; } };
@@ -998,10 +1090,11 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={copyInvite}><Copy /> {meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
     <div className="meeting-grid">
       <div className="meeting-stage">
-        {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span>{sharing && shareHasAudio && <button className={`presentation-audio-toggle ${shareAudioEnabled ? 'active' : ''}`} type="button" aria-pressed={shareAudioEnabled} title={shareAudioEnabled ? 'Silenciar sonido de la pantalla compartida' : 'Activar sonido de la pantalla compartida'} onClick={toggleSharedAudio}>{shareAudioEnabled ? <Volume2 /> : <VolumeX />}<span>{shareAudioEnabled ? 'Sonido compartido' : 'Sonido silenciado'}</span></button>}<CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} onPoint={sendCollaborationPoint} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
+        {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span>{sharing && shareHasAudio && <button className={`presentation-audio-toggle ${shareAudioEnabled ? 'active' : ''}`} type="button" aria-pressed={shareAudioEnabled} title={shareAudioEnabled ? 'Silenciar sonido de la pantalla compartida' : 'Activar sonido de la pantalla compartida'} onClick={toggleSharedAudio}>{shareAudioEnabled ? <Volume2 /> : <VolumeX />}<span>{shareAudioEnabled ? 'Sonido compartido' : 'Sonido silenciado'}</span></button>}<CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} tool={sharing ? annotationTool : 'pen'} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} onPoint={sendCollaborationPoint} onChange={updateAnnotation} onDelete={deleteAnnotation} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
         <RemoteAudioLayer streams={remoteStreams} onBlockedChange={setAudioBlocked} />
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
         <div className="floating-chat-layer" aria-live="polite">{floatingMessages.map((item) => <article className="floating-chat-message" key={item.id}><MessageCircle /><span><strong>{item.senderName}</strong><p>{item.body}</p></span></article>)}</div>
+        {sharing && <AnalysisToolRail tool={annotationTool} open={analysisToolsOpen} disabled={!collaborationEnabled} onToggle={() => setAnalysisToolsOpen((current) => !current)} onSelect={chooseAnalysisTool} />}
         {presentationStream && <div className={`collaboration-toolbar glass ${collaborationEnabled ? '' : 'disabled'}`}><button className={collaborationMode === 'draw' ? 'active' : ''} disabled={!collaborationEnabled || Boolean(requestedCollaboration)} title={!collaborationEnabled ? 'El administrador pausó la colaboración' : collaborationMode === 'draw' ? 'Haz clic nuevamente para dejar de dibujar' : 'Solicitar o activar dibujo'} onClick={() => selectCollaborationMode('draw', remotePresentation?.[0])}><Pencil /> {requestedCollaboration?.mode === 'draw' ? 'Esperando permiso' : collaborationMode === 'draw' ? 'Dejar de dibujar' : 'Dibujar'}</button><button className={collaborationMode === 'pointer' ? 'active' : ''} disabled={!collaborationEnabled || Boolean(requestedCollaboration)} title={!collaborationEnabled ? 'El administrador pausó la colaboración' : collaborationMode === 'pointer' ? 'Haz clic nuevamente para detener el control guiado' : 'Solicitar o activar control guiado'} onClick={() => selectCollaborationMode('pointer', remotePresentation?.[0])}><MousePointer2 /> {requestedCollaboration?.mode === 'pointer' ? 'Esperando permiso' : collaborationMode === 'pointer' ? 'Detener control guiado' : 'Control guiado'}</button>{sharing && <><label className="annotation-color" title="Color de anotación"><input type="color" value={collaborationColor} disabled={!collaborationEnabled} onChange={(event) => setCollaborationColor(event.target.value)} /></label><button disabled={!collaborationEnabled} onClick={clearAnnotations}><Eraser /> Limpiar</button></>}{isHost && <label className={`collaboration-access-toggle ${collaborationEnabled ? 'active' : ''}`} title="Permitir dibujo y control guiado durante la reunión"><input type="checkbox" checked={collaborationEnabled} onChange={toggleCollaborationAccess} /><span><ShieldCheck />{collaborationEnabled ? 'Colaboración activa' : 'Colaboración pausada'}</span></label>}</div>}
         <div className="reaction-layer">{reactions.map((item) => <CosmicReaction reaction={item.emoji} senderName={item.senderName} key={item.id} />)}</div>
         <div className="cosmic-reaction-launcher" role="group" aria-label="Reacciones cósmicas">{COSMIC_REACTIONS.map((item) => <button className={item.launcherClass || ''} type="button" disabled={!joined} title={`${item.label} para todos`} aria-label={`${item.label} para todos`} key={item.id} onClick={() => react(item.id)}>{item.asset ? <img src={item.asset} alt="" /> : <span>{item.icon}</span>}</button>)}</div>
