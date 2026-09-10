@@ -375,11 +375,13 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('onClick={handleShareClick}');
   });
 
-  it('plays synchronized reaction audio for remote participants', () => {
-    expect(meetingStudio).toContain('async function playRemoteReactionSound(emoji)');
+  it('plays synchronized reaction audio at 300 percent for every participant', () => {
+    expect(meetingStudio).toContain('async function playMeetingReactionSound(emoji)');
     expect(meetingStudio).toContain('context.createBufferSource()');
     expect(meetingStudio).toContain('meetingReactionBuffer(PHOENIX_LIGHTNING_ASSET)');
-    expect(meetingStudio).toContain('remote={item.remote}');
+    expect(meetingStudio).toContain('gain.gain.value = 3');
+    expect(meetingStudio).toContain('limiter.ratio.value = 20');
+    expect(meetingStudio).toContain('soundManaged={item.soundManaged}');
     expect(meetingStudio).toContain('muted={silent}');
   });
 

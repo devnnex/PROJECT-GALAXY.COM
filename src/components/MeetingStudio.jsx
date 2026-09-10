@@ -114,15 +114,16 @@ async function meetingReactionBuffer(source) {
   return meetingReactionAudioBuffers.get(source);
 }
 
-async function playRemoteReactionSound(emoji) {
+async function playMeetingReactionSound(emoji) {
   const source = emoji === PHOENIX_TRANSFORM_REACTION ? PHOENIX_LIGHTNING_ASSET : emoji === 'ALIEN_BIRTHDAY' ? GALAXY_DANCER_SOUND : '';
   if (!source) return true;
   const context = meetingAudioContext(); if (!context) return false;
   if (context.state === 'suspended') await context.resume().catch(() => {});
   const buffer = await meetingReactionBuffer(source); if (!buffer || context.state !== 'running') return false;
-  const player = context.createBufferSource(); const gain = context.createGain(); gain.gain.value = emoji === PHOENIX_TRANSFORM_REACTION ? .72 : .78;
-  player.buffer = buffer; player.connect(gain).connect(context.destination); player.start();
-  player.addEventListener('ended', () => { player.disconnect(); gain.disconnect(); }, { once: true });
+  const player = context.createBufferSource(); const gain = context.createGain(); gain.gain.value = 3;
+  const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .001; limiter.release.value = .12;
+  player.buffer = buffer; player.connect(gain).connect(limiter).connect(context.destination); player.start();
+  player.addEventListener('ended', () => { player.disconnect(); gain.disconnect(); limiter.disconnect(); }, { once: true });
   return true;
 }
 
@@ -175,16 +176,16 @@ function primeMeetingAudio() {
   window.dispatchEvent(new Event('galaxy:resume-meeting-audio'));
 }
 
-function CosmicReaction({ reaction, senderName, remote = false }) {
+function CosmicReaction({ reaction, senderName, soundManaged = false }) {
   const sender = <small className="reaction-sender">{senderName || 'Participante'}</small>;
   if (reaction === MONEY_ROCKET_REACTION) return <span className="money-rocket-reaction"><img src={MONEY_ROCKET_ASSET} alt="" />{sender}</span>;
   if (reaction === 'MONEY_CHARACTER') return <span className="money-character-reaction" role="img" aria-label="Personaje rodeado de dinero"><img src={MONEY_CHARACTER_ASSET} alt="" />{sender}</span>;
   if (reaction === 'MONEY_ALIEN') return <span className="money-alien-reaction" role="img" aria-label="Alien en un portal de dinero"><img src={MONEY_ALIEN_ASSET} alt="" />{sender}</span>;
   if (reaction === GALACTIC_TAKE_PROFIT_REACTION) return <GalacticTakeProfitReaction senderName={senderName || 'Participante'} />;
-  if (reaction === PHOENIX_TRANSFORM_REACTION) return <PhoenixTransformReaction senderName={senderName || 'Participante'} silent={remote} />;
+  if (reaction === PHOENIX_TRANSFORM_REACTION) return <PhoenixTransformReaction senderName={senderName || 'Participante'} silent={soundManaged} />;
   if (reaction === 'UFO') return <span className="mclaren-profit-reaction" role="img" aria-label="McLaren acelerando con fuego, lluvia de billetes y meteorito Profit"><span className="mclaren-profit-machine"><img className="mclaren-profit-car" src={MCLAREN_PROFIT_ASSET} alt="" /><span className="mclaren-profit-exhaust" aria-hidden="true"><i /><i /><b /></span></span><span className="mclaren-profit-bills" aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ '--bill-left': `${4 + ((index * 37) % 92)}%`, '--bill-peak': `${6 + ((index * 23) % 29)}%`, '--bill-rotate': `${((index * 47) % 180) - 90}deg`, '--bill-delay': `${2.05 + (index % 8) * .1}s`, '--bill-duration': `${3.72 + (index % 5) * .2}s` }} />)}</span><span className="mclaren-profit-meteor" aria-hidden="true"><i /><b /></span><span className="mclaren-profit-firework" aria-hidden="true"><i /><b /><strong>PROFIT</strong></span>{sender}</span>;
   if (reaction === 'ALIEN') return <span className="alien-reaction" role="img" aria-label="Alien"><i>👽</i><b>¡Saludos, terrícola!</b>{sender}</span>;
-  if (reaction === 'ALIEN_BIRTHDAY') return <GalaxyDancerReaction senderName={senderName || 'Participante'} silent={remote} />;
+  if (reaction === 'ALIEN_BIRTHDAY') return <GalaxyDancerReaction senderName={senderName || 'Participante'} silent={soundManaged} />;
   return <span><i className="reaction-symbol">{reaction}</i>{sender}</span>;
 }
 
@@ -765,7 +766,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (navigator.vibrate && document.visibilityState === 'visible') navigator.vibrate(32);
     setTimeout(() => setFloatingMessages((items) => items.filter((item) => item.id !== id)), 5200);
   };
-  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const remote = Boolean(peerId); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name, remote }]); if (remote) playRemoteReactionSound(emoji).then((played) => { if (!played) setReactions((items) => items.map((item) => item.id === id ? { ...item, remote: false } : item)); }).catch(() => setReactions((items) => items.map((item) => item.id === id ? { ...item, remote: false } : item))); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
+  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); const soundManaged = emoji === PHOENIX_TRANSFORM_REACTION || emoji === 'ALIEN_BIRTHDAY'; setReactions((items) => [...items, { id, emoji, senderName: name, soundManaged }]); if (soundManaged) playMeetingReactionSound(emoji).then((played) => { if (!played) setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); }).catch(() => setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item))); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
@@ -1190,7 +1191,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
         <div className="floating-chat-layer" aria-live="polite">{floatingMessages.map((item) => <article className="floating-chat-message" key={item.id}><MessageCircle /><span><strong>{item.senderName}</strong><p>{item.body}</p></span></article>)}</div>
         {presentationStream && <div className={`collaboration-toolbar glass ${collaborationEnabled ? '' : 'disabled'}`}><button className={collaborationMode === 'draw' ? 'active' : ''} disabled={!collaborationEnabled || Boolean(requestedCollaboration)} title={!collaborationEnabled ? 'El administrador pausó la colaboración' : collaborationMode === 'draw' ? 'Haz clic nuevamente para dejar de dibujar' : 'Solicitar o activar dibujo'} onClick={() => selectCollaborationMode('draw', remotePresentation?.[0])}><Pencil /> {requestedCollaboration?.mode === 'draw' ? 'Esperando permiso' : collaborationMode === 'draw' ? 'Dejar de dibujar' : 'Dibujar'}</button><button className={collaborationMode === 'pointer' ? 'active' : ''} disabled={!collaborationEnabled || Boolean(requestedCollaboration)} title={!collaborationEnabled ? 'El administrador pausó la colaboración' : collaborationMode === 'pointer' ? 'Haz clic nuevamente para detener el control guiado' : 'Solicitar o activar control guiado'} onClick={() => selectCollaborationMode('pointer', remotePresentation?.[0])}><MousePointer2 /> {requestedCollaboration?.mode === 'pointer' ? 'Esperando permiso' : collaborationMode === 'pointer' ? 'Detener control guiado' : 'Control guiado'}</button>{sharing && <><label className="annotation-color" title={selectedAnnotationId ? 'Cambiar color del elemento seleccionado' : 'Color de anotación'}><input type="color" value={collaborationColor} disabled={!collaborationEnabled} onChange={(event) => changeAnnotationColor(event.target.value)} /></label><button disabled={!collaborationEnabled} onClick={clearAnnotations}><Eraser /> Limpiar</button></>}{isHost && <label className={`collaboration-access-toggle ${collaborationEnabled ? 'active' : ''}`} title="Permitir dibujo y control guiado durante la reunión"><input type="checkbox" checked={collaborationEnabled} onChange={toggleCollaborationAccess} /><span><ShieldCheck />{collaborationEnabled ? 'Colaboración activa' : 'Colaboración pausada'}</span></label>}</div>}
-        <div className="reaction-layer">{reactions.map((item) => <CosmicReaction reaction={item.emoji} senderName={item.senderName} remote={item.remote} key={item.id} />)}</div>
+        <div className="reaction-layer">{reactions.map((item) => <CosmicReaction reaction={item.emoji} senderName={item.senderName} soundManaged={item.soundManaged} key={item.id} />)}</div>
         <div className="cosmic-reaction-launcher" role="group" aria-label="Reacciones cósmicas">{COSMIC_REACTIONS.map((item) => <button className={item.launcherClass || ''} type="button" disabled={!joined} title={`${item.label} para todos`} aria-label={`${item.label} para todos`} key={item.id} onClick={() => react(item.id)}>{item.asset ? <img src={item.asset} alt="" /> : <span>{item.icon}</span>}</button>)}</div>
         <video className={`meeting-pip-source ${pipMirrored ? 'mirrored' : ''}`} ref={pipVideoRef} muted playsInline autoPlay aria-hidden="true" />
       </div>
