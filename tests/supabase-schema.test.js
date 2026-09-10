@@ -139,11 +139,13 @@ describe('Supabase contract', () => {
 
   it('captures clear voices and synchronizes cosmic reactions', () => {
     expect(meetingStudio).toContain('autoGainControl: { ideal: false }');
-    expect(meetingStudio).toContain('noiseSuppression: { ideal: false }');
+    expect(meetingStudio).toContain('noiseSuppression: { ideal: true }');
+    expect(meetingStudio).toContain('voiceIsolation: { ideal: true }');
     expect(meetingStudio).toContain('channelCount: { ideal: 1 }');
     expect(meetingStudio).toContain('boost.gain.value = 6');
     expect(meetingStudio).toContain('outputGain.gain.value = 2.5');
     expect(meetingStudio).toContain('limiter.ratio.value = 20');
+    expect(meetingStudio).toContain("noiseFloor.type = 'lowpass'");
     expect(meetingStudio).toContain("clarity.type = 'peaking'");
     expect(meetingStudio).toContain('createDynamicsCompressor()');
     expect(meetingStudio).toContain('createLongRangeMicrophoneStream(captured)');
