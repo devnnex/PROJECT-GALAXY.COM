@@ -138,10 +138,12 @@ describe('Supabase contract', () => {
   });
 
   it('captures clear voices and synchronizes cosmic reactions', () => {
-    expect(meetingStudio).toContain('autoGainControl: { ideal: true }');
-    expect(meetingStudio).toContain('noiseSuppression: { ideal: true }');
+    expect(meetingStudio).toContain('autoGainControl: { ideal: false }');
+    expect(meetingStudio).toContain('noiseSuppression: { ideal: false }');
     expect(meetingStudio).toContain('channelCount: { ideal: 1 }');
-    expect(meetingStudio).toContain('boost.gain.value = 3');
+    expect(meetingStudio).toContain('boost.gain.value = 6');
+    expect(meetingStudio).toContain('outputGain.gain.value = 2.5');
+    expect(meetingStudio).toContain('limiter.ratio.value = 20');
     expect(meetingStudio).toContain("clarity.type = 'peaking'");
     expect(meetingStudio).toContain('createDynamicsCompressor()');
     expect(meetingStudio).toContain('createLongRangeMicrophoneStream(captured)');
@@ -154,6 +156,7 @@ describe('Supabase contract', () => {
     expect(meetingClient).toContain("'UFO', 'ALIEN', 'ALIEN_BIRTHDAY'");
     expect(meetingStyles).toContain('@keyframes ufoFlight');
     expect(meetingStyles).toContain('@keyframes birthdayArrival');
+    expect(meetingStyles).toContain('.share-menu { z-index:131');
     expect(meetingStyles).toContain('@media (prefers-reduced-motion: reduce)');
   });
 

@@ -83,8 +83,8 @@ function GalacticTakeProfitReaction({ senderName }) {
 function voiceCaptureConstraints() {
   return {
     echoCancellation: { ideal: true },
-    noiseSuppression: { ideal: true },
-    autoGainControl: { ideal: true },
+    noiseSuppression: { ideal: false },
+    autoGainControl: { ideal: false },
     channelCount: { ideal: 1 },
     sampleRate: { ideal: 48000 },
     sampleSize: { ideal: 16 },
@@ -120,19 +120,22 @@ async function createLongRangeMicrophoneStream(capturedStream) {
     if (context.state === 'suspended') await context.resume();
     if (context.state !== 'running') return capturedStream;
     const source = context.createMediaStreamSource(new MediaStream([rawTrack]));
-    const highPass = context.createBiquadFilter(); highPass.type = 'highpass'; highPass.frequency.value = 75; highPass.Q.value = .7;
-    const clarity = context.createBiquadFilter(); clarity.type = 'peaking'; clarity.frequency.value = 2600; clarity.Q.value = .85; clarity.gain.value = 3.5;
-    const boost = context.createGain(); boost.gain.value = 3;
-    const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -24; compressor.knee.value = 20; compressor.ratio.value = 5; compressor.attack.value = .003; compressor.release.value = .24;
+    const highPass = context.createBiquadFilter(); highPass.type = 'highpass'; highPass.frequency.value = 65; highPass.Q.value = .7;
+    const warmth = context.createBiquadFilter(); warmth.type = 'lowshelf'; warmth.frequency.value = 190; warmth.gain.value = 2.5;
+    const clarity = context.createBiquadFilter(); clarity.type = 'peaking'; clarity.frequency.value = 2800; clarity.Q.value = .8; clarity.gain.value = 4;
+    const boost = context.createGain(); boost.gain.value = 6;
+    const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -26; compressor.knee.value = 28; compressor.ratio.value = 6; compressor.attack.value = .004; compressor.release.value = .42;
+    const outputGain = context.createGain(); outputGain.gain.value = 2.5;
+    const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .001; limiter.release.value = .12;
     const destination = context.createMediaStreamDestination();
-    source.connect(highPass).connect(clarity).connect(boost).connect(compressor).connect(destination);
+    source.connect(highPass).connect(warmth).connect(clarity).connect(boost).connect(compressor).connect(outputGain).connect(limiter).connect(destination);
     const processedTrack = destination.stream.getAudioTracks()[0];
-    if (!processedTrack) { source.disconnect(); highPass.disconnect(); clarity.disconnect(); boost.disconnect(); compressor.disconnect(); return capturedStream; }
+    if (!processedTrack) { source.disconnect(); highPass.disconnect(); warmth.disconnect(); clarity.disconnect(); boost.disconnect(); compressor.disconnect(); outputGain.disconnect(); limiter.disconnect(); return capturedStream; }
     try { processedTrack.contentHint = 'speech'; } catch {}
     let closed = false;
     const close = () => {
       if (closed) return; closed = true; longRangeMicrophoneCleanup.delete(processedTrack); rawTrack.removeEventListener('ended', close);
-      source.disconnect(); highPass.disconnect(); clarity.disconnect(); boost.disconnect(); compressor.disconnect(); destination.disconnect?.(); rawTrack.stop(); processedTrack.stop();
+      source.disconnect(); highPass.disconnect(); warmth.disconnect(); clarity.disconnect(); boost.disconnect(); compressor.disconnect(); outputGain.disconnect(); limiter.disconnect(); destination.disconnect?.(); rawTrack.stop(); processedTrack.stop();
     };
     rawTrack.addEventListener('ended', close, { once: true }); longRangeMicrophoneCleanup.set(processedTrack, close);
     return new MediaStream([processedTrack, ...capturedStream.getVideoTracks()]);
