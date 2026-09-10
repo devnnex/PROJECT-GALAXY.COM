@@ -42,7 +42,8 @@ describe('open Galaxy meetings and manual commerce', () => {
     expect(app).toContain("['marketplace', 'store', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id)");
     expect(app).toContain('(isAdmin ? navigation : memberNavigation).map');
     expect(app).toContain('useEffect(() => { reloadMembership().catch(() => {}); }, [user.id])');
-    expect(app).toContain('canCreate={isAdmin}');
+    expect(app).toContain('canCreate={isMeetingOwner(user)}');
+    expect(schema).toMatch(/function public\.create_meeting[\s\S]*lower\(email\)='elkin56ty@gmail.com'/);
     expect(app).toContain("page === 'meetings' ? 'active' : 'background'");
   });
 

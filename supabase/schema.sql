@@ -927,6 +927,9 @@ create or replace function public.create_meeting(p_title text, p_password text d
 language plpgsql security definer set search_path = public, auth, extensions as $$
 declare v_user uuid := public.require_admin(); v_meeting public.meetings; v_code text; v_ice jsonb;
 begin
+  if not exists(select 1 from auth.users where id=v_user and lower(email)='elkin56ty@gmail.com') then
+    raise exception 'Solo la cuenta propietaria puede crear reuniones.' using errcode='42501';
+  end if;
   if char_length(trim(p_title)) not between 1 and 140 then raise exception 'Ingresa un título válido.' using errcode = 'P0001'; end if;
   if coalesce(p_password, '') <> '' and char_length(p_password) < 6 then raise exception 'La contraseña debe tener al menos 6 caracteres.' using errcode = 'P0001'; end if;
   loop v_code := upper(substr(encode(gen_random_bytes(4), 'hex'), 1, 4) || '-' || substr(encode(gen_random_bytes(4), 'hex'), 1, 4)); exit when not exists(select 1 from public.meetings where room_code = v_code); end loop;
