@@ -35,28 +35,28 @@ const COSMIC_REACTIONS = [
   { id: 'ALIEN_BIRTHDAY', label: 'Muñeco bailarín', asset: GALAXY_DANCER_ICON, launcherClass: 'galaxy-dancer-launcher' },
 ];
 
-function PhoenixTransformReaction({ senderName }) {
+function PhoenixTransformReaction({ senderName, silent = false }) {
   const videoRef = useRef(null);
   useEffect(() => {
     const video = videoRef.current; if (!video) return undefined;
-    video.volume = .72; video.currentTime = 0;
+    video.muted = silent; video.volume = .72; video.currentTime = 0;
     const play = () => video.play().catch(() => {});
     play(); window.addEventListener('galaxy:resume-meeting-audio', play); window.addEventListener('pointerdown', play, true);
     return () => { window.removeEventListener('galaxy:resume-meeting-audio', play); window.removeEventListener('pointerdown', play, true); video.pause(); };
-  }, []);
-  return <span className="phoenix-transform-reaction" role="img" aria-label="Fénix transformándose con un estallido y rayos"><video ref={videoRef} src={PHOENIX_LIGHTNING_ASSET} autoPlay playsInline preload="auto" controls={false} disablePictureInPicture /><img className="phoenix-base-form" src={PHOENIX_BASE_ASSET} alt="" /><i aria-hidden="true" /><b aria-hidden="true" /><img className="phoenix-super-form" src={PHOENIX_SUPER_ASSET} alt="" /><small className="reaction-sender">{senderName}</small></span>;
+  }, [silent]);
+  return <span className="phoenix-transform-reaction" role="img" aria-label="Fénix transformándose con un estallido y rayos"><video ref={videoRef} src={PHOENIX_LIGHTNING_ASSET} autoPlay playsInline muted={silent} preload="auto" controls={false} disablePictureInPicture /><img className="phoenix-base-form" src={PHOENIX_BASE_ASSET} alt="" /><i aria-hidden="true" /><b aria-hidden="true" /><img className="phoenix-super-form" src={PHOENIX_SUPER_ASSET} alt="" /><small className="reaction-sender">{senderName}</small></span>;
 }
 
-function GalaxyDancerReaction({ senderName }) {
+function GalaxyDancerReaction({ senderName, silent = false }) {
   const audioRef = useRef(null);
   useEffect(() => {
     const audio = audioRef.current; if (!audio) return undefined;
-    audio.volume = .78; audio.currentTime = 0;
+    audio.muted = silent; audio.volume = .78; audio.currentTime = 0;
     const play = () => audio.play().catch(() => {});
     play(); window.addEventListener('galaxy:resume-meeting-audio', play); window.addEventListener('pointerdown', play, true);
     return () => { window.removeEventListener('galaxy:resume-meeting-audio', play); window.removeEventListener('pointerdown', play, true); audio.pause(); audio.currentTime = 0; };
-  }, []);
-  return <span className="galaxy-dancer-reaction" role="img" aria-label="Muñeco bailando"><picture><source srcSet={GALAXY_DANCER_ASSET} type="image/webp" /><img className="galaxy-dancer-visual" src={GALAXY_DANCER_ICON} alt="" /></picture><audio ref={audioRef} src={GALAXY_DANCER_SOUND} autoPlay preload="auto" /> <small className="reaction-sender">{senderName}</small></span>;
+  }, [silent]);
+  return <span className="galaxy-dancer-reaction" role="img" aria-label="Muñeco bailando"><picture><source srcSet={GALAXY_DANCER_ASSET} type="image/webp" /><img className="galaxy-dancer-visual" src={GALAXY_DANCER_ICON} alt="" /></picture><audio ref={audioRef} src={GALAXY_DANCER_SOUND} autoPlay muted={silent} preload="auto" /> <small className="reaction-sender">{senderName}</small></span>;
 }
 
 function GalacticTakeProfitReaction({ senderName }) {
@@ -94,12 +94,36 @@ function voiceCaptureConstraints() {
 }
 
 let sharedMeetingAudioContext = null;
+const meetingReactionAudioBuffers = new Map();
 
 function meetingAudioContext() {
   const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
   if (!Context) return null;
   if (!sharedMeetingAudioContext || sharedMeetingAudioContext.state === 'closed') sharedMeetingAudioContext = new Context();
   return sharedMeetingAudioContext;
+}
+
+async function meetingReactionBuffer(source) {
+  const context = meetingAudioContext(); if (!context || !source) return null;
+  if (!meetingReactionAudioBuffers.has(source)) {
+    meetingReactionAudioBuffers.set(source, fetch(source).then((response) => {
+      if (!response.ok) throw new Error('No fue posible cargar el sonido de la animación.');
+      return response.arrayBuffer();
+    }).then((buffer) => context.decodeAudioData(buffer)).catch(() => null));
+  }
+  return meetingReactionAudioBuffers.get(source);
+}
+
+async function playRemoteReactionSound(emoji) {
+  const source = emoji === PHOENIX_TRANSFORM_REACTION ? PHOENIX_LIGHTNING_ASSET : emoji === 'ALIEN_BIRTHDAY' ? GALAXY_DANCER_SOUND : '';
+  if (!source) return true;
+  const context = meetingAudioContext(); if (!context) return false;
+  if (context.state === 'suspended') await context.resume().catch(() => {});
+  const buffer = await meetingReactionBuffer(source); if (!buffer || context.state !== 'running') return false;
+  const player = context.createBufferSource(); const gain = context.createGain(); gain.gain.value = emoji === PHOENIX_TRANSFORM_REACTION ? .72 : .78;
+  player.buffer = buffer; player.connect(gain).connect(context.destination); player.start();
+  player.addEventListener('ended', () => { player.disconnect(); gain.disconnect(); }, { once: true });
+  return true;
 }
 
 const longRangeMicrophoneCleanup = new WeakMap();
@@ -147,19 +171,20 @@ async function createLongRangeMicrophoneStream(capturedStream) {
 function primeMeetingAudio() {
   const context = meetingAudioContext();
   if (context?.state === 'suspended') context.resume().catch(() => {});
+  meetingReactionBuffer(PHOENIX_LIGHTNING_ASSET); meetingReactionBuffer(GALAXY_DANCER_SOUND);
   window.dispatchEvent(new Event('galaxy:resume-meeting-audio'));
 }
 
-function CosmicReaction({ reaction, senderName }) {
+function CosmicReaction({ reaction, senderName, remote = false }) {
   const sender = <small className="reaction-sender">{senderName || 'Participante'}</small>;
   if (reaction === MONEY_ROCKET_REACTION) return <span className="money-rocket-reaction"><img src={MONEY_ROCKET_ASSET} alt="" />{sender}</span>;
   if (reaction === 'MONEY_CHARACTER') return <span className="money-character-reaction" role="img" aria-label="Personaje rodeado de dinero"><img src={MONEY_CHARACTER_ASSET} alt="" />{sender}</span>;
   if (reaction === 'MONEY_ALIEN') return <span className="money-alien-reaction" role="img" aria-label="Alien en un portal de dinero"><img src={MONEY_ALIEN_ASSET} alt="" />{sender}</span>;
   if (reaction === GALACTIC_TAKE_PROFIT_REACTION) return <GalacticTakeProfitReaction senderName={senderName || 'Participante'} />;
-  if (reaction === PHOENIX_TRANSFORM_REACTION) return <PhoenixTransformReaction senderName={senderName || 'Participante'} />;
+  if (reaction === PHOENIX_TRANSFORM_REACTION) return <PhoenixTransformReaction senderName={senderName || 'Participante'} silent={remote} />;
   if (reaction === 'UFO') return <span className="mclaren-profit-reaction" role="img" aria-label="McLaren acelerando con fuego, lluvia de billetes y meteorito Profit"><span className="mclaren-profit-machine"><img className="mclaren-profit-car" src={MCLAREN_PROFIT_ASSET} alt="" /><span className="mclaren-profit-exhaust" aria-hidden="true"><i /><i /><b /></span></span><span className="mclaren-profit-bills" aria-hidden="true">{Array.from({ length: 32 }, (_, index) => <i key={index} style={{ '--bill-left': `${4 + ((index * 37) % 92)}%`, '--bill-peak': `${6 + ((index * 23) % 29)}%`, '--bill-rotate': `${((index * 47) % 180) - 90}deg`, '--bill-delay': `${2.05 + (index % 8) * .1}s`, '--bill-duration': `${3.72 + (index % 5) * .2}s` }} />)}</span><span className="mclaren-profit-meteor" aria-hidden="true"><i /><b /></span><span className="mclaren-profit-firework" aria-hidden="true"><i /><b /><strong>PROFIT</strong></span>{sender}</span>;
   if (reaction === 'ALIEN') return <span className="alien-reaction" role="img" aria-label="Alien"><i>👽</i><b>¡Saludos, terrícola!</b>{sender}</span>;
-  if (reaction === 'ALIEN_BIRTHDAY') return <GalaxyDancerReaction senderName={senderName || 'Participante'} />;
+  if (reaction === 'ALIEN_BIRTHDAY') return <GalaxyDancerReaction senderName={senderName || 'Participante'} silent={remote} />;
   return <span><i className="reaction-symbol">{reaction}</i>{sender}</span>;
 }
 
@@ -458,13 +483,31 @@ function waitForVideoMetadata(video) {
 }
 
 function canCaptureDisplay() {
-  return Boolean(navigator.mediaDevices?.getDisplayMedia || navigator.getDisplayMedia);
+  return Boolean(navigator.mediaDevices?.getDisplayMedia || navigator.getDisplayMedia || (/Firefox/i.test(navigator.userAgent) && navigator.mediaDevices?.getUserMedia));
 }
 
-function requestDisplayCapture(options) {
-  if (navigator.mediaDevices?.getDisplayMedia) return navigator.mediaDevices.getDisplayMedia(options);
-  if (navigator.getDisplayMedia) return navigator.getDisplayMedia(options);
-  throw new Error('Este navegador móvil no expone captura de pantalla a páginas web. Usa la opción disponible del sistema o comparte con la cámara trasera.');
+async function requestDisplayCapture(options) {
+  const capture = navigator.mediaDevices?.getDisplayMedia?.bind(navigator.mediaDevices) || navigator.getDisplayMedia?.bind(navigator);
+  let lastError = null;
+  if (capture) {
+    const attempts = [options, { video: true, audio: true }, { video: true }];
+    for (const constraints of attempts) {
+      try { return await capture(constraints); }
+      catch (error) {
+        lastError = error;
+        if (['NotAllowedError', 'AbortError', 'SecurityError'].includes(error?.name)) throw error;
+      }
+    }
+  }
+  if (/Firefox/i.test(navigator.userAgent) && navigator.mediaDevices?.getUserMedia) {
+    try {
+      const legacy = await navigator.mediaDevices.getUserMedia({ video: { mediaSource: 'screen' }, audio: false });
+      const settings = legacy.getVideoTracks()[0]?.getSettings?.() || {};
+      if (settings.displaySurface || settings.mediaSource === 'screen') return legacy;
+      legacy.getTracks().forEach((track) => track.stop());
+    } catch (error) { lastError = lastError || error; }
+  }
+  throw lastError || new Error('El sistema no habilitó la captura de pantalla para este navegador o PWA. Revisa el permiso de grabación de pantalla del dispositivo.');
 }
 
 async function createSharedAudioMixer(displayStream, microphoneStream) {
@@ -716,7 +759,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (navigator.vibrate && document.visibilityState === 'visible') navigator.vibrate(32);
     setTimeout(() => setFloatingMessages((items) => items.filter((item) => item.id !== id)), 5200);
   };
-  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name }]); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
+  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const remote = Boolean(peerId); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); setReactions((items) => [...items, { id, emoji, senderName: name, remote }]); if (remote) playRemoteReactionSound(emoji).then((played) => { if (!played) setReactions((items) => items.map((item) => item.id === id ? { ...item, remote: false } : item)); }).catch(() => setReactions((items) => items.map((item) => item.id === id ? { ...item, remote: false } : item))); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
@@ -1139,7 +1182,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
         <div className="floating-chat-layer" aria-live="polite">{floatingMessages.map((item) => <article className="floating-chat-message" key={item.id}><MessageCircle /><span><strong>{item.senderName}</strong><p>{item.body}</p></span></article>)}</div>
         {presentationStream && <div className={`collaboration-toolbar glass ${collaborationEnabled ? '' : 'disabled'}`}><button className={collaborationMode === 'draw' ? 'active' : ''} disabled={!collaborationEnabled || Boolean(requestedCollaboration)} title={!collaborationEnabled ? 'El administrador pausó la colaboración' : collaborationMode === 'draw' ? 'Haz clic nuevamente para dejar de dibujar' : 'Solicitar o activar dibujo'} onClick={() => selectCollaborationMode('draw', remotePresentation?.[0])}><Pencil /> {requestedCollaboration?.mode === 'draw' ? 'Esperando permiso' : collaborationMode === 'draw' ? 'Dejar de dibujar' : 'Dibujar'}</button><button className={collaborationMode === 'pointer' ? 'active' : ''} disabled={!collaborationEnabled || Boolean(requestedCollaboration)} title={!collaborationEnabled ? 'El administrador pausó la colaboración' : collaborationMode === 'pointer' ? 'Haz clic nuevamente para detener el control guiado' : 'Solicitar o activar control guiado'} onClick={() => selectCollaborationMode('pointer', remotePresentation?.[0])}><MousePointer2 /> {requestedCollaboration?.mode === 'pointer' ? 'Esperando permiso' : collaborationMode === 'pointer' ? 'Detener control guiado' : 'Control guiado'}</button>{sharing && <><label className="annotation-color" title={selectedAnnotationId ? 'Cambiar color del elemento seleccionado' : 'Color de anotación'}><input type="color" value={collaborationColor} disabled={!collaborationEnabled} onChange={(event) => changeAnnotationColor(event.target.value)} /></label><button disabled={!collaborationEnabled} onClick={clearAnnotations}><Eraser /> Limpiar</button></>}{isHost && <label className={`collaboration-access-toggle ${collaborationEnabled ? 'active' : ''}`} title="Permitir dibujo y control guiado durante la reunión"><input type="checkbox" checked={collaborationEnabled} onChange={toggleCollaborationAccess} /><span><ShieldCheck />{collaborationEnabled ? 'Colaboración activa' : 'Colaboración pausada'}</span></label>}</div>}
-        <div className="reaction-layer">{reactions.map((item) => <CosmicReaction reaction={item.emoji} senderName={item.senderName} key={item.id} />)}</div>
+        <div className="reaction-layer">{reactions.map((item) => <CosmicReaction reaction={item.emoji} senderName={item.senderName} remote={item.remote} key={item.id} />)}</div>
         <div className="cosmic-reaction-launcher" role="group" aria-label="Reacciones cósmicas">{COSMIC_REACTIONS.map((item) => <button className={item.launcherClass || ''} type="button" disabled={!joined} title={`${item.label} para todos`} aria-label={`${item.label} para todos`} key={item.id} onClick={() => react(item.id)}>{item.asset ? <img src={item.asset} alt="" /> : <span>{item.icon}</span>}</button>)}</div>
         <video className={`meeting-pip-source ${pipMirrored ? 'mirrored' : ''}`} ref={pipVideoRef} muted playsInline autoPlay aria-hidden="true" />
       </div>
@@ -1152,21 +1195,21 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       <button type="button" className={camera ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('video')}>{camera ? <Camera /> : <CameraOff />}<span>{camera ? 'Apagar cámara' : 'Iniciar video'}</span></button>
       <div className="share-wrap">
         <button type="button" className={sharing ? 'active' : ''} disabled={!joined} onClick={() => { if (sharing) stopShare(); else { setShareMenu((open) => !open); setReactionMenu(false); } }}><MonitorUp /><span>{sharing ? 'Detener' : 'Compartir'}</span></button>
-        {shareMenu && <div className="share-menu glass">
-          <button type="button" onClick={() => capture(false)}><MonitorUp />Pantalla, ventana o pestaña<span>{canCaptureDisplay() ? 'Selector seguro del navegador' : 'Usa la opción disponible del sistema'}</span></button>
-          <button type="button" onClick={() => capture(true)} disabled={!canCaptureDisplay()}><span className="crop-icon" />Área personalizada<span>{savedCrop ? 'Reutilizar el recorte guardado' : 'Captura autorizada + recorte local'}</span></button>
-          {user.role === 'ADMIN' && <button type="button" onClick={() => capture(false, true)} disabled={!canCaptureDisplay()}><ShieldCheck />Pantalla con cobertura de datos<span>Opcional · cubre nombres antes de transmitir</span></button>}
-          <button type="button" onClick={shareRearCamera}><Camera />Cámara trasera o documento<span>Alternativa compatible con móviles y tablets</span></button>
-        </div>}
       </div>
       <button type="button" className={`hand-control ${handRaised ? 'active raised' : ''}`} disabled={!joined} aria-pressed={handRaised} onClick={toggleHand}><Hand /><span>{handRaised ? 'Bajar mano' : 'Alzar mano'}</span></button>
       <div className="reaction-wrap">
         <button type="button" disabled={!joined} aria-expanded={reactionMenu} onClick={() => { setReactionMenu((open) => !open); setShareMenu(false); }}><SmilePlus /><span>Reaccionar</span></button>
-        {reactionMenu && <div className="reaction-menu glass">{EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}
       </div>
       <button type="button" className="leave-control" onClick={leave}><PhoneOff /><span>Salir</span></button>
       {isHost && <button type="button" className="end-control" onClick={endMeeting}><X /><span>Finalizar</span></button>}
     </div>
+    {shareMenu && <div className="share-menu meeting-action-popover glass">
+      <button type="button" onClick={() => capture(false)}><MonitorUp />Pantalla, ventana o pestaña<span>{canCaptureDisplay() ? 'Selector seguro del navegador' : 'Requiere permiso de grabación de pantalla del sistema'}</span></button>
+      <button type="button" onClick={() => capture(true)} disabled={!canCaptureDisplay()}><span className="crop-icon" />Área personalizada<span>{savedCrop ? 'Reutilizar el recorte guardado' : 'Captura autorizada + recorte local'}</span></button>
+      {user.role === 'ADMIN' && <button type="button" onClick={() => capture(false, true)} disabled={!canCaptureDisplay()}><ShieldCheck />Pantalla con cobertura de datos<span>Opcional · cubre nombres antes de transmitir</span></button>}
+      <button type="button" onClick={shareRearCamera}><Camera />Cámara trasera o documento<span>Alternativa compatible con móviles y tablets</span></button>
+    </div>}
+    {reactionMenu && <div className="reaction-menu meeting-action-popover glass">{EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}
     {cropSource && <CropEditor stream={cropSource} initialCrop={savedCrop} onConfirm={confirmCrop} onCancel={stopShare} />}{privacySource && <PrivacyMaskEditor stream={privacySource} initialMasks={savedMasks} onConfirm={confirmPrivacyMasks} onCancel={stopShare} />}{inviteOpen && <InvitePanel members={members} onlineUserIds={onlineUserIds} onInviteMany={inviteMany} onClose={() => setInviteOpen(false)} />}<CollaborationRequestModal request={collaborationRequest} onRespond={respondCollaboration} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} />
   </section>;
 }

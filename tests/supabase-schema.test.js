@@ -361,9 +361,20 @@ describe('Supabase contract', () => {
 
   it('uses capability detection and a mobile presentation fallback', () => {
     expect(meetingStudio).toContain('navigator.mediaDevices?.getDisplayMedia');
+    expect(meetingStudio).toContain("const attempts = [options, { video: true, audio: true }, { video: true }]");
+    expect(meetingStudio).toContain("mediaSource: 'screen'");
     expect(meetingStudio).toContain('facingMode: { ideal: \'environment\' }');
     expect(meetingStudio).toContain('Cámara trasera o documento');
     expect(meetingStyles).toContain('.reaction-menu { position: fixed;');
+    expect(meetingStyles).toContain('.meeting-action-popover { position:fixed!important; z-index:1000!important');
+  });
+
+  it('plays synchronized reaction audio for remote participants', () => {
+    expect(meetingStudio).toContain('async function playRemoteReactionSound(emoji)');
+    expect(meetingStudio).toContain('context.createBufferSource()');
+    expect(meetingStudio).toContain('meetingReactionBuffer(PHOENIX_LIGHTNING_ASSET)');
+    expect(meetingStudio).toContain('remote={item.remote}');
+    expect(meetingStudio).toContain('muted={silent}');
   });
 
   it('deletes persisted meeting chat when the host ends a meeting', () => {
