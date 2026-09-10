@@ -421,8 +421,14 @@
   .analysis-tool-menu { left:37px; width:min(290px,calc(100vw - 64px)); max-height:calc(100dvh - 270px); }
 }
 
-.meeting-action-popover { position:fixed!important; z-index:1000!important; left:50%!important; right:auto!important; bottom:94px!important; transform:translateX(-50%)!important; pointer-events:auto; }
+.mobile-action-menu { display:none; }
 
 @media (max-width: 700px) {
-  .meeting-action-popover { left:12px!important; right:12px!important; bottom:calc(140px + env(safe-area-inset-bottom))!important; width:auto; transform:none!important; }
+  .desktop-action-menu { display:none!important; }
+  .share-menu.mobile-action-menu { display:block; }
+  .reaction-menu.mobile-action-menu { display:flex; }
+}
+
+@media (min-width: 1001px) {
+  .control-dock { transform:translateX(-171px); }
 }

@@ -366,7 +366,8 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('facingMode: { ideal: \'environment\' }');
     expect(meetingStudio).toContain('Cámara trasera o documento');
     expect(meetingStyles).toContain('.reaction-menu { position: fixed;');
-    expect(meetingStyles).toContain('.meeting-action-popover { position:fixed!important; z-index:1000!important');
+    expect(meetingStyles).toContain('.share-menu.mobile-action-menu { display:block; }');
+    expect(meetingStyles).toContain('.control-dock { transform:translateX(-171px); }');
   });
 
   it('plays synchronized reaction audio for remote participants', () => {

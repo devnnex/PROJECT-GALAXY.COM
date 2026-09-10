@@ -1195,21 +1195,28 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       <button type="button" className={camera ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('video')}>{camera ? <Camera /> : <CameraOff />}<span>{camera ? 'Apagar cámara' : 'Iniciar video'}</span></button>
       <div className="share-wrap">
         <button type="button" className={sharing ? 'active' : ''} disabled={!joined} onClick={() => { if (sharing) stopShare(); else { setShareMenu((open) => !open); setReactionMenu(false); } }}><MonitorUp /><span>{sharing ? 'Detener' : 'Compartir'}</span></button>
+        {shareMenu && <div className="share-menu desktop-action-menu glass">
+          <button type="button" onClick={() => capture(false)}><MonitorUp />Pantalla, ventana o pestaña<span>{canCaptureDisplay() ? 'Selector seguro del navegador' : 'Requiere permiso de grabación de pantalla del sistema'}</span></button>
+          <button type="button" onClick={() => capture(true)} disabled={!canCaptureDisplay()}><span className="crop-icon" />Área personalizada<span>{savedCrop ? 'Reutilizar el recorte guardado' : 'Captura autorizada + recorte local'}</span></button>
+          {user.role === 'ADMIN' && <button type="button" onClick={() => capture(false, true)} disabled={!canCaptureDisplay()}><ShieldCheck />Pantalla con cobertura de datos<span>Opcional · cubre nombres antes de transmitir</span></button>}
+          <button type="button" onClick={shareRearCamera}><Camera />Cámara trasera o documento<span>Alternativa compatible con móviles y tablets</span></button>
+        </div>}
       </div>
       <button type="button" className={`hand-control ${handRaised ? 'active raised' : ''}`} disabled={!joined} aria-pressed={handRaised} onClick={toggleHand}><Hand /><span>{handRaised ? 'Bajar mano' : 'Alzar mano'}</span></button>
       <div className="reaction-wrap">
         <button type="button" disabled={!joined} aria-expanded={reactionMenu} onClick={() => { setReactionMenu((open) => !open); setShareMenu(false); }}><SmilePlus /><span>Reaccionar</span></button>
+        {reactionMenu && <div className="reaction-menu desktop-action-menu glass">{EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}
       </div>
       <button type="button" className="leave-control" onClick={leave}><PhoneOff /><span>Salir</span></button>
       {isHost && <button type="button" className="end-control" onClick={endMeeting}><X /><span>Finalizar</span></button>}
     </div>
-    {shareMenu && <div className="share-menu meeting-action-popover glass">
+    {shareMenu && <div className="share-menu mobile-action-menu glass">
       <button type="button" onClick={() => capture(false)}><MonitorUp />Pantalla, ventana o pestaña<span>{canCaptureDisplay() ? 'Selector seguro del navegador' : 'Requiere permiso de grabación de pantalla del sistema'}</span></button>
       <button type="button" onClick={() => capture(true)} disabled={!canCaptureDisplay()}><span className="crop-icon" />Área personalizada<span>{savedCrop ? 'Reutilizar el recorte guardado' : 'Captura autorizada + recorte local'}</span></button>
       {user.role === 'ADMIN' && <button type="button" onClick={() => capture(false, true)} disabled={!canCaptureDisplay()}><ShieldCheck />Pantalla con cobertura de datos<span>Opcional · cubre nombres antes de transmitir</span></button>}
       <button type="button" onClick={shareRearCamera}><Camera />Cámara trasera o documento<span>Alternativa compatible con móviles y tablets</span></button>
     </div>}
-    {reactionMenu && <div className="reaction-menu meeting-action-popover glass">{EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}
+    {reactionMenu && <div className="reaction-menu mobile-action-menu glass">{EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}
     {cropSource && <CropEditor stream={cropSource} initialCrop={savedCrop} onConfirm={confirmCrop} onCancel={stopShare} />}{privacySource && <PrivacyMaskEditor stream={privacySource} initialMasks={savedMasks} onConfirm={confirmPrivacyMasks} onCancel={stopShare} />}{inviteOpen && <InvitePanel members={members} onlineUserIds={onlineUserIds} onInviteMany={inviteMany} onClose={() => setInviteOpen(false)} />}<CollaborationRequestModal request={collaborationRequest} onRespond={respondCollaboration} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} />
   </section>;
 }
