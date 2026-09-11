@@ -311,8 +311,10 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('function keepMeetingAudioAlive()');
     expect(meetingStudio).toContain('context.createConstantSource()');
     expect(meetingStudio).toContain("window.addEventListener('pagehide', background)");
-    expect(meetingStudio).toContain("window.addEventListener('pagehide', continueAudio)");
-    expect(meetingStudio).toContain("if (document.hidden) continueAudio()");
+    expect(meetingStudio).toContain("window.addEventListener('pagehide', pageHiding)");
+    expect(meetingStudio).toContain('longRangeMicrophoneSources.get(processedTrack)');
+    expect(meetingStudio).toContain('const microphoneTrack = background ? nativeTrack : processedTrack');
+    expect(meetingStudio).toContain('continueAudio(document.hidden)');
     expect(meetingStudio).toContain("context.addEventListener('statechange', stateChanged)");
   });
 

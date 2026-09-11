@@ -181,6 +181,14 @@ async function playMeetingReactionSound(emoji, reactionId) {
 }
 
 const longRangeMicrophoneCleanup = new WeakMap();
+const longRangeMicrophoneSources = new WeakMap();
+
+function setMeetingTrackEnabled(track, enabled) {
+  if (!track) return;
+  track.enabled = enabled;
+  const nativeTrack = longRangeMicrophoneSources.get(track);
+  if (nativeTrack) nativeTrack.enabled = enabled;
+}
 
 function stopMeetingTrack(track) {
   const cleanup = longRangeMicrophoneCleanup.get(track);
@@ -216,10 +224,10 @@ async function createLongRangeMicrophoneStream(capturedStream) {
     try { processedTrack.contentHint = 'speech'; } catch {}
     let closed = false;
     const close = () => {
-      if (closed) return; closed = true; longRangeMicrophoneCleanup.delete(processedTrack); rawTrack.removeEventListener('ended', close);
+      if (closed) return; closed = true; longRangeMicrophoneCleanup.delete(processedTrack); longRangeMicrophoneSources.delete(processedTrack); rawTrack.removeEventListener('ended', close);
       source.disconnect(); highPass.disconnect(); noiseFloor.disconnect(); warmth.disconnect(); clarity.disconnect(); deEsser.disconnect(); boost.disconnect(); compressor.disconnect(); outputGain.disconnect(); limiter.disconnect(); destination.disconnect?.(); rawTrack.stop(); processedTrack.stop();
     };
-    rawTrack.addEventListener('ended', close, { once: true }); longRangeMicrophoneCleanup.set(processedTrack, close);
+    rawTrack.addEventListener('ended', close, { once: true }); longRangeMicrophoneCleanup.set(processedTrack, close); longRangeMicrophoneSources.set(processedTrack, rawTrack);
     return new MediaStream([processedTrack, ...capturedStream.getVideoTracks()]);
   } catch { return capturedStream; }
 }
@@ -773,7 +781,7 @@ function InvitePanel({ members, onlineUserIds, onInviteMany, onClose }) {
 
 export default function MeetingStudio({ toast, user, joinRequest, onSessionChange, canCreate = false }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`; const mediaKey = `galaxy_meeting_media_${user.id}`; const maskKey = `galaxy_privacy_masks_${user.id}`;
-  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null);
+  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null); const backgroundMicrophoneMode = useRef(null);
   const pipVideoRef = useRef(null); const pipPlaceholderRef = useRef(null);
   const collaborationGrants = useRef(new Map()); const collaborationRequestTimes = useRef(new Map()); const presentationOwner = useRef(null); const cursorTimer = useRef(null); const requestTimer = useRef(null); const collaborationEnabledRef = useRef(true);
   const chatVisibleRef = useRef(false); const messagePulseTimer = useRef(null);
@@ -839,7 +847,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); const soundManaged = emoji === PHOENIX_TRANSFORM_REACTION || emoji === 'ALIEN_BIRTHDAY'; setReactions((items) => [...items, { id, emoji, senderName: name, soundManaged }]); if (soundManaged) playMeetingReactionSound(emoji, id).then((played) => { if (!played) { stopMeetingReactionSound(id); setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); } }).catch(() => { stopMeetingReactionSound(id); setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); }); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => { stopMeetingReactionSound(id); setReactions((items) => items.filter((item) => item.id !== id)); }, lifetime); };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
-    if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
+    if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; setMeetingTrackEnabled(track, false); setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
     if (notify && role !== 'HOST') toast(active ? `${by || 'El anfitrión'} silenció y bloqueó los micrófonos.` : `${by || 'El anfitrión'} permitió activar los micrófonos.`, 'info');
   };
   const resetCollaboration = () => { collaborationGrants.current.clear(); collaborationRequestTimes.current.clear(); clearTimeout(requestTimer.current); setCollaborationMode(null); setAnnotationTool('pen'); setAnalysisToolsOpen(false); setCollaborationRequest(null); setRequestedCollaboration(null); setCollaborationPermission(null); setAnnotationStrokes([]); setSelectedAnnotationId(null); setRemoteCursors({}); };
@@ -932,7 +940,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (normalized.participantStatus !== 'ADMITTED') { resumeMediaRequested.current = resumeMediaRequested.current || restoreMedia; setWaiting(true); setStatus('waiting'); return true; }
     let activeMedia = { mic, camera };
     if (restoreMedia || resumeMediaRequested.current) { activeMedia = await restoreMediaPreferences(); resumeMediaRequested.current = false; }
-    if (normalized.role !== 'HOST' && normalized.participantMicsLocked) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; activeMedia.mic = false; setMic(false); saveMediaPreferences({ mic: false }); }
+    if (normalized.role !== 'HOST' && normalized.participantMicsLocked) { const track = mediaRef.current.getAudioTracks()[0]; setMeetingTrackEnabled(track, false); activeMedia.mic = false; setMic(false); saveMediaPreferences({ mic: false }); }
     setWaiting(false); setJoined(true); setStatus('signaling'); connection.current?.disconnect(); participantHandStates.current.clear(); participantSnapshotReady.current = false;
     const isCurrent = (client) => expectedEpoch === lifecycleEpoch.current && sequence === connectSequence.current && connection.current === client;
     let client;
@@ -949,7 +957,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       onChatHistory: (history) => { if (isCurrent(client)) history.forEach(mergeMessage); }, onChatReaction: (value) => { if (isCurrent(client)) applyChatReaction(value); },
       onCollaboration: (value) => { if (isCurrent(client)) handleCollaboration(value); },
       onCollaborationAccess: ({ enabled, by }) => { if (isCurrent(client)) enforceCollaborationAccess(enabled, by, true); },
-      onForceMute: ({ by }) => { if (!isCurrent(client)) return; const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); saveMediaPreferences({ mic: false }); client.setPresence({ mic: false, speaking: false }); toast(`${by || 'El anfitrión'} silenció tu micrófono.`, 'info'); },
+      onForceMute: ({ by }) => { if (!isCurrent(client)) return; const track = mediaRef.current.getAudioTracks()[0]; setMeetingTrackEnabled(track, false); setMic(false); saveMediaPreferences({ mic: false }); client.setPresence({ mic: false, speaking: false }); toast(`${by || 'El anfitrión'} silenció tu micrófono.`, 'info'); },
       onParticipantMicsLock: ({ locked, by }) => { if (isCurrent(client)) enforceParticipantMicLock(locked, normalized.role, by, true); },
       onMeetingEnded: async ({ by }) => { if (!isCurrent(client)) return; await stopShare(); saveMediaPreferences({ mic: false, camera: false, sharing: false }); disconnect(true); stopMedia(); api.getMyMeetings().then(setMeetings).catch(() => {}); toast(`${by || 'El anfitrión'} finalizó la reunión.`, 'info'); },
     });
@@ -1020,7 +1028,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
   const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharing ? await sharedLocalStream(sharing, next) : next); };
   const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio' ? voiceCaptureConstraints() : false, video: kind === 'video' }); const prepared = kind === 'audio' ? await createLongRangeMicrophoneStream(captured) : captured; const track = prepared.getTracks()[0]; const replaced = mediaRef.current.getTracks().filter((item) => item.kind === kind); const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); replaced.forEach(stopMeetingTrack); await publishMedia(new MediaStream([...retained, track])); return track; };
-  const toggleTrack = async (kind) => { try { const isAudio = kind === 'audio'; if (isAudio && meeting?.role !== 'HOST' && participantMicsLocked) { toast('El anfitrión bloqueó temporalmente los micrófonos.', 'info'); return; } const active = isAudio ? mic : camera; let track = mediaRef.current.getTracks().find((item) => item.kind === kind && item.readyState === 'live'); if (!track) track = await acquireTrack(kind); else track.enabled = !active; const enabled = track.enabled; if (isAudio) setMic(enabled); else setCamera(enabled); saveMediaPreferences(isAudio ? { mic: enabled } : { camera: enabled }); connection.current?.setPresence({ mic: isAudio ? enabled : mic, camera: isAudio ? camera : enabled, sharing: Boolean(sharing), handRaised, speaking: isAudio ? localSpeaking && enabled : localSpeaking }); } catch (error) { toast(error.message || 'No fue posible acceder al dispositivo.', 'error'); } };
+  const toggleTrack = async (kind) => { try { const isAudio = kind === 'audio'; if (isAudio && meeting?.role !== 'HOST' && participantMicsLocked) { toast('El anfitrión bloqueó temporalmente los micrófonos.', 'info'); return; } const active = isAudio ? mic : camera; let track = mediaRef.current.getTracks().find((item) => item.kind === kind && item.readyState === 'live'); if (!track) track = await acquireTrack(kind); else if (isAudio) setMeetingTrackEnabled(track, !active); else track.enabled = !active; const enabled = track.enabled; if (isAudio) setMic(enabled); else setCamera(enabled); saveMediaPreferences(isAudio ? { mic: enabled } : { camera: enabled }); connection.current?.setPresence({ mic: isAudio ? enabled : mic, camera: isAudio ? camera : enabled, sharing: Boolean(sharing), handRaised, speaking: isAudio ? localSpeaking && enabled : localSpeaking }); } catch (error) { toast(error.message || 'No fue posible acceder al dispositivo.', 'error'); } };
   const stopShare = async () => {
     const owner = connection.current?.selfId;
     if (sharingRef.current && owner) connection.current?.collaborate('collab-reset', { presenterPeerId: owner });
@@ -1233,11 +1241,22 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   useEffect(() => { if (joined) syncPipSource().catch(() => {}); }, [joined, preferredPipStream, meeting?.meetingId]);
   useEffect(() => {
     if (!joined) { stopMeetingAudioKeepAlive(); return undefined; }
-    const continueAudio = () => { keepMeetingAudioAlive(); };
-    const timer = setInterval(() => { if (document.hidden) continueAudio(); }, 2500);
-    continueAudio(); document.addEventListener('visibilitychange', continueAudio); window.addEventListener('pagehide', continueAudio); window.addEventListener('pageshow', continueAudio);
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', continueAudio); window.removeEventListener('pagehide', continueAudio); window.removeEventListener('pageshow', continueAudio); stopMeetingAudioKeepAlive(); };
-  }, [joined]);
+    backgroundMicrophoneMode.current = null;
+    const syncBackgroundMicrophone = async (background = document.hidden) => {
+      if (!connection.current || sharingRef.current) { backgroundMicrophoneMode.current = null; return; }
+      const processedTrack = mediaRef.current.getAudioTracks()[0]; const nativeTrack = longRangeMicrophoneSources.get(processedTrack);
+      if (!processedTrack || !nativeTrack || nativeTrack.readyState !== 'live' || backgroundMicrophoneMode.current === background) return;
+      backgroundMicrophoneMode.current = background; nativeTrack.enabled = processedTrack.enabled;
+      const microphoneTrack = background ? nativeTrack : processedTrack;
+      await connection.current.setLocalStream(new MediaStream([microphoneTrack, ...mediaRef.current.getVideoTracks()])).catch(() => { backgroundMicrophoneMode.current = null; });
+    };
+    const continueAudio = (background = document.hidden) => { keepMeetingAudioAlive(); syncBackgroundMicrophone(background); };
+    const visibilityChanged = () => { continueAudio(document.hidden); };
+    const pageHiding = () => { continueAudio(true); }; const pageShowing = () => { continueAudio(false); };
+    const timer = setInterval(() => { if (document.hidden) keepMeetingAudioAlive(); }, 2500);
+    continueAudio(); document.addEventListener('visibilitychange', visibilityChanged); window.addEventListener('pagehide', pageHiding); window.addEventListener('pageshow', pageShowing);
+    return () => { clearInterval(timer); backgroundMicrophoneMode.current = null; document.removeEventListener('visibilitychange', visibilityChanged); window.removeEventListener('pagehide', pageHiding); window.removeEventListener('pageshow', pageShowing); stopMeetingAudioKeepAlive(); };
+  }, [joined, sharing]);
   useEffect(() => {
     const continueOutside = () => { if (document.hidden && joined && !pipActive) { keepMeetingAudioAlive(); enterPictureInPicture(true); } };
     document.addEventListener('visibilitychange', continueOutside);
