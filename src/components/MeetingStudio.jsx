@@ -85,22 +85,35 @@ function voiceCaptureConstraints() {
     echoCancellation: { ideal: true },
     noiseSuppression: { ideal: true },
     voiceIsolation: { ideal: true },
-    autoGainControl: { ideal: false },
+    autoGainControl: { ideal: true },
     channelCount: { ideal: 1 },
     sampleRate: { ideal: 48000 },
     sampleSize: { ideal: 16 },
-    latency: { ideal: 0.02 },
+    latency: { ideal: 0.04 },
   };
 }
 
 let sharedMeetingAudioContext = null;
+let sharedMeetingOutputBus = null;
 const meetingReactionAudioBuffers = new Map();
+const meetingReactionPlaybacks = new Map();
 
 function meetingAudioContext() {
   const Context = globalThis.AudioContext || globalThis.webkitAudioContext;
   if (!Context) return null;
   if (!sharedMeetingAudioContext || sharedMeetingAudioContext.state === 'closed') sharedMeetingAudioContext = new Context();
   return sharedMeetingAudioContext;
+}
+
+function meetingOutputBus() {
+  const context = meetingAudioContext(); if (!context) return null;
+  if (sharedMeetingOutputBus?.context === context) return sharedMeetingOutputBus;
+  const input = context.createGain();
+  const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -10; compressor.knee.value = 8; compressor.ratio.value = 6; compressor.attack.value = .006; compressor.release.value = .16;
+  const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .001; limiter.release.value = .08;
+  input.connect(compressor).connect(limiter).connect(context.destination);
+  sharedMeetingOutputBus = { context, input };
+  return sharedMeetingOutputBus;
 }
 
 async function meetingReactionBuffer(source) {
@@ -114,16 +127,30 @@ async function meetingReactionBuffer(source) {
   return meetingReactionAudioBuffers.get(source);
 }
 
-async function playMeetingReactionSound(emoji) {
+function stopMeetingReactionSound(reactionId) {
+  const playback = meetingReactionPlaybacks.get(reactionId);
+  if (!playback) return;
+  playback.cancelled = true; playback.stop?.(); meetingReactionPlaybacks.delete(reactionId);
+}
+
+function stopAllMeetingReactionSounds() {
+  [...meetingReactionPlaybacks.keys()].forEach(stopMeetingReactionSound);
+}
+
+async function playMeetingReactionSound(emoji, reactionId) {
   const source = emoji === PHOENIX_TRANSFORM_REACTION ? PHOENIX_LIGHTNING_ASSET : emoji === 'ALIEN_BIRTHDAY' ? GALAXY_DANCER_SOUND : '';
   if (!source) return true;
-  const context = meetingAudioContext(); if (!context) return false;
+  const playback = { cancelled: false, stop: null }; meetingReactionPlaybacks.set(reactionId, playback);
+  const output = meetingOutputBus(); const context = output?.context; if (!context) return false;
   if (context.state === 'suspended') await context.resume().catch(() => {});
   const buffer = await meetingReactionBuffer(source); if (!buffer || context.state !== 'running') return false;
+  if (playback.cancelled) return true;
   const player = context.createBufferSource(); const gain = context.createGain(); gain.gain.value = 3;
   const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .001; limiter.release.value = .12;
-  player.buffer = buffer; player.connect(gain).connect(limiter).connect(context.destination); player.start();
-  player.addEventListener('ended', () => { player.disconnect(); gain.disconnect(); limiter.disconnect(); }, { once: true });
+  player.buffer = buffer; player.connect(gain).connect(limiter).connect(output.input); player.start();
+  let stopped = false;
+  playback.stop = () => { if (stopped) return; stopped = true; try { player.stop(); } catch {} player.disconnect(); gain.disconnect(); limiter.disconnect(); if (meetingReactionPlaybacks.get(reactionId) === playback) meetingReactionPlaybacks.delete(reactionId); };
+  player.addEventListener('ended', playback.stop, { once: true });
   return true;
 }
 
@@ -146,23 +173,24 @@ async function createLongRangeMicrophoneStream(capturedStream) {
     if (context.state === 'suspended') await context.resume();
     if (context.state !== 'running') return capturedStream;
     const source = context.createMediaStreamSource(new MediaStream([rawTrack]));
-    const highPass = context.createBiquadFilter(); highPass.type = 'highpass'; highPass.frequency.value = 65; highPass.Q.value = .7;
-    const noiseFloor = context.createBiquadFilter(); noiseFloor.type = 'lowpass'; noiseFloor.frequency.value = 9500; noiseFloor.Q.value = .7;
-    const warmth = context.createBiquadFilter(); warmth.type = 'lowshelf'; warmth.frequency.value = 190; warmth.gain.value = 2.5;
-    const clarity = context.createBiquadFilter(); clarity.type = 'peaking'; clarity.frequency.value = 2800; clarity.Q.value = .8; clarity.gain.value = 4;
-    const boost = context.createGain(); boost.gain.value = 6;
-    const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -26; compressor.knee.value = 28; compressor.ratio.value = 6; compressor.attack.value = .004; compressor.release.value = .42;
-    const outputGain = context.createGain(); outputGain.gain.value = 2.5;
-    const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -3; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .001; limiter.release.value = .12;
+    const highPass = context.createBiquadFilter(); highPass.type = 'highpass'; highPass.frequency.value = 85; highPass.Q.value = .7;
+    const noiseFloor = context.createBiquadFilter(); noiseFloor.type = 'lowpass'; noiseFloor.frequency.value = 8000; noiseFloor.Q.value = .7;
+    const warmth = context.createBiquadFilter(); warmth.type = 'lowshelf'; warmth.frequency.value = 180; warmth.gain.value = 1.5;
+    const clarity = context.createBiquadFilter(); clarity.type = 'peaking'; clarity.frequency.value = 2600; clarity.Q.value = .8; clarity.gain.value = 2;
+    const deEsser = context.createBiquadFilter(); deEsser.type = 'highshelf'; deEsser.frequency.value = 5200; deEsser.gain.value = -4.5;
+    const boost = context.createGain(); boost.gain.value = 3.5;
+    const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -24; compressor.knee.value = 18; compressor.ratio.value = 4; compressor.attack.value = .008; compressor.release.value = .25;
+    const outputGain = context.createGain(); outputGain.gain.value = 1.7;
+    const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -2.5; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .002; limiter.release.value = .08;
     const destination = context.createMediaStreamDestination();
-    source.connect(highPass).connect(noiseFloor).connect(warmth).connect(clarity).connect(boost).connect(compressor).connect(outputGain).connect(limiter).connect(destination);
+    source.connect(highPass).connect(noiseFloor).connect(warmth).connect(clarity).connect(deEsser).connect(boost).connect(compressor).connect(outputGain).connect(limiter).connect(destination);
     const processedTrack = destination.stream.getAudioTracks()[0];
-    if (!processedTrack) { source.disconnect(); highPass.disconnect(); noiseFloor.disconnect(); warmth.disconnect(); clarity.disconnect(); boost.disconnect(); compressor.disconnect(); outputGain.disconnect(); limiter.disconnect(); return capturedStream; }
+    if (!processedTrack) { source.disconnect(); highPass.disconnect(); noiseFloor.disconnect(); warmth.disconnect(); clarity.disconnect(); deEsser.disconnect(); boost.disconnect(); compressor.disconnect(); outputGain.disconnect(); limiter.disconnect(); return capturedStream; }
     try { processedTrack.contentHint = 'speech'; } catch {}
     let closed = false;
     const close = () => {
       if (closed) return; closed = true; longRangeMicrophoneCleanup.delete(processedTrack); rawTrack.removeEventListener('ended', close);
-      source.disconnect(); highPass.disconnect(); noiseFloor.disconnect(); warmth.disconnect(); clarity.disconnect(); boost.disconnect(); compressor.disconnect(); outputGain.disconnect(); limiter.disconnect(); destination.disconnect?.(); rawTrack.stop(); processedTrack.stop();
+      source.disconnect(); highPass.disconnect(); noiseFloor.disconnect(); warmth.disconnect(); clarity.disconnect(); deEsser.disconnect(); boost.disconnect(); compressor.disconnect(); outputGain.disconnect(); limiter.disconnect(); destination.disconnect?.(); rawTrack.stop(); processedTrack.stop();
     };
     rawTrack.addEventListener('ended', close, { once: true }); longRangeMicrophoneCleanup.set(processedTrack, close);
     return new MediaStream([processedTrack, ...capturedStream.getVideoTracks()]);
@@ -295,9 +323,17 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
   const ref = useRef(null);
   useEffect(() => {
     const audio = ref.current; if (!audio) return undefined;
-    let disposed = false;
+    let disposed = false; let mixedSource = null;
+    const disconnectMix = () => { mixedSource?.disconnect(); mixedSource = null; };
     const play = async () => {
       if (disposed || !audio.srcObject) return;
+      const output = meetingOutputBus();
+      if (output?.context.state === 'suspended') await output.context.resume?.().catch(() => {});
+      if (output?.context.state === 'running') {
+        if (!mixedSource) try { mixedSource = output.context.createMediaStreamSource(audio.srcObject); mixedSource.connect(output.input); } catch { mixedSource = null; }
+        if (mixedSource) { audio.pause(); audio.defaultMuted = true; audio.muted = true; onBlocked(peerId, false); return; }
+      }
+      disconnectMix();
       audio.defaultMuted = false; audio.muted = false; audio.volume = 1;
       try { await audio.play(); if (!disposed) onBlocked(peerId, false); }
       catch { if (!disposed) onBlocked(peerId, true); }
@@ -307,7 +343,7 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
       const tracks = (stream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
       const attached = audio.srcObject?.getAudioTracks?.() || [];
       const unchanged = tracks.length === attached.length && tracks.every((track) => attached.includes(track));
-      if (!unchanged) audio.srcObject = tracks.length ? new MediaStream(tracks) : null;
+      if (!unchanged) { disconnectMix(); audio.srcObject = tracks.length ? new MediaStream(tracks) : null; }
       if (!tracks.length) { onBlocked(peerId, false); return; }
       play();
     };
@@ -324,7 +360,7 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
       window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visible);
       stream?.removeEventListener('addtrack', changed); stream?.removeEventListener('removetrack', changed);
       (stream?.getAudioTracks() || []).forEach((track) => { track.removeEventListener('unmute', resume); track.removeEventListener('ended', changed); });
-      audio.pause(); audio.srcObject = null;
+      disconnectMix(); audio.pause(); audio.srcObject = null;
     };
   }, [stream, peerId, onBlocked]);
   return <audio ref={ref} className="remote-audio" autoPlay playsInline preload="auto" />;
@@ -530,9 +566,12 @@ async function createSharedAudioMixer(displayStream, microphoneStream) {
 
   const context = meetingAudioContext();
   if (!context) return { track: fallbackTrack, fallbackTrack, close() {} };
-  const destination = context.createMediaStreamDestination(); const sources = []; let stateHandler = null; let closed = false;
+  const destination = context.createMediaStreamDestination(); const mixInput = context.createGain(); const sources = []; let stateHandler = null; let closed = false;
+  const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -10; compressor.knee.value = 8; compressor.ratio.value = 6; compressor.attack.value = .006; compressor.release.value = .16;
+  const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .001; limiter.release.value = .08;
+  mixInput.connect(compressor).connect(limiter).connect(destination);
   tracks.forEach((track) => {
-    const source = context.createMediaStreamSource(new MediaStream([track])); source.connect(destination); sources.push(source);
+    const source = context.createMediaStreamSource(new MediaStream([track])); source.connect(mixInput); sources.push(source);
   });
   const mixedTrack = destination.stream.getAudioTracks()[0] || null;
   const notifyState = () => { if (!closed) stateHandler?.(context.state === 'running'); };
@@ -549,7 +588,7 @@ async function createSharedAudioMixer(displayStream, microphoneStream) {
     close() {
       closed = true; stateHandler = null; context.onstatechange = null;
       window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume); window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visible);
-      sources.forEach((source) => source.disconnect());
+      sources.forEach((source) => source.disconnect()); mixInput.disconnect(); compressor.disconnect(); limiter.disconnect();
       destination.stream.getTracks().forEach((track) => track.stop());
     },
   };
@@ -722,6 +761,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const [collaborationRequest, setCollaborationRequest] = useState(null); const [requestedCollaboration, setRequestedCollaboration] = useState(null); const [collaborationPermission, setCollaborationPermission] = useState(null);
   const [annotationStrokes, setAnnotationStrokes] = useState([]); const [selectedAnnotationId, setSelectedAnnotationId] = useState(null); const [remoteCursors, setRemoteCursors] = useState({}); const [confirmation, setConfirmation] = useState(null);
 
+  useEffect(() => () => stopAllMeetingReactionSounds(), []);
   useEffect(() => { annotationStrokesRef.current = annotationStrokes; }, [annotationStrokes]);
   useEffect(() => {
     const query = window.matchMedia('(max-width: 1000px)');
@@ -766,7 +806,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (navigator.vibrate && document.visibilityState === 'visible') navigator.vibrate(32);
     setTimeout(() => setFloatingMessages((items) => items.filter((item) => item.id !== id)), 5200);
   };
-  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); const soundManaged = emoji === PHOENIX_TRANSFORM_REACTION || emoji === 'ALIEN_BIRTHDAY'; setReactions((items) => [...items, { id, emoji, senderName: name, soundManaged }]); if (soundManaged) playMeetingReactionSound(emoji).then((played) => { if (!played) setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); }).catch(() => setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item))); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => setReactions((items) => items.filter((item) => item.id !== id)), lifetime); };
+  const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); const soundManaged = emoji === PHOENIX_TRANSFORM_REACTION || emoji === 'ALIEN_BIRTHDAY'; setReactions((items) => [...items, { id, emoji, senderName: name, soundManaged }]); if (soundManaged) playMeetingReactionSound(emoji, id).then((played) => { if (!played) { stopMeetingReactionSound(id); setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); } }).catch(() => { stopMeetingReactionSound(id); setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); }); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => { stopMeetingReactionSound(id); setReactions((items) => items.filter((item) => item.id !== id)); }, lifetime); };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; if (track) track.enabled = false; setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }

@@ -112,6 +112,8 @@ describe('Supabase contract', () => {
   it('keeps remote meeting audio direct and independent from the screen-share mixer', () => {
     expect(meetingStudio).toContain('audio.defaultMuted = false; audio.muted = false; audio.volume = 1');
     expect(meetingStudio).toContain('audio.srcObject = tracks.length ? new MediaStream(tracks) : null');
+    expect(meetingStudio).toContain('mixedSource.connect(output.input)');
+    expect(meetingStudio).toContain('function meetingOutputBus()');
     expect(meetingStudio).not.toContain("track.addEventListener('mute', changed)");
     expect(meetingStudio).toContain("window.addEventListener('pageshow', resume)");
     expect(meetingStudio).toContain("document.addEventListener('visibilitychange', visible)");
@@ -134,19 +136,21 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('track.enabled = next');
     expect(meetingStudio).toContain('className={`presentation-audio-toggle');
     expect(meetingStudio).toContain("setShareHasAudio(stream.getAudioTracks().length > 0)");
+    expect(meetingStudio).toContain('mixInput.connect(compressor).connect(limiter).connect(destination)');
     expect(meetingStyles).toContain('.presentation-audio-toggle');
   });
 
   it('captures clear voices and synchronizes cosmic reactions', () => {
-    expect(meetingStudio).toContain('autoGainControl: { ideal: false }');
+    expect(meetingStudio).toContain('autoGainControl: { ideal: true }');
     expect(meetingStudio).toContain('noiseSuppression: { ideal: true }');
     expect(meetingStudio).toContain('voiceIsolation: { ideal: true }');
     expect(meetingStudio).toContain('channelCount: { ideal: 1 }');
-    expect(meetingStudio).toContain('boost.gain.value = 6');
-    expect(meetingStudio).toContain('outputGain.gain.value = 2.5');
+    expect(meetingStudio).toContain('boost.gain.value = 3.5');
+    expect(meetingStudio).toContain('outputGain.gain.value = 1.7');
     expect(meetingStudio).toContain('limiter.ratio.value = 20');
     expect(meetingStudio).toContain("noiseFloor.type = 'lowpass'");
     expect(meetingStudio).toContain("clarity.type = 'peaking'");
+    expect(meetingStudio).toContain("deEsser.type = 'highshelf'");
     expect(meetingStudio).toContain('createDynamicsCompressor()');
     expect(meetingStudio).toContain('createLongRangeMicrophoneStream(captured)');
     expect(meetingStudio).toContain('audio.muted = false');
@@ -376,11 +380,13 @@ describe('Supabase contract', () => {
   });
 
   it('plays synchronized reaction audio at 300 percent for every participant', () => {
-    expect(meetingStudio).toContain('async function playMeetingReactionSound(emoji)');
+    expect(meetingStudio).toContain('async function playMeetingReactionSound(emoji, reactionId)');
     expect(meetingStudio).toContain('context.createBufferSource()');
     expect(meetingStudio).toContain('meetingReactionBuffer(PHOENIX_LIGHTNING_ASSET)');
     expect(meetingStudio).toContain('gain.gain.value = 3');
     expect(meetingStudio).toContain('limiter.ratio.value = 20');
+    expect(meetingStudio).toContain('stopMeetingReactionSound(id)');
+    expect(meetingStudio).toContain('stopAllMeetingReactionSounds()');
     expect(meetingStudio).toContain('soundManaged={item.soundManaged}');
     expect(meetingStudio).toContain('muted={silent}');
   });
