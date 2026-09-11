@@ -104,6 +104,7 @@ function voiceCaptureConstraints() {
 
 let sharedMeetingAudioContext = null;
 let sharedMeetingOutputBus = null;
+let sharedMeetingAudioKeepAlive = null;
 const meetingReactionAudioBuffers = new Map();
 const meetingReactionPlaybacks = new Map();
 
@@ -123,6 +124,22 @@ function meetingOutputBus() {
   input.connect(compressor).connect(limiter).connect(context.destination);
   sharedMeetingOutputBus = { context, input };
   return sharedMeetingOutputBus;
+}
+
+function keepMeetingAudioAlive() {
+  const context = meetingAudioContext(); if (!context) return null;
+  if (context.state === 'suspended') context.resume?.().catch(() => {});
+  if (sharedMeetingAudioKeepAlive?.context === context) return context;
+  sharedMeetingAudioKeepAlive?.source?.stop?.();
+  const source = context.createConstantSource(); const gain = context.createGain(); source.offset.value = 1; gain.gain.value = .000001;
+  source.connect(gain).connect(context.destination); source.start(); sharedMeetingAudioKeepAlive = { context, source, gain };
+  return context;
+}
+
+function stopMeetingAudioKeepAlive() {
+  if (!sharedMeetingAudioKeepAlive) return;
+  try { sharedMeetingAudioKeepAlive.source.stop(); } catch {}
+  sharedMeetingAudioKeepAlive.source.disconnect(); sharedMeetingAudioKeepAlive.gain.disconnect(); sharedMeetingAudioKeepAlive = null;
 }
 
 async function meetingReactionBuffer(source) {
@@ -208,7 +225,7 @@ async function createLongRangeMicrophoneStream(capturedStream) {
 }
 
 function primeMeetingAudio() {
-  const context = meetingAudioContext();
+  const context = keepMeetingAudioAlive();
   if (context?.state === 'suspended') context.resume().catch(() => {});
   meetingReactionBuffer(PHOENIX_LIGHTNING_ASSET); meetingReactionBuffer(GALAXY_DANCER_SOUND);
   window.dispatchEvent(new Event('galaxy:resume-meeting-audio'));
@@ -339,9 +356,9 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
       if (disposed || !audio.srcObject) return;
       const output = meetingOutputBus();
       if (output?.context.state === 'suspended') await output.context.resume?.().catch(() => {});
-      if (output?.context.state === 'running') {
+      if (!document.hidden && output?.context.state === 'running') {
         if (!mixedSource) try { mixedSource = output.context.createMediaStreamSource(audio.srcObject); mixedSource.connect(output.input); } catch { mixedSource = null; }
-        if (mixedSource) { audio.pause(); audio.defaultMuted = true; audio.muted = true; onBlocked(peerId, false); return; }
+        if (mixedSource) { audio.defaultMuted = true; audio.muted = true; await audio.play().catch(() => {}); onBlocked(peerId, false); return; }
       }
       disconnectMix();
       audio.defaultMuted = false; audio.muted = false; audio.volume = 1;
@@ -359,15 +376,16 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
     };
     const resume = () => { play(); };
     const changed = () => { syncTracks(); };
-    const visible = () => { if (!document.hidden) resume(); };
+    const visibilityChanged = () => { play(); keepMeetingAudioAlive(); };
+    const background = () => { play(); keepMeetingAudioAlive(); };
     stream?.addEventListener('addtrack', changed); stream?.addEventListener('removetrack', changed);
     window.addEventListener('galaxy:resume-meeting-audio', resume); window.addEventListener('focus', resume); window.addEventListener('pageshow', resume);
-    window.addEventListener('pointerdown', resume, true); window.addEventListener('keydown', resume, true); document.addEventListener('visibilitychange', visible);
+    window.addEventListener('pagehide', background); window.addEventListener('pointerdown', resume, true); window.addEventListener('keydown', resume, true); document.addEventListener('visibilitychange', visibilityChanged);
     (stream?.getAudioTracks() || []).forEach((track) => { track.addEventListener('unmute', resume); track.addEventListener('ended', changed); });
     syncTracks();
     return () => {
       disposed = true; onBlocked(peerId, false); window.removeEventListener('galaxy:resume-meeting-audio', resume); window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume);
-      window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visible);
+      window.removeEventListener('pagehide', background); window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visibilityChanged);
       stream?.removeEventListener('addtrack', changed); stream?.removeEventListener('removetrack', changed);
       (stream?.getAudioTracks() || []).forEach((track) => { track.removeEventListener('unmute', resume); track.removeEventListener('ended', changed); });
       disconnectMix(); audio.pause(); audio.srcObject = null;
@@ -585,10 +603,12 @@ async function createSharedAudioMixer(displayStream, microphoneStream) {
   });
   const mixedTrack = destination.stream.getAudioTracks()[0] || null;
   const notifyState = () => { if (!closed) stateHandler?.(context.state === 'running'); };
-  const resume = async () => { if (closed || context.state === 'running') return; await context.resume?.().catch(() => {}); notifyState(); };
-  const visible = () => { if (!document.hidden) resume(); };
-  context.onstatechange = notifyState;
-  window.addEventListener('focus', resume); window.addEventListener('pageshow', resume); window.addEventListener('pointerdown', resume, true); window.addEventListener('keydown', resume, true); document.addEventListener('visibilitychange', visible);
+  const resume = async () => { if (closed) return; keepMeetingAudioAlive(); if (context.state !== 'running') await context.resume?.().catch(() => {}); notifyState(); };
+  const stateChanged = () => { notifyState(); if (context.state === 'suspended') resume(); };
+  const visibilityChanged = () => { resume(); };
+  const keepAliveTimer = setInterval(() => { if (document.hidden) resume(); }, 2500);
+  context.addEventListener('statechange', stateChanged);
+  window.addEventListener('focus', resume); window.addEventListener('pageshow', resume); window.addEventListener('pagehide', resume); window.addEventListener('pointerdown', resume, true); window.addEventListener('keydown', resume, true); document.addEventListener('visibilitychange', visibilityChanged);
   await resume();
   return {
     track: context.state === 'running' && mixedTrack ? mixedTrack : fallbackTrack,
@@ -596,8 +616,8 @@ async function createSharedAudioMixer(displayStream, microphoneStream) {
     fallbackTrack,
     setStateHandler(handler) { stateHandler = typeof handler === 'function' ? handler : null; },
     close() {
-      closed = true; stateHandler = null; context.onstatechange = null;
-      window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume); window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visible);
+      closed = true; stateHandler = null; clearInterval(keepAliveTimer); context.removeEventListener('statechange', stateChanged);
+      window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume); window.removeEventListener('pagehide', resume); window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visibilityChanged);
       sources.forEach((source) => source.disconnect()); mixInput.disconnect(); compressor.disconnect(); limiter.disconnect();
       destination.stream.getTracks().forEach((track) => track.stop());
     },
@@ -1212,7 +1232,14 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   }, [meeting?.meetingId]);
   useEffect(() => { if (joined) syncPipSource().catch(() => {}); }, [joined, preferredPipStream, meeting?.meetingId]);
   useEffect(() => {
-    const continueOutside = () => { if (document.hidden && joined && !pipActive) enterPictureInPicture(true); };
+    if (!joined) { stopMeetingAudioKeepAlive(); return undefined; }
+    const continueAudio = () => { keepMeetingAudioAlive(); };
+    const timer = setInterval(() => { if (document.hidden) continueAudio(); }, 2500);
+    continueAudio(); document.addEventListener('visibilitychange', continueAudio); window.addEventListener('pagehide', continueAudio); window.addEventListener('pageshow', continueAudio);
+    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', continueAudio); window.removeEventListener('pagehide', continueAudio); window.removeEventListener('pageshow', continueAudio); stopMeetingAudioKeepAlive(); };
+  }, [joined]);
+  useEffect(() => {
+    const continueOutside = () => { if (document.hidden && joined && !pipActive) { keepMeetingAudioAlive(); enterPictureInPicture(true); } };
     document.addEventListener('visibilitychange', continueOutside);
     return () => document.removeEventListener('visibilitychange', continueOutside);
   }, [joined, pipActive, preferredPipStream]);

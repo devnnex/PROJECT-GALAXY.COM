@@ -116,7 +116,9 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('function meetingOutputBus()');
     expect(meetingStudio).not.toContain("track.addEventListener('mute', changed)");
     expect(meetingStudio).toContain("window.addEventListener('pageshow', resume)");
-    expect(meetingStudio).toContain("document.addEventListener('visibilitychange', visible)");
+    expect(meetingStudio).toContain("document.addEventListener('visibilitychange', visibilityChanged)");
+    expect(meetingStudio).toContain("!document.hidden && output?.context.state === 'running'");
+    expect(meetingStudio).toContain('audio.defaultMuted = true; audio.muted = true; await audio.play()');
   });
 
   it('queues early WebRTC signals and primes one shared audio engine before joining', () => {
@@ -303,6 +305,15 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('running && mixer.mixedTrack ? mixer.mixedTrack : mixer.fallbackTrack');
     expect(meetingClient).toContain('this.mediaUpdate = Promise.resolve()');
     expect(meetingClient).toContain('version !== this.localStreamVersion');
+  });
+
+  it('keeps meeting audio active when the app moves to the background', () => {
+    expect(meetingStudio).toContain('function keepMeetingAudioAlive()');
+    expect(meetingStudio).toContain('context.createConstantSource()');
+    expect(meetingStudio).toContain("window.addEventListener('pagehide', background)");
+    expect(meetingStudio).toContain("window.addEventListener('pagehide', continueAudio)");
+    expect(meetingStudio).toContain("if (document.hidden) continueAudio()");
+    expect(meetingStudio).toContain("context.addEventListener('statechange', stateChanged)");
   });
 
   it('keeps meeting media alive across internal navigation', () => {
