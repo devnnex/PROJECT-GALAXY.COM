@@ -565,6 +565,35 @@ function canCaptureDisplay() {
   return Boolean(navigator.mediaDevices?.getDisplayMedia || navigator.getDisplayMedia || (/Firefox/i.test(navigator.userAgent) && navigator.mediaDevices?.getUserMedia));
 }
 
+function meetingVideoProfile() {
+  const mobile = !isDesktopMeetingDevice();
+  const memory = Number(navigator.deviceMemory) || (mobile ? 4 : 8);
+  const cores = Number(navigator.hardwareConcurrency) || (mobile ? 4 : 8);
+  if (mobile || memory <= 4 || cores <= 4) return { width: 1280, height: 720, frameRate: 24, smoothing: 'medium' };
+  if (memory < 8 || cores < 8) return { width: 1920, height: 1080, frameRate: 30, smoothing: 'high' };
+  return { width: 2560, height: 1440, frameRate: 30, smoothing: 'high' };
+}
+
+function startMeetingVideoRender(video, frameRate, render) {
+  let stopped = false; let handle = 0; let lastFrame = 0; const interval = 1000 / frameRate;
+  const next = () => {
+    if (stopped) return;
+    if (typeof video.requestVideoFrameCallback === 'function') handle = video.requestVideoFrameCallback(frame);
+    else handle = requestAnimationFrame(frame);
+  };
+  const frame = (time = performance.now()) => {
+    if (stopped) return;
+    if (!lastFrame || time - lastFrame >= interval - 1) { lastFrame = time; render(); }
+    next();
+  };
+  render(); next();
+  return () => { stopped = true; if (typeof video.cancelVideoFrameCallback === 'function') video.cancelVideoFrameCallback(handle); else cancelAnimationFrame(handle); };
+}
+
+function stopMeetingVideoRender(renderLoop) {
+  renderLoop.current?.(); renderLoop.current = null;
+}
+
 async function requestDisplayCapture(options) {
   const capture = navigator.mediaDevices?.getDisplayMedia?.bind(navigator.mediaDevices) || navigator.getDisplayMedia?.bind(navigator);
   let lastError = null;
@@ -810,11 +839,19 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     sync(); query.addEventListener?.('change', sync); return () => query.removeEventListener?.('change', sync);
   }, [sideTab, mobilePanelOpen]);
   useEffect(() => {
-    const finalForm = new Image(); finalForm.src = PHOENIX_SUPER_ASSET;
-    [GALACTIC_ARMOR_STAGE_ONE, GALACTIC_ARMOR_BLUEPRINT, GALACTIC_ARMOR_ACTION, GALACTIC_ARMOR_FINAL].forEach((source) => { const frame = new Image(); frame.src = source; });
-    const lightning = document.createElement('video'); lightning.preload = 'auto'; lightning.src = PHOENIX_LIGHTNING_ASSET; lightning.load();
-    return () => { lightning.pause(); lightning.removeAttribute('src'); lightning.load(); };
-  }, []);
+    if (!joined) return undefined;
+    let reactionImages = []; let lightning = null; let disposed = false;
+    const preloadReactions = async () => {
+      for (const source of [MONEY_ROCKET_ASSET, MONEY_CHARACTER_ASSET, MONEY_ALIEN_ASSET, GALACTIC_ARMOR_STAGE_ONE, GALACTIC_ARMOR_BLUEPRINT, GALACTIC_ARMOR_ACTION, GALACTIC_ARMOR_FINAL, PHOENIX_BASE_ASSET, PHOENIX_SUPER_ASSET, MCLAREN_PROFIT_ASSET, GALAXY_DANCER_ASSET, GALAXY_DANCER_ICON]) {
+        if (disposed) return;
+        const image = new Image(); image.decoding = 'async'; image.src = source; reactionImages.push(image); await image.decode?.().catch(() => {});
+      }
+      if (disposed) return;
+      lightning = document.createElement('video'); lightning.preload = 'auto'; lightning.src = PHOENIX_LIGHTNING_ASSET; lightning.load();
+    };
+    const idle = typeof requestIdleCallback === 'function' ? requestIdleCallback(preloadReactions, { timeout: 800 }) : setTimeout(preloadReactions, 0);
+    return () => { disposed = true; if (typeof cancelIdleCallback === 'function') cancelIdleCallback(idle); else clearTimeout(idle); reactionImages.forEach((image) => image.removeAttribute('src')); lightning?.pause(); lightning?.removeAttribute('src'); lightning?.load(); };
+  }, [joined]);
 
   const rememberMeeting = (value) => { localStorage.setItem(activeKey, JSON.stringify({ roomCode: value.roomCode, title: value.title, role: value.role || (value.host ? 'HOST' : 'PARTICIPANT') })); };
   const forgetMeeting = () => { localStorage.removeItem(activeKey); };
@@ -921,7 +958,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
   useEffect(() => {
     const epoch = ++lifecycleEpoch.current;
-    return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); stopMeetingStream(mediaRef.current); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
+    return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); stopMeetingStream(mediaRef.current); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
   }, []);
   useEffect(() => { onSessionChange?.({ active: joined || waiting, joined, waiting, title: meeting?.title || '', roomCode: meeting?.roomCode || '', mic, camera, sharing: Boolean(sharing), audioBlocked }); }, [joined, waiting, meeting?.title, meeting?.roomCode, mic, camera, sharing, audioBlocked, onSessionChange]);
   useEffect(() => {
@@ -1032,7 +1069,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const stopShare = async () => {
     const owner = connection.current?.selfId;
     if (sharingRef.current && owner) connection.current?.collaborate('collab-reset', { presenterPeerId: owner });
-    sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); cancelAnimationFrame(renderLoop.current); sourceStream.current = null; sharingRef.current = null; presentationOwner.current = null; setSharing(null); setShareHasAudio(false); setShareAudioEnabled(true); setCropSource(null); setPrivacySource(null); saveMediaPreferences({ sharing: false }); resetCollaboration(); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false });
+    sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); sourceStream.current = null; sharingRef.current = null; presentationOwner.current = null; setSharing(null); setShareHasAudio(false); setShareAudioEnabled(true); setCropSource(null); setPrivacySource(null); saveMediaPreferences({ sharing: false }); resetCollaboration(); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false });
   };
   const publishShare = async (stream) => { sharingRef.current = stream; presentationOwner.current = connection.current?.selfId || null; resetCollaboration(); setSharing(stream); saveMediaPreferences({ sharing: true }); await connection.current?.setLocalStream(await sharedLocalStream(stream)); connection.current?.setPresence({ sharing: true }); primeMeetingAudio(); requestAnimationFrame(primeMeetingAudio); };
   const toggleSharedAudio = () => {
@@ -1044,11 +1081,12 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const capture = async (custom = false, protectedMode = false) => {
     setShareMenu(false); if (!joined) return;
     try {
-      const qualityVideo = custom ? { width: { ideal: 7680 }, height: { ideal: 4320 }, frameRate: { ideal: 30, max: 30 } } : true;
+      const profile = meetingVideoProfile();
+      const qualityVideo = custom ? { frameRate: { ideal: profile.frameRate, max: profile.frameRate } } : true;
       const stream = await requestDisplayCapture({ video: qualityVideo, audio: { suppressLocalAudioPlayback: false }, selfBrowserSurface: 'exclude', preferCurrentTab: false, surfaceSwitching: 'include', systemAudio: 'include' });
       const displayTrack = stream.getVideoTracks()[0];
-      if (custom && displayTrack) try { displayTrack.contentHint = 'detail'; } catch {}
-      displayTrack?.applyConstraints(custom ? { width: { ideal: 7680 }, height: { ideal: 4320 }, frameRate: { ideal: 30, max: 30 } } : { frameRate: { ideal: 20, max: 30 } }).catch(() => {});
+      if (displayTrack) try { displayTrack.contentHint = 'detail'; } catch {}
+      displayTrack?.applyConstraints({ frameRate: { ideal: profile.frameRate, max: profile.frameRate } }).catch(() => {});
       stream.getAudioTracks().forEach((track) => track.applyConstraints?.({ suppressLocalAudioPlayback: false }).catch(() => {}));
       sourceStream.current = stream; setShareHasAudio(stream.getAudioTracks().length > 0); setShareAudioEnabled(true); displayTrack?.addEventListener('ended', stopShare, { once: true });
       if (protectedMode && user.role === 'ADMIN') setPrivacySource(stream);
@@ -1072,14 +1110,15 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       await video.play(); await waitForVideoMetadata(video);
       const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d', { alpha: false });
       if (!ctx || typeof canvas.captureStream !== 'function') throw new Error('Tu navegador no permite compartir un área procesada.');
+      const profile = meetingVideoProfile();
       const draw = () => {
         const sx = video.videoWidth * crop.x / 100; const sy = video.videoHeight * crop.y / 100;
-        const sw = video.videoWidth * crop.w / 100; const sh = video.videoHeight * crop.h / 100; const scale = Math.min(1, 7680 / sw, 4320 / sh);
+        const sw = video.videoWidth * crop.w / 100; const sh = video.videoHeight * crop.h / 100; const scale = Math.min(1, profile.width / sw, profile.height / sh);
         if (canvas.width !== Math.round(sw * scale) || canvas.height !== Math.round(sh * scale)) { canvas.width = Math.max(2, Math.round(sw * scale)); canvas.height = Math.max(2, Math.round(sh * scale)); }
-        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height); renderLoop.current = requestAnimationFrame(draw);
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = profile.smoothing;
+        ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
       };
-      draw(); const processed = canvas.captureStream(30); const detailTrack = processed.getVideoTracks()[0]; if (detailTrack) try { detailTrack.contentHint = 'detail'; } catch {} setCropSource(null); await publishShare(processed); toast(sourceStream.current?.getAudioTracks().length ? 'Área y sonido compartidos por WebRTC.' : 'Área compartida sin sonido. El navegador no entregó audio de la fuente seleccionada.', 'info');
+      stopMeetingVideoRender(renderLoop); renderLoop.current = startMeetingVideoRender(video, profile.frameRate, draw); const processed = canvas.captureStream(profile.frameRate); const detailTrack = processed.getVideoTracks()[0]; if (detailTrack) try { detailTrack.contentHint = 'detail'; } catch {} setCropSource(null); await publishShare(processed); toast(sourceStream.current?.getAudioTracks().length ? 'Área y sonido compartidos por WebRTC.' : 'Área compartida sin sonido. El navegador no entregó audio de la fuente seleccionada.', 'info');
     } catch (error) { await stopShare(); toast(error.message || 'No fue posible compartir el área seleccionada.', 'error'); }
   };
   const confirmPrivacyMasks = async (masks) => {
@@ -1097,9 +1136,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
           const x = canvas.width * mask.x / 100; const y = canvas.height * mask.y / 100; const w = canvas.width * mask.w / 100; const h = canvas.height * mask.h / 100;
           ctx.fillStyle = '#05040a'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = '#7f52c8'; ctx.lineWidth = Math.max(2, canvas.width / 640); ctx.strokeRect(x, y, w, h);
         }
-        renderLoop.current = requestAnimationFrame(draw);
       };
-      draw(); const protectedStream = canvas.captureStream(24); setPrivacySource(null); await publishShare(protectedStream);
+      stopMeetingVideoRender(renderLoop); renderLoop.current = startMeetingVideoRender(video, 24, draw); const protectedStream = canvas.captureStream(24); setPrivacySource(null); await publishShare(protectedStream);
       toast('Pantalla compartida con las zonas privadas integradas en el video.', 'info');
     } catch (error) { await stopShare(); toast(error.message || 'No fue posible aplicar la protección visual.', 'error'); }
   };

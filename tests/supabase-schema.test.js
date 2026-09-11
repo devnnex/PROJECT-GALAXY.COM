@@ -210,6 +210,8 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('assets/phoenix-super-reaction.png');
     expect(meetingStudio).toContain('video.volume = .72');
     expect(meetingStudio).toContain("lightning.preload = 'auto'");
+    expect(meetingStudio).toContain('for (const source of [MONEY_ROCKET_ASSET');
+    expect(meetingStudio).toContain("image.decoding = 'async'");
     expect(meetingStudio).toContain("emoji === PHOENIX_TRANSFORM_REACTION ? 11_300");
     expect(meetingClient).toContain("'PHOENIX_TRANSFORM'");
     expect(meetingStyles).toContain('@keyframes phoenixTransformExplosion');
@@ -249,14 +251,24 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('const context = meetingAudioContext()');
   });
 
-  it('keeps custom-area screen sharing sharp at native detail resolution', () => {
-    expect(meetingStudio).toContain('width: { ideal: 7680 }');
-    expect(meetingStudio).toContain('height: { ideal: 4320 }');
+  it('keeps custom-area screen sharing sharp with adaptive real-time rendering', () => {
+    expect(meetingStudio).toContain('function meetingVideoProfile()');
+    expect(meetingStudio).toContain("return { width: 2560, height: 1440, frameRate: 30, smoothing: 'high' }");
     expect(meetingStudio).toContain("displayTrack.contentHint = 'detail'");
-    expect(meetingStudio).toContain('Math.min(1, 7680 / sw, 4320 / sh)');
-    expect(meetingStudio).toContain("ctx.imageSmoothingQuality = 'high'");
-    expect(meetingStudio).toContain('canvas.captureStream(30)');
+    expect(meetingStudio).toContain('Math.min(1, profile.width / sw, profile.height / sh)');
+    expect(meetingStudio).toContain('startMeetingVideoRender(video, profile.frameRate, draw)');
+    expect(meetingStudio).toContain("typeof video.requestVideoFrameCallback === 'function'");
+    expect(meetingStudio).toContain('time - lastFrame >= interval - 1');
+    expect(meetingStudio).toContain('canvas.captureStream(profile.frameRate)');
     expect(meetingStudio).toContain("detailTrack.contentHint = 'detail'");
+  });
+
+  it('uses adaptive WebRTC sender limits for low-latency meeting media', () => {
+    expect(meetingClient).toContain('async function replaceMeetingSenderTrack(sender, track)');
+    expect(meetingClient).toContain('encoding.maxBitrate = 96_000');
+    expect(meetingClient).toContain('mobile ? 2_200_000 : 4_500_000');
+    expect(meetingClient).toContain("parameters.degradationPreference = detailed ? 'balanced' : 'maintain-framerate'");
+    expect(meetingClient).toContain('replaceMeetingSenderTrack(videoSender, videoTrack)');
   });
 
   it('persists host microphone lock and attributes floating chat and reactions', () => {

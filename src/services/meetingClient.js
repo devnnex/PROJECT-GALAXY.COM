@@ -10,6 +10,23 @@ function defaultIceServers() { return [{ urls: 'stun:stun.l.google.com:19302' }]
 const LIVE_REACTIONS = new Set(['👍', '👏', '❤️', '😂', '🎉', '🔥', 'MONEY_ROCKET', 'MONEY_CHARACTER', 'MONEY_ALIEN', 'GALACTIC_TAKE_PROFIT', 'PHOENIX_TRANSFORM', 'UFO', 'ALIEN', 'ALIEN_BIRTHDAY']);
 function isLiveReaction(value) { return typeof value === 'string' && LIVE_REACTIONS.has(value); }
 
+async function replaceMeetingSenderTrack(sender, track) {
+  if (!sender) return;
+  await sender.replaceTrack(track || null);
+  if (!track || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
+  const parameters = sender.getParameters(); const encoding = parameters.encodings?.[0];
+  if (!encoding) return;
+  if (track.kind === 'audio') encoding.maxBitrate = 96_000;
+  else {
+    const detailed = ['detail', 'text'].includes(track.contentHint);
+    const mobile = typeof navigator.userAgentData?.mobile === 'boolean' ? navigator.userAgentData.mobile : /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+    encoding.maxBitrate = detailed ? mobile ? 2_200_000 : 4_500_000 : mobile ? 1_200_000 : 2_000_000;
+    encoding.maxFramerate = detailed ? mobile ? 24 : 30 : 24;
+    parameters.degradationPreference = detailed ? 'balanced' : 'maintain-framerate';
+  }
+  await sender.setParameters(parameters).catch(() => {});
+}
+
 export class MeetingConnection {
   constructor(callbacks = {}) { this.callbacks = callbacks; this.socket = null; this.peers = new Map(); this.participants = new Map(); this.orphanIce = new Map(); this.localStream = new MediaStream(); this.localStreamVersion = 0; this.mediaUpdate = Promise.resolve(); this.selfId = ''; }
 
@@ -55,7 +72,7 @@ export class MeetingConnection {
     const pc = new RTCPeerConnection({ iceServers: this.iceServers, iceCandidatePoolSize: 10, bundlePolicy: 'max-bundle' }); const remoteStream = new MediaStream();
     if (initiator) {
       const audio = pc.addTransceiver('audio', { direction: 'sendrecv' }); const video = pc.addTransceiver('video', { direction: 'sendrecv' });
-      await audio.sender.replaceTrack(this.localStream.getAudioTracks()[0] || null); await video.sender.replaceTrack(this.localStream.getVideoTracks()[0] || null);
+      await replaceMeetingSenderTrack(audio.sender, this.localStream.getAudioTracks()[0]); await replaceMeetingSenderTrack(video.sender, this.localStream.getVideoTracks()[0]);
     }
     pc.onicecandidate = (event) => { if (event.candidate) this.send({ type: 'ice', target: peerId, data: event.candidate }); };
     pc.ontrack = (event) => { if (!remoteStream.getTracks().some((track) => track.id === event.track.id)) remoteStream.addTrack(event.track); this.callbacks.onRemoteStream?.(peerId, remoteStream); };
@@ -79,7 +96,7 @@ export class MeetingConnection {
     try { await peer.pc.setLocalDescription(await peer.pc.createOffer({ iceRestart: true })); this.send({ type: 'offer', target: peerId, data: peer.pc.localDescription }); }
     finally { setTimeout(() => { const current = this.peers.get(peerId); if (current === peer) current.restarting = false; }, 2500); }
   }
-  async attachLocalTracks(pc) { for (const kind of ['audio', 'video']) { const transceiver = pc.getTransceivers().find((item) => item.receiver.track.kind === kind); if (transceiver) { transceiver.direction = 'sendrecv'; await transceiver.sender.replaceTrack(this.localStream.getTracks().find((track) => track.kind === kind) || null); } } }
+  async attachLocalTracks(pc) { for (const kind of ['audio', 'video']) { const transceiver = pc.getTransceivers().find((item) => item.receiver.track.kind === kind); if (transceiver) { transceiver.direction = 'sendrecv'; await replaceMeetingSenderTrack(transceiver.sender, this.localStream.getTracks().find((track) => track.kind === kind)); } } }
   async setLocalStream(stream) {
     const nextStream = stream || new MediaStream(); const version = ++this.localStreamVersion; this.localStream = nextStream;
     this.mediaUpdate = this.mediaUpdate.catch(() => {}).then(async () => {
@@ -90,7 +107,7 @@ export class MeetingConnection {
         if (pc.connectionState === 'closed') continue;
         const audioSender = pc.getSenders().find((sender) => sender.track?.kind === 'audio') || pc.getTransceivers().find((item) => item.receiver.track.kind === 'audio')?.sender;
         const videoSender = pc.getSenders().find((sender) => sender.track?.kind === 'video') || pc.getTransceivers().find((item) => item.receiver.track.kind === 'video')?.sender;
-        await Promise.all([audioSender?.replaceTrack(audioTrack), videoSender?.replaceTrack(videoTrack)]);
+        await Promise.all([replaceMeetingSenderTrack(audioSender, audioTrack), replaceMeetingSenderTrack(videoSender, videoTrack)]);
       }
     });
     return this.mediaUpdate;
