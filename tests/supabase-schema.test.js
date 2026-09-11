@@ -141,16 +141,17 @@ describe('Supabase contract', () => {
   });
 
   it('captures clear voices and synchronizes cosmic reactions', () => {
-    expect(meetingStudio).toContain('autoGainControl: { ideal: true }');
+    expect(meetingStudio).toContain('autoGainControl: { ideal: !desktop }');
     expect(meetingStudio).toContain('noiseSuppression: { ideal: true }');
     expect(meetingStudio).toContain('voiceIsolation: { ideal: true }');
     expect(meetingStudio).toContain('channelCount: { ideal: 1 }');
-    expect(meetingStudio).toContain('boost.gain.value = 3.5');
-    expect(meetingStudio).toContain('outputGain.gain.value = 1.7');
+    expect(meetingStudio).toContain('boost.gain.value = desktop ? 3 : 3.5');
+    expect(meetingStudio).toContain('outputGain.gain.value = desktop ? 1.9 : 1.7');
     expect(meetingStudio).toContain('limiter.ratio.value = 20');
     expect(meetingStudio).toContain("noiseFloor.type = 'lowpass'");
     expect(meetingStudio).toContain("clarity.type = 'peaking'");
     expect(meetingStudio).toContain("deEsser.type = 'highshelf'");
+    expect(meetingStudio).toContain("deEsser.frequency.value = desktop ? 4200 : 5200");
     expect(meetingStudio).toContain('createDynamicsCompressor()');
     expect(meetingStudio).toContain('createLongRangeMicrophoneStream(captured)');
     expect(meetingStudio).toContain('audio.muted = false');
@@ -236,7 +237,7 @@ describe('Supabase contract', () => {
   it('captures and mixes shared audio with the presenter microphone', () => {
     expect(meetingStudio).toContain('async function createSharedAudioMixer(displayStream, microphoneStream)');
     expect(meetingStudio).toContain('context.createMediaStreamDestination()');
-    expect(meetingStudio).toContain('requestDisplayCapture({ video: true, audio:');
+    expect(meetingStudio).toContain('requestDisplayCapture({ video: qualityVideo, audio:');
     expect(meetingStudio).toContain('sharedLocalStream(stream)');
     expect(meetingStudio).toContain('Pantalla, micrófono y audio disponible mezclados correctamente.');
     expect(meetingStudio).toContain('<RemoteAudioLayer streams={remoteStreams}');
@@ -244,6 +245,16 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('suppressLocalAudioPlayback: false');
     expect(meetingStudio).toContain("selfBrowserSurface: 'exclude'");
     expect(meetingStudio).toContain('const context = meetingAudioContext()');
+  });
+
+  it('keeps custom-area screen sharing sharp at native detail resolution', () => {
+    expect(meetingStudio).toContain('width: { ideal: 7680 }');
+    expect(meetingStudio).toContain('height: { ideal: 4320 }');
+    expect(meetingStudio).toContain("displayTrack.contentHint = 'detail'");
+    expect(meetingStudio).toContain('Math.min(1, 7680 / sw, 4320 / sh)');
+    expect(meetingStudio).toContain("ctx.imageSmoothingQuality = 'high'");
+    expect(meetingStudio).toContain('canvas.captureStream(30)');
+    expect(meetingStudio).toContain("detailTrack.contentHint = 'detail'");
   });
 
   it('persists host microphone lock and attributes floating chat and reactions', () => {

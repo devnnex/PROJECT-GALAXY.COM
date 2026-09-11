@@ -80,12 +80,21 @@ function GalacticTakeProfitReaction({ senderName }) {
   </span>;
 }
 
+function isDesktopMeetingDevice() {
+  if (typeof navigator === 'undefined') return false;
+  if (typeof navigator.userAgentData?.mobile === 'boolean') return !navigator.userAgentData.mobile;
+  const agent = navigator.userAgent || '';
+  if (/Macintosh/i.test(agent) && navigator.maxTouchPoints > 1) return false;
+  return !/Android|iPhone|iPad|iPod|Mobile/i.test(agent);
+}
+
 function voiceCaptureConstraints() {
+  const desktop = isDesktopMeetingDevice();
   return {
     echoCancellation: { ideal: true },
     noiseSuppression: { ideal: true },
     voiceIsolation: { ideal: true },
-    autoGainControl: { ideal: true },
+    autoGainControl: { ideal: !desktop },
     channelCount: { ideal: 1 },
     sampleRate: { ideal: 48000 },
     sampleSize: { ideal: 16 },
@@ -168,19 +177,20 @@ function stopMeetingStream(stream) {
 async function createLongRangeMicrophoneStream(capturedStream) {
   const rawTrack = capturedStream?.getAudioTracks()[0]; const context = meetingAudioContext();
   if (!rawTrack || !context) return capturedStream;
+  const desktop = isDesktopMeetingDevice();
   try { rawTrack.contentHint = 'speech'; } catch {}
   try {
     if (context.state === 'suspended') await context.resume();
     if (context.state !== 'running') return capturedStream;
     const source = context.createMediaStreamSource(new MediaStream([rawTrack]));
-    const highPass = context.createBiquadFilter(); highPass.type = 'highpass'; highPass.frequency.value = 85; highPass.Q.value = .7;
-    const noiseFloor = context.createBiquadFilter(); noiseFloor.type = 'lowpass'; noiseFloor.frequency.value = 8000; noiseFloor.Q.value = .7;
-    const warmth = context.createBiquadFilter(); warmth.type = 'lowshelf'; warmth.frequency.value = 180; warmth.gain.value = 1.5;
-    const clarity = context.createBiquadFilter(); clarity.type = 'peaking'; clarity.frequency.value = 2600; clarity.Q.value = .8; clarity.gain.value = 2;
-    const deEsser = context.createBiquadFilter(); deEsser.type = 'highshelf'; deEsser.frequency.value = 5200; deEsser.gain.value = -4.5;
-    const boost = context.createGain(); boost.gain.value = 3.5;
-    const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -24; compressor.knee.value = 18; compressor.ratio.value = 4; compressor.attack.value = .008; compressor.release.value = .25;
-    const outputGain = context.createGain(); outputGain.gain.value = 1.7;
+    const highPass = context.createBiquadFilter(); highPass.type = 'highpass'; highPass.frequency.value = desktop ? 110 : 85; highPass.Q.value = .7;
+    const noiseFloor = context.createBiquadFilter(); noiseFloor.type = 'lowpass'; noiseFloor.frequency.value = desktop ? 6500 : 8000; noiseFloor.Q.value = .7;
+    const warmth = context.createBiquadFilter(); warmth.type = 'lowshelf'; warmth.frequency.value = 180; warmth.gain.value = desktop ? 1 : 1.5;
+    const clarity = context.createBiquadFilter(); clarity.type = 'peaking'; clarity.frequency.value = 2600; clarity.Q.value = .8; clarity.gain.value = desktop ? 1.5 : 2;
+    const deEsser = context.createBiquadFilter(); deEsser.type = 'highshelf'; deEsser.frequency.value = desktop ? 4200 : 5200; deEsser.gain.value = desktop ? -7 : -4.5;
+    const boost = context.createGain(); boost.gain.value = desktop ? 3 : 3.5;
+    const compressor = context.createDynamicsCompressor(); compressor.threshold.value = desktop ? -28 : -24; compressor.knee.value = desktop ? 14 : 18; compressor.ratio.value = desktop ? 3.5 : 4; compressor.attack.value = desktop ? .012 : .008; compressor.release.value = desktop ? .18 : .25;
+    const outputGain = context.createGain(); outputGain.gain.value = desktop ? 1.9 : 1.7;
     const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -2.5; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .002; limiter.release.value = .08;
     const destination = context.createMediaStreamDestination();
     source.connect(highPass).connect(noiseFloor).connect(warmth).connect(clarity).connect(deEsser).connect(boost).connect(compressor).connect(outputGain).connect(limiter).connect(destination);
@@ -1006,10 +1016,13 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const capture = async (custom = false, protectedMode = false) => {
     setShareMenu(false); if (!joined) return;
     try {
-      const stream = await requestDisplayCapture({ video: true, audio: { suppressLocalAudioPlayback: false }, selfBrowserSurface: 'exclude', preferCurrentTab: false, surfaceSwitching: 'include', systemAudio: 'include' });
-      stream.getVideoTracks()[0]?.applyConstraints({ frameRate: { ideal: 20, max: 30 } }).catch(() => {});
+      const qualityVideo = custom ? { width: { ideal: 7680 }, height: { ideal: 4320 }, frameRate: { ideal: 30, max: 30 } } : true;
+      const stream = await requestDisplayCapture({ video: qualityVideo, audio: { suppressLocalAudioPlayback: false }, selfBrowserSurface: 'exclude', preferCurrentTab: false, surfaceSwitching: 'include', systemAudio: 'include' });
+      const displayTrack = stream.getVideoTracks()[0];
+      if (custom && displayTrack) try { displayTrack.contentHint = 'detail'; } catch {}
+      displayTrack?.applyConstraints(custom ? { width: { ideal: 7680 }, height: { ideal: 4320 }, frameRate: { ideal: 30, max: 30 } } : { frameRate: { ideal: 20, max: 30 } }).catch(() => {});
       stream.getAudioTracks().forEach((track) => track.applyConstraints?.({ suppressLocalAudioPlayback: false }).catch(() => {}));
-      sourceStream.current = stream; setShareHasAudio(stream.getAudioTracks().length > 0); setShareAudioEnabled(true); stream.getVideoTracks()[0].addEventListener('ended', stopShare, { once: true });
+      sourceStream.current = stream; setShareHasAudio(stream.getAudioTracks().length > 0); setShareAudioEnabled(true); displayTrack?.addEventListener('ended', stopShare, { once: true });
       if (protectedMode && user.role === 'ADMIN') setPrivacySource(stream);
       else if (custom) setCropSource(stream); else { await publishShare(stream); toast(stream.getAudioTracks().length ? 'Pantalla, micrófono y audio disponible mezclados correctamente.' : 'Pantalla y micrófono compartidos. El audio interno depende de la fuente y del navegador.', 'info'); }
     } catch (error) { if (error.name === 'NotAllowedError') toast('El dispositivo no concedió el permiso para grabar la pantalla. Autorízalo en el selector del sistema e inténtalo nuevamente.', 'info'); else if (error.name !== 'AbortError') toast(error.message, 'error'); }
@@ -1033,11 +1046,12 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       if (!ctx || typeof canvas.captureStream !== 'function') throw new Error('Tu navegador no permite compartir un área procesada.');
       const draw = () => {
         const sx = video.videoWidth * crop.x / 100; const sy = video.videoHeight * crop.y / 100;
-        const sw = video.videoWidth * crop.w / 100; const sh = video.videoHeight * crop.h / 100; const scale = Math.min(1, 1280 / sw);
+        const sw = video.videoWidth * crop.w / 100; const sh = video.videoHeight * crop.h / 100; const scale = Math.min(1, 7680 / sw, 4320 / sh);
         if (canvas.width !== Math.round(sw * scale) || canvas.height !== Math.round(sh * scale)) { canvas.width = Math.max(2, Math.round(sw * scale)); canvas.height = Math.max(2, Math.round(sh * scale)); }
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height); renderLoop.current = requestAnimationFrame(draw);
       };
-      draw(); const processed = canvas.captureStream(24); setCropSource(null); await publishShare(processed); toast(sourceStream.current?.getAudioTracks().length ? 'Área y sonido compartidos por WebRTC.' : 'Área compartida sin sonido. El navegador no entregó audio de la fuente seleccionada.', 'info');
+      draw(); const processed = canvas.captureStream(30); const detailTrack = processed.getVideoTracks()[0]; if (detailTrack) try { detailTrack.contentHint = 'detail'; } catch {} setCropSource(null); await publishShare(processed); toast(sourceStream.current?.getAudioTracks().length ? 'Área y sonido compartidos por WebRTC.' : 'Área compartida sin sonido. El navegador no entregó audio de la fuente seleccionada.', 'info');
     } catch (error) { await stopShare(); toast(error.message || 'No fue posible compartir el área seleccionada.', 'error'); }
   };
   const confirmPrivacyMasks = async (masks) => {
