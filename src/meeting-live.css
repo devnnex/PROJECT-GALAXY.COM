@@ -434,3 +434,12 @@
   .control-dock { transform:translateX(-171px); }
   .collaboration-overlay:focus,.collaboration-overlay:focus-visible { outline:none; }
 }
+
+.meeting-participant-summary { display:flex; align-items:center; gap:7px; min-height:32px; margin:0 0 8px; padding:0 11px; border:1px solid rgba(255,255,255,.09); border-radius:9px; background:rgba(12,10,16,.72); color:#918999; font-size:9px; letter-spacing:.04em; }
+.meeting-participant-summary svg { width:14px; color:#ae88ef; }
+.meeting-participant-summary strong { color:#e8e1ed; font-size:11px; }
+.host-only-grid { grid-template-columns:minmax(0,1fr); }
+.host-stage-placeholder { position:absolute; inset:0; display:grid; place-items:center; align-content:center; gap:10px; background:radial-gradient(circle at center,rgba(116,77,183,.13),transparent 48%),#09070c; color:#8d8493; text-align:center; }
+.host-stage-placeholder svg { width:52px; height:52px; color:#8e62dc; opacity:.7; }
+.host-stage-placeholder strong { color:#ded5e8; font:600 16px 'Manrope'; }
+.host-stage-placeholder span { font-size:10px; }
