@@ -271,7 +271,7 @@ function CommandPalette({ onClose, navigate, items }) { const [query, setQuery] 
 function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose }) {
   if (!notice) return null;
   const joinRequest = notice.type === 'MEETING_JOIN_REQUEST';
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="notification-action-modal glass" role="dialog" aria-modal="true" aria-labelledby="notification-action-title" onMouseDown={(event) => event.stopPropagation()}>
+  return <div className="modal-backdrop meeting-invitation-backdrop" onMouseDown={onClose}><section className="notification-action-modal glass" role="dialog" aria-modal="true" aria-labelledby="notification-action-title" onMouseDown={(event) => event.stopPropagation()}>
     <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Cerrar"><X /></button>
     <span className="notification-action-icon"><Video /></span>
     <p className="eyebrow">{joinRequest ? 'SALA DE ESPERA' : 'INVITACIÓN A REUNIÓN'}</p>
@@ -403,7 +403,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     <nav className="bottom-nav">{availableNavigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>
     {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} items={availableNavigation} />}
     <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} toast={toast} membershipCenter={membershipCenter} user={user} />
-    {canViewPromotions && lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
+    {canViewPromotions && page !== 'meetings' && lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
     {canViewPromotions && !lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
     <Toast item={toastItem} />

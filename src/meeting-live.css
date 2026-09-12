@@ -288,6 +288,7 @@
 @keyframes unreadBadgePulse { 0% { transform:scale(.72); } 45% { transform:scale(1.28); box-shadow:0 0 0 8px rgba(58,201,125,0); } 100% { transform:scale(1); } }
 
 @media (max-width: 1000px) {
+  .invite-modal-backdrop,.meeting-invitation-backdrop { background:transparent; -webkit-backdrop-filter:none; backdrop-filter:none; }
   .mobile-chat-fab { border-color:rgba(151,111,221,.38); background:linear-gradient(145deg,rgba(31,22,42,.98),rgba(14,11,19,.98)); box-shadow:0 16px 42px rgba(0,0,0,.58),inset 0 1px 0 rgba(255,255,255,.07),0 0 24px rgba(120,78,194,.18); }
   .mobile-chat-fab i { width:21px; min-width:21px; height:21px; padding:0; border-radius:50%; background:#36bf76; color:#fff; box-shadow:0 0 0 3px rgba(54,191,118,.14),0 0 15px rgba(54,191,118,.48); font:700 9px/1 'Manrope'; font-style:normal; }
   .mobile-chat-fab.message-pulse { animation:mobileChatAttention .7s cubic-bezier(.2,.8,.2,1); }

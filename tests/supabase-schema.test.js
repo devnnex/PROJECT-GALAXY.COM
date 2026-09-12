@@ -49,11 +49,16 @@ describe('Supabase contract', () => {
     expect(supabaseClient).toContain("channel.track({ userId, onlineAt:");
     expect(supabaseClient).toContain('export function onOnlineUsersChange(callback)');
     expect(meetingStudio).toContain('onlineUserIds.has(member.id)');
+    expect(meetingStudio).toContain('!meetingUserIds.has(member.id)');
+    expect(meetingStudio).toContain("'Salió de la reunión · disponible para Reinvitar'");
+    expect(meetingStudio).toContain('meetingUserIds={meetingUserIds}');
     expect(meetingStudio).toContain('Promise.allSettled(selectedMembers.map');
     expect(meetingStudio).toContain('onInviteMany={inviteMany}');
     expect(meetingStudio).toContain('className="invite-online-dot"');
     expect(meetingStyles).toContain('.invite-avatar-shell.online:before');
     expect(meetingStyles).toContain('flex: 0 0 48px!important');
+    const inviteRpc = schema.slice(schema.indexOf('function public.invite_to_meeting'), schema.indexOf('function public.respond_to_meeting_invitation'));
+    expect(inviteRpc).not.toContain('Ese usuario ya se encuentra dentro de la reunión.');
   });
 
   it('updates the admin user list on registration and shows live presence', () => {

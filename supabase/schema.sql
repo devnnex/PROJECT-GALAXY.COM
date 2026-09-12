@@ -1379,9 +1379,6 @@ begin
   if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=v_host and status='ACTIVE') then raise exception 'Solo el anfitrión puede invitar.' using errcode='P0001'; end if;
   select * into v_profile from public.profiles where id=p_user_id and status='ACTIVE'; if v_profile.id is null or p_user_id=v_host then raise exception 'No encontramos a ese usuario activo.' using errcode='P0001'; end if;
   if not public.has_active_membership(p_user_id) then raise exception 'Ese usuario necesita una cuenta activa para recibir invitaciones.' using errcode='P0001'; end if;
-  if exists(select 1 from public.meeting_participants where meeting_id=p_meeting_id and user_id=p_user_id and status='ADMITTED') then
-    raise exception 'Ese usuario ya se encuentra dentro de la reunión.' using errcode='P0001';
-  end if;
   select * into v_invite from public.meeting_invitations where meeting_id=p_meeting_id and invitee_id=p_user_id;
   if v_invite.id is not null and v_invite.status='PENDING' then
     return jsonb_build_object('id',v_invite.id,'userId',p_user_id,'name',v_profile.name,'status','PENDING',
