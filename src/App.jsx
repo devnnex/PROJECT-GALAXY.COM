@@ -58,10 +58,18 @@ function PromotionImageModal({ image, alt, onClose, className = '' }) {
   useEffect(() => {
     let active = true;
     const preloader = new Image();
-    preloader.onload = () => { if (active) setReady(true); };
+    const isChromeMobile = /(?:Android.*Chrome\/|CriOS\/)/i.test(navigator.userAgent)
+      && !/(?:EdgA\/|OPR\/|SamsungBrowser\/)/i.test(navigator.userAgent);
+    const reveal = async () => {
+      if (isChromeMobile && typeof preloader.decode === 'function') {
+        try { await preloader.decode(); } catch { /* onload still confirms a valid image */ }
+      }
+      if (active && preloader.naturalWidth > 0) setReady(true);
+    };
+    preloader.onload = reveal;
     preloader.onerror = () => { if (active) onClose(); };
     preloader.src = image;
-    if (preloader.complete && preloader.naturalWidth > 0) setReady(true);
+    if (preloader.complete && preloader.naturalWidth > 0) reveal();
     return () => { active = false; preloader.onload = null; preloader.onerror = null; };
   }, [image]);
   if (!ready) return null;

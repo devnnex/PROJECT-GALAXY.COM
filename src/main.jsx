@@ -21,5 +21,14 @@ createRoot(document.getElementById('root')).render(
 );
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
-  addEventListener('load', () => navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`));
+  addEventListener('load', () => {
+    const isChromeMobile = /(?:Android.*Chrome\/|CriOS\/)/i.test(navigator.userAgent)
+      && !/(?:EdgA\/|OPR\/|SamsungBrowser\/)/i.test(navigator.userAgent);
+    if (isChromeMobile) {
+      navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { updateViaCache: 'none' })
+        .then((registration) => registration.update());
+      return;
+    }
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+  });
 }
