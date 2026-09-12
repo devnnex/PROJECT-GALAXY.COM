@@ -54,10 +54,9 @@ const membershipMarketplacePlans = [
 ];
 
 function PromotionImageModal({ image, alt, onClose, className = '' }) {
-  const [ready, setReady] = useState(false);
-  return <div className={`promotion-image-backdrop ${ready ? 'ready' : 'loading'} ${className}`} role="dialog" aria-modal="true" aria-label={alt}>
+  return <div className={`promotion-image-backdrop ${className}`} role="dialog" aria-modal="true" aria-label={alt}>
     <div className="promotion-image-modal">
-      <img src={image} alt={alt} onLoad={() => setReady(true)} onError={onClose} />
+      <img src={image} alt={alt} />
       <button className="promotion-image-close" type="button" onClick={onClose} aria-label="Cerrar"><X /></button>
     </div>
   </div>;
@@ -270,10 +269,11 @@ function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose })
 function AppShell({ user, onUserChange, onLogout }) {
   const isAdmin = user.role === 'ADMIN'; const language = languageFor(user); const english = language === 'en';
   const canView = (id) => isAdmin || user.sectionPermissions?.[id] !== false;
+  const canViewPromotions = isAdmin || user.sectionPermissions?.promotions === true;
   const baseNavigation = (isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
   const availableNavigation = baseNavigation.filter(([id]) => canView(id));
   const inviteToken = new URLSearchParams(location.search).get('invite') || '';
-  const [page, setPage] = useState(() => (inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) || localStorage.getItem(`galaxy_resume_meeting_${user.id}`)) && canView('meetings') ? 'meetings' : isAdmin ? 'dashboard' : availableNavigation[0]?.[0] || 'restricted'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(canView('promotions')); const [vipPromoOpen, setVipPromoOpen] = useState(false);
+  const [page, setPage] = useState(() => (inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) || localStorage.getItem(`galaxy_resume_meeting_${user.id}`)) && canView('meetings') ? 'meetings' : isAdmin ? 'dashboard' : availableNavigation[0]?.[0] || 'restricted'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(canViewPromotions); const [vipPromoOpen, setVipPromoOpen] = useState(false);
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [notificationItems, setNotificationItems] = useState([]); const [notificationFilter, setNotificationFilter] = useState('UNREAD'); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const notificationStartedAt = useRef(Date.now()); const [shownDepartures, setShownDepartures] = useState(() => new Set());
@@ -281,7 +281,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
   const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : availableNavigation[0]?.[0] || 'restricted'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
-  useEffect(() => { if (page === 'marketplace' && canView('promotions')) setVipPromoOpen(true); }, [page]);
+  useEffect(() => { if (page === 'marketplace' && canViewPromotions) setVipPromoOpen(true); }, [page, canViewPromotions]);
   const reloadMembership = async () => { if (!isAdmin && !canView('marketplace') && !canView('wallet') && !canView('orders')) return membershipCenter; const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
   useEffect(() => { reloadMembership().catch(() => {}); }, [user.id]);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
@@ -384,8 +384,8 @@ function AppShell({ user, onUserChange, onLogout }) {
     <nav className="bottom-nav">{availableNavigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>
     {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} items={availableNavigation} />}
     <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} toast={toast} membershipCenter={membershipCenter} user={user} />
-    {canView('promotions') && lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
-    {canView('promotions') && !lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
+    {canViewPromotions && lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
+    {canViewPromotions && !lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
     <Toast item={toastItem} />
   </div>;
