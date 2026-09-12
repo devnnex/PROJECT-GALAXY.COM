@@ -54,9 +54,20 @@ const membershipMarketplacePlans = [
 ];
 
 function PromotionImageModal({ image, alt, onClose, className = '' }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    const preloader = new Image();
+    preloader.onload = () => { if (active) setReady(true); };
+    preloader.onerror = () => { if (active) onClose(); };
+    preloader.src = image;
+    if (preloader.complete && preloader.naturalWidth > 0) setReady(true);
+    return () => { active = false; preloader.onload = null; preloader.onerror = null; };
+  }, [image]);
+  if (!ready) return null;
   return <div className={`promotion-image-backdrop ${className}`} role="dialog" aria-modal="true" aria-label={alt}>
     <div className="promotion-image-modal">
-      <img src={image} alt={alt} />
+      <img src={image} alt={alt} onError={onClose} />
       <button className="promotion-image-close" type="button" onClick={onClose} aria-label="Cerrar"><X /></button>
     </div>
   </div>;

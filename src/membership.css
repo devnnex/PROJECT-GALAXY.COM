@@ -28,5 +28,6 @@
 .promotion-image-modal img{display:block;width:auto;max-width:94vw;height:auto;max-height:92vh;object-fit:contain;border-radius:10px;box-shadow:0 24px 90px rgba(0,0,0,.6)}
 .promotion-image-close{position:absolute;right:10px;top:10px;width:38px;height:38px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.28);border-radius:50%;background:rgba(5,4,9,.72);color:#fff;z-index:1}
 .promotion-image-close:hover{background:rgba(133,83,220,.9)}
+@media(max-width:700px){.promotion-image-backdrop{-webkit-backdrop-filter:none;backdrop-filter:none}}
 .vip-card-label{position:absolute;left:12px;top:12px;padding:5px 9px;border:1px solid rgba(255,255,255,.35);border-radius:999px;background:rgba(10,7,16,.72);color:#f5eaff;font:700 8px 'Manrope';letter-spacing:.16em}
 .product-art:not(.has-product-image) .vip-card-label{display:none}
