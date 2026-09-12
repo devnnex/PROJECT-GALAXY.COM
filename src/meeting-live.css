@@ -449,3 +449,12 @@
 .host-stage-placeholder svg { width:52px; height:52px; color:#8e62dc; opacity:.7; }
 .host-stage-placeholder strong { color:#ded5e8; font:600 16px 'Manrope'; }
 .host-stage-placeholder span { font-size:10px; }
+
+/* Keep desktop presentation controls outside the shared content frame. */
+.presentation-mobile-reaction-launcher { display:none; }
+.presentation-desktop-reaction-launcher { position:relative; left:auto; right:auto; bottom:auto; align-self:center; margin-top:8px; transform:none; }
+
+@media (max-width:700px) {
+  .presentation-mobile-reaction-launcher { display:flex; }
+  .presentation-desktop-reaction-launcher { display:none; }
+}

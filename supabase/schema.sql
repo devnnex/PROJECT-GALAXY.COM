@@ -871,8 +871,8 @@ begin
   if v_username !~ '^[a-z0-9_]{3,32}$' then raise exception 'El usuario debe tener entre 3 y 32 caracteres: letras minúsculas, números o guion bajo.' using errcode='P0001'; end if;
   if v_kind not in ('PREMIUM','NEW','GALACTIC') then raise exception 'Selecciona una categoría válida.' using errcode='P0001'; end if;
   if jsonb_typeof(v_permissions)<>'object' or exists(
-    select 1 from jsonb_object_keys(v_permissions) key
-    where key not in ('dashboard','discover','marketplace','store','meetings','calendar','messages','wallet','orders','profile','promotions')
+    select 1 from jsonb_object_keys(v_permissions) as permission_keys(permission_key)
+    where permission_key not in ('dashboard','discover','marketplace','store','meetings','calendar','messages','wallet','orders','profile','promotions')
   ) then raise exception 'Los permisos de secciones no son válidos.' using errcode='P0001'; end if;
   begin
     update public.profiles set name=v_name,username=v_username,user_kind=v_kind,
