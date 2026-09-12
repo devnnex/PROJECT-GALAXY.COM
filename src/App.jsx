@@ -54,9 +54,10 @@ const membershipMarketplacePlans = [
 ];
 
 function PromotionImageModal({ image, alt, onClose, className = '' }) {
-  return <div className={`promotion-image-backdrop ${className}`} role="dialog" aria-modal="true" aria-label={alt}>
+  const [ready, setReady] = useState(false);
+  return <div className={`promotion-image-backdrop ${ready ? 'ready' : 'loading'} ${className}`} role="dialog" aria-modal="true" aria-label={alt}>
     <div className="promotion-image-modal">
-      <img src={image} alt={alt} />
+      <img src={image} alt={alt} onLoad={() => setReady(true)} onError={onClose} />
       <button className="promotion-image-close" type="button" onClick={onClose} aria-label="Cerrar"><X /></button>
     </div>
   </div>;
