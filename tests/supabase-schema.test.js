@@ -61,6 +61,13 @@ describe('Supabase contract', () => {
     expect(inviteRpc).not.toContain('Ese usuario ya se encuentra dentro de la reunión.');
   });
 
+  it('keeps mobile screens awake throughout an active meeting', () => {
+    expect(meetingStudio).toContain("navigator.wakeLock.request('screen')");
+    expect(meetingStudio).toContain("document.addEventListener('visibilitychange', resumeScreenLock)");
+    expect(meetingStudio).toContain("document.addEventListener('pointerdown', keepScreenAwake)");
+    expect(meetingStudio).toContain("lock?.release().catch(() => {})");
+  });
+
   it('updates the admin user list on registration and shows live presence', () => {
     expect(schema).toContain('alter publication supabase_realtime add table public.profiles');
     expect(api).toContain('onAdminUserCreated(callback)');

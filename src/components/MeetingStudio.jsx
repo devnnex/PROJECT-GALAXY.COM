@@ -822,7 +822,7 @@ function InvitePanel({ members, onlineUserIds, meetingUserIds, onInviteMany, onC
 
 export default function MeetingStudio({ toast, user, joinRequest, onSessionChange, canCreate = false }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const resumeKey = `galaxy_resume_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`; const mediaKey = `galaxy_meeting_media_${user.id}`; const maskKey = `galaxy_privacy_masks_${user.id}`;
-  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null); const backgroundMicrophoneMode = useRef(null);
+  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null); const backgroundMicrophoneMode = useRef(null); const screenWakeLock = useRef(null);
   const pipVideoRef = useRef(null); const pipPlaceholderRef = useRef(null);
   const collaborationGrants = useRef(new Map()); const collaborationRequestTimes = useRef(new Map()); const presentationOwner = useRef(null); const cursorTimer = useRef(null); const requestTimer = useRef(null); const collaborationEnabledRef = useRef(true);
   const chatVisibleRef = useRef(false); const messagePulseTimer = useRef(null);
@@ -1323,6 +1323,30 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline');
     if (pipVideoRef.current) { pipVideoRef.current.pause(); pipVideoRef.current.srcObject = null; }
     pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null;
+  }, [joined]);
+  useEffect(() => {
+    if (!joined || !navigator.wakeLock?.request) return undefined;
+    let active = true; let requesting = false;
+    const keepScreenAwake = async () => {
+      if (!active || requesting || document.visibilityState !== 'visible' || screenWakeLock.current) return;
+      requesting = true;
+      try {
+        const lock = await navigator.wakeLock.request('screen');
+        if (!active) { await lock.release().catch(() => {}); return; }
+        screenWakeLock.current = lock;
+        lock.addEventListener?.('release', () => { if (screenWakeLock.current === lock) screenWakeLock.current = null; });
+      } catch {} finally { requesting = false; }
+    };
+    const resumeScreenLock = () => { if (document.visibilityState === 'visible') keepScreenAwake(); };
+    keepScreenAwake();
+    document.addEventListener('visibilitychange', resumeScreenLock);
+    document.addEventListener('pointerdown', keepScreenAwake);
+    return () => {
+      active = false;
+      document.removeEventListener('visibilitychange', resumeScreenLock);
+      document.removeEventListener('pointerdown', keepScreenAwake);
+      const lock = screenWakeLock.current; screenWakeLock.current = null; lock?.release().catch(() => {});
+    };
   }, [joined]);
 
   if (!meeting) return <><MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} onRestart={restartMeeting} onRemove={removeEndedMeeting} canCreate={canCreate} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} /></>;
