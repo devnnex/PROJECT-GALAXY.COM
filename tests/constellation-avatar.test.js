@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createConstellation } from '../src/components/ConstellationAvatar';
+import { MEMBERSHIP_BADGE_TIER } from '../src/membership-badges';
 
 describe('Constellation avatar', () => {
   it('is stable for the same user and different across users', () => {
@@ -23,5 +24,16 @@ describe('Constellation avatar', () => {
     expect(portrait.haloTilt).toBeLessThanOrEqual(14);
     expect(portrait.faceShift).toBeGreaterThanOrEqual(-2.5);
     expect(portrait.faceShift).toBeLessThanOrEqual(2.5);
+  });
+
+  it('maps the five paid plans from entry to elite and gives administrators the elite frame', () => {
+    expect(MEMBERSHIP_BADGE_TIER).toEqual({
+      MONTHLY: 1,
+      QUARTERLY: 2,
+      SEMESTER: 3,
+      ANNUAL: 4,
+      VIP_ANNUAL: 5,
+      ADMIN: 5,
+    });
   });
 });

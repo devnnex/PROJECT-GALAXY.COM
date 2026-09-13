@@ -298,6 +298,17 @@ describe('Supabase contract', () => {
     expect(meetingClient).toContain('publishMeetingMusicState(state, target = null)');
     expect(meetingStyles).toContain('.meeting-music-player');
     expect(meetingStyles).toContain('.meeting-music-playlist');
+    expect(musicCatalog).toContain("file: 'pump-it-up.weba'");
+    expect(musicCatalog).toContain("file: 'dont-you-cry.weba'");
+  });
+
+  it('shows membership frames in meeting people and chat while guests remain unbadged', () => {
+    expect(schema).toContain("'senderAvatar',p.avatar,'senderMembership',public.membership_view(p.id)");
+    expect(schema).toContain("'planCode','ADMIN'");
+    expect(meetingStudio).toContain('className="meeting-message-avatar"');
+    expect(meetingStudio).toContain('membership={message.senderMembership || sender?.membership}');
+    expect(meetingStudio).toContain('membership={peer?.membership}');
+    expect(meetingStyles).toContain('.floating-message-avatar.constellation-avatar');
   });
 
   it('supports unread mobile chat and administrator-controlled collaboration without native dialogs', () => {
