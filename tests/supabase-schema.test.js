@@ -312,6 +312,9 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('membership={message.senderMembership || sender?.membership}');
     expect(meetingStudio).toContain('membership={peer?.membership}');
     expect(meetingStyles).toContain('.floating-message-avatar.constellation-avatar');
+    const meetingAvatars = meetingStudio.match(/<ConstellationAvatar\b[^>]*\/>/g) || [];
+    expect(meetingAvatars.length).toBeGreaterThanOrEqual(7);
+    expect(meetingAvatars.every((avatar) => avatar.includes('membership='))).toBe(true);
   });
 
   it('supports unread mobile chat and administrator-controlled collaboration without native dialogs', () => {

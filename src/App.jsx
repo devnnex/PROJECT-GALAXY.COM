@@ -257,10 +257,11 @@ function AppShell({ user, onUserChange, onLogout }) {
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
   const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
   useEffect(() => { if (page === 'marketplace') setVipPromoOpen(true); }, [page]);
-  const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
+  const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); if (center.membership) onUserChange((current) => current ? { ...current, membership: center.membership } : current); return center; };
   useEffect(() => { if (!user.isGuest) reloadMembership().catch(() => {}); }, [user.id, user.isGuest]);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
   const membership = membershipCenter.membership || user.membership || { isActive: false };
+  const representedUser = membership === user.membership ? user : { ...user, membership };
   useEffect(() => {
     if (!inviteToken) return;
     let active = true;
@@ -331,17 +332,17 @@ function AppShell({ user, onUserChange, onLogout }) {
   };
   const activeLabel = availableNavigation.find(([id]) => id === page)?.[1] || 'Reuniones';
   let content;
-  if (page === 'dashboard') content = <Dashboard user={user} navigate={navigate} openProduct={setSelectedProduct} />;
+  if (page === 'dashboard') content = <Dashboard user={representedUser} navigate={navigate} openProduct={setSelectedProduct} />;
   else if (page === 'discover') content = <FeedPage toast={toast} />;
-  else if (page === 'marketplace') content = <Marketplace onOpen={setSelectedProduct} user={user} />;
+  else if (page === 'marketplace') content = <Marketplace onOpen={setSelectedProduct} user={representedUser} />;
   else if (page === 'store') content = <GalaxyStore isAdmin={isAdmin} toast={toast} />;
   else if (page === 'meetings') content = null;
   else if (page === 'calendar') content = <CalendarPage toast={toast} onJoin={(request) => { setJoinRequest(request); navigate('meetings'); }} />;
   else if (page === 'messages') content = <MessagesPage toast={toast} />;
-  else if (page === 'wallet') content = <WalletActivity user={user} />;
+  else if (page === 'wallet') content = <WalletActivity user={representedUser} />;
   else if (page === 'orders') content = <MembershipOrdersPage orders={membershipCenter.orders} onRefresh={() => reloadMembership().catch((error) => toast(error.message, 'error'))} />;
   else if (page === 'users' && isAdmin) content = <AdminUsersPage toast={toast} />;
-  else content = <ProfilePage user={user} toast={toast} onUserChange={onUserChange} navigate={navigate} membership={membership} />;
+  else content = <ProfilePage user={representedUser} toast={toast} onUserChange={onUserChange} navigate={navigate} membership={membership} />;
   return <div className="app-shell">
     <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{availableNavigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{id === 'messages' && <i>3</i>}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><div><strong>{user.name}</strong><span>{isAdmin ? 'ADMIN' : english ? 'COMMUNITY' : 'COMUNIDAD'} · LVL {user.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> {english ? 'Sign out' : 'Cerrar sesión'}</button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}

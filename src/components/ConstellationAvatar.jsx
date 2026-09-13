@@ -52,6 +52,7 @@ function profileAvatarUrl(value) {
 export default function ConstellationAvatar({ seed, name = 'Usuario', className = '', src = '', membership }) {
   const badgeTier = membership?.isActive ? MEMBERSHIP_BADGE_TIER[membership.planCode] : null;
   const badge = badgeTier ? <span className={`avatar-membership-badge tier-${badgeTier}`} style={{ '--membership-badge-sprite': `url("${MEMBERSHIP_BADGE_SPRITE}")` }} title={membership.planName} aria-label={`Insignia ${membership.planName}`} /> : null;
+  const membershipClass = badgeTier ? `has-membership-badge membership-tier-${badgeTier}` : '';
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const constellation = useMemo(() => createConstellation(seed || name), [seed, name]);
   const imageUrl = useMemo(() => profileAvatarUrl(src), [src]); const [imageFailed, setImageFailed] = useState(false);
@@ -59,11 +60,11 @@ export default function ConstellationAvatar({ seed, name = 'Usuario', className 
   const lines = constellation.points.map((point) => `${point.x},${point.y}`).join(' ');
   const gradientId = `galaxy-avatar-${instanceId}`;
   const glowId = `galaxy-glow-${instanceId}`;
-  if (imageUrl && !imageFailed) return <span className={`constellation-avatar profile-photo ${className}`.trim()} role="img" aria-label={`Foto de perfil de ${name}`}>
+  if (imageUrl && !imageFailed) return <span className={`constellation-avatar profile-photo ${membershipClass} ${className}`.trim()} role="img" aria-label={`Foto de perfil de ${name}`}>
     <img src={imageUrl} alt="" onError={() => setImageFailed(true)} draggable="false" />{badge}
   </span>;
   return <span
-    className={`constellation-avatar ${className}`.trim()}
+    className={`constellation-avatar ${membershipClass} ${className}`.trim()}
     style={{ '--constellation-light': constellation.palette[0], '--constellation-deep': constellation.palette[1] }}
     role="img"
     aria-label={`Constelación de ${name}`}
