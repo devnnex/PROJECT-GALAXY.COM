@@ -286,6 +286,20 @@ describe('Supabase contract', () => {
     expect(meetingStyles).toContain('.reaction-sender');
   });
 
+  it('keeps meeting music local, host-controlled, and synchronized over the private room channel', () => {
+    const musicCatalog = readFileSync(new URL('../src/data/meetingMusic.js', import.meta.url), 'utf8');
+    expect(musicCatalog).toContain("${import.meta.env.BASE_URL}audio/meeting/");
+    expect(meetingStudio).toContain('function MeetingMusicPlayer');
+    expect(meetingStudio).toContain('meetingMusicPosition(state)');
+    expect(meetingStudio).toContain("client.requestMeetingMusicState()");
+    expect(meetingStudio).toContain("setInterval(() => sendCurrentMeetingMusicState(), 4000)");
+    expect(meetingClient).toContain("type === 'meeting-music-state'");
+    expect(meetingClient).toContain("sender?.role === 'HOST' && sender.userId === this.hostId");
+    expect(meetingClient).toContain('publishMeetingMusicState(state, target = null)');
+    expect(meetingStyles).toContain('.meeting-music-player');
+    expect(meetingStyles).toContain('.meeting-music-playlist');
+  });
+
   it('supports unread mobile chat and administrator-controlled collaboration without native dialogs', () => {
     expect(schema).toContain('function public.set_meeting_collaboration_enabled');
     expect(schema).toContain("'{collaborationEnabled}'");

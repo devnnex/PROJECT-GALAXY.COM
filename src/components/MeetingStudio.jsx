@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Check, Clock3, Copy, Eraser, Hand, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Pencil, PhoneOff, PictureInPicture2, Plus, Reply, RotateCcw, Send, ShieldCheck, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { Camera, CameraOff, Check, Clock3, Copy, Eraser, Hand, ListMusic, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Music2, Pause, Pencil, PhoneOff, PictureInPicture2, Play, Plus, Reply, RotateCcw, Send, ShieldCheck, SkipBack, SkipForward, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 import { onOnlineUsersChange, primeRealtime, releaseRealtimePrime } from '../services/supabase';
+import { MEETING_MUSIC_TRACKS } from '../data/meetingMusic';
 import ConstellationAvatar from './ConstellationAvatar';
 
 const EMOJIS = ['👍', '👏', '❤️', '😂', '🎉', '🔥'];
@@ -831,6 +832,57 @@ function GuestLinkModal({ busy, link, onCreate, onCopy, onClose }) {
   </form></div>;
 }
 
+function musicTime(seconds) {
+  const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, '0')}`;
+}
+
+function meetingMusicPosition(state) {
+  if (!state?.trackId) return 0;
+  return Math.max(0, state.position + (state.playing && state.startedAt ? (Date.now() - state.startedAt) / 1000 : 0));
+}
+
+function MeetingMusicPlayer({ tracks, state, isHost, open, onToggleOpen, onCommand }) {
+  const audioRef = useRef(null); const [duration, setDuration] = useState(0); const [clock, setClock] = useState(Date.now()); const [playbackBlocked, setPlaybackBlocked] = useState(false); const [loadError, setLoadError] = useState(false);
+  const track = tracks.find((item) => item.id === state.trackId) || null;
+  const position = Math.min(duration || Infinity, meetingMusicPosition(state)); const remaining = duration ? Math.max(0, duration - position) : 0;
+
+  useEffect(() => {
+    const audio = audioRef.current; if (!audio) return undefined;
+    setLoadError(false); setDuration(Number.isFinite(audio.duration) ? audio.duration : 0); audio.volume = state.volume;
+    if (!track) { audio.pause(); audio.removeAttribute('src'); audio.load(); return undefined; }
+    if (audio.src !== new URL(track.src, location.href).href) { audio.src = track.src; audio.load(); }
+    let disposed = false;
+    const align = async (force = false) => {
+      if (disposed) return;
+      const expected = Math.min(Number.isFinite(audio.duration) ? audio.duration : Infinity, meetingMusicPosition(state));
+      if (force || Math.abs(audio.currentTime - expected) > .65) try { audio.currentTime = expected; } catch {}
+      if (!state.playing) { audio.pause(); setPlaybackBlocked(false); return; }
+      try { await audio.play(); if (!disposed) setPlaybackBlocked(false); } catch { if (!disposed) setPlaybackBlocked(true); }
+    };
+    const ready = () => { setDuration(Number.isFinite(audio.duration) ? audio.duration : 0); align(true); };
+    audio.addEventListener('loadedmetadata', ready); audio.addEventListener('canplay', ready); align(true);
+    const timer = setInterval(() => { setClock(Date.now()); if (state.playing) align(false); }, 500);
+    const unlock = () => { if (state.playing) align(false); };
+    window.addEventListener('galaxy:resume-meeting-audio', unlock); window.addEventListener('pointerdown', unlock, true);
+    return () => { disposed = true; clearInterval(timer); audio.removeEventListener('loadedmetadata', ready); audio.removeEventListener('canplay', ready); window.removeEventListener('galaxy:resume-meeting-audio', unlock); window.removeEventListener('pointerdown', unlock, true); };
+  }, [track?.id, state.playing, state.position, state.startedAt, state.revision]);
+  useEffect(() => { if (audioRef.current) audioRef.current.volume = state.volume; }, [state.volume]);
+  void clock;
+
+  const choose = (trackId) => { if (isHost) onCommand({ type: 'select', trackId }); };
+  const seek = (event) => { if (isHost) onCommand({ type: 'seek', position: Number(event.target.value) }); };
+  return <div className={`meeting-music-player ${open ? 'open' : ''} ${state.playing ? 'playing' : ''}`}>
+    <audio ref={audioRef} preload="metadata" onEnded={() => isHost && onCommand({ type: 'next' })} onError={() => setLoadError(true)} />
+    <button type="button" className="meeting-music-summary" aria-expanded={open} aria-label="Abrir lista de música" onClick={onToggleOpen}><span className="meeting-music-art"><Music2 /></span><span className="meeting-music-copy"><strong>{track?.title || 'Música de la reunión'}</strong><small>{loadError ? 'No se pudo cargar el audio' : track?.artist || (tracks.length ? 'Elige una canción' : 'Canciones pendientes')}</small></span><ListMusic /></button>
+    <div className="meeting-music-transport" role="group" aria-label="Controles de música"><button type="button" disabled={!isHost || !tracks.length} aria-label="Canción anterior" onClick={() => onCommand({ type: 'previous' })}><SkipBack /></button><button type="button" className="meeting-music-play" disabled={!isHost || !tracks.length} aria-label={state.playing ? 'Pausar música' : 'Reproducir música'} onClick={() => onCommand({ type: 'toggle' })}>{state.playing ? <Pause /> : <Play />}</button><button type="button" disabled={!isHost || !tracks.length} aria-label="Siguiente canción" onClick={() => onCommand({ type: 'next' })}><SkipForward /></button></div>
+    <div className="meeting-music-progress"><input type="range" min="0" max={duration || 1} step="0.1" value={Number.isFinite(position) ? position : 0} disabled={!isHost || !track || !duration} aria-label="Posición de la canción" onChange={seek} /><time>{track ? `-${musicTime(remaining)}` : '--:--'}</time></div>
+    <label className="meeting-music-volume" title={isHost ? 'Volumen para toda la reunión' : 'El anfitrión controla el volumen'}>{state.volume === 0 ? <VolumeX /> : <Volume2 />}<input type="range" min="0" max="1" step="0.02" value={state.volume} disabled={!isHost} aria-label="Volumen de música para toda la reunión" onChange={(event) => onCommand({ type: 'volume', volume: Number(event.target.value) })} /></label>
+    {playbackBlocked && <button type="button" className="meeting-music-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar música</button>}
+    {open && <div className="meeting-music-playlist"><header><span><ListMusic /><strong>Lista de reproducción</strong></span><small>{isHost ? 'Tú controlas la música para todos' : 'Sincronizada por el anfitrión'}</small></header><div>{tracks.map((item, index) => <button type="button" className={item.id === state.trackId ? 'active' : ''} disabled={!isHost} key={item.id} onClick={() => choose(item.id)}><span>{item.cover ? <img src={item.cover} alt="" /> : <Music2 />}</span><span><strong>{item.title}</strong><small>{item.artist || `Canción ${index + 1}`}</small></span>{item.id === state.trackId && state.playing ? <i className="meeting-music-equalizer"><b /><b /><b /></i> : <Play />}</button>)}{!tracks.length && <p>Agrega tus audios en <code>public/audio/meeting</code> para verlos aquí.</p>}</div></div>}
+  </div>;
+}
+
 export default function MeetingStudio({ toast, user, joinRequest, onSessionChange, canCreate = false }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`; const mediaKey = `galaxy_meeting_media_${user.id}`; const maskKey = `galaxy_privacy_masks_${user.id}`;
   const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null); const backgroundMicrophoneMode = useRef(null);
@@ -839,6 +891,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const chatVisibleRef = useRef(false); const messagePulseTimer = useRef(null);
   const participantHandStates = useRef(new Map()); const participantSnapshotReady = useRef(false);
   const annotationStrokesRef = useRef([]);
+  const musicStateRef = useRef({ trackId: null, playing: false, position: 0, startedAt: null, revision: 0, volume: .28 });
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [privacySource, setPrivacySource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } }); const [savedMasks, setSavedMasks] = useState(() => { try { return JSON.parse(localStorage.getItem(maskKey) || 'null'); } catch { return null; } });
@@ -847,6 +900,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
   const [sideTab, setSideTab] = useState('people'); const [mobilePanelOpen, setMobilePanelOpen] = useState(false); const [messages, setMessages] = useState([]); const [floatingMessages, setFloatingMessages] = useState([]); const [unreadMessages, setUnreadMessages] = useState(0); const [messagePulse, setMessagePulse] = useState(false); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [guestLinkOpen, setGuestLinkOpen] = useState(false); const [guestLink, setGuestLink] = useState(null); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [pipActive, setPipActive] = useState(false);
+  const [musicOpen, setMusicOpen] = useState(false); const [musicState, setMusicState] = useState(musicStateRef.current);
   const [audioBlocked, setAudioBlocked] = useState(false); const [shareHasAudio, setShareHasAudio] = useState(false); const [shareAudioEnabled, setShareAudioEnabled] = useState(true); const [participantMicsLocked, setParticipantMicsLocked] = useState(false); const [collaborationEnabled, setCollaborationEnabled] = useState(true); const [collaborationMode, setCollaborationMode] = useState(null); const [collaborationColor, setCollaborationColor] = useState('#ffcf5a'); const [annotationTool, setAnnotationTool] = useState('pen'); const [analysisToolsOpen, setAnalysisToolsOpen] = useState(false);
   const [collaborationRequest, setCollaborationRequest] = useState(null); const [requestedCollaboration, setRequestedCollaboration] = useState(null); const [collaborationPermission, setCollaborationPermission] = useState(null);
   const [annotationStrokes, setAnnotationStrokes] = useState([]); const [selectedAnnotationId, setSelectedAnnotationId] = useState(null); const [remoteCursors, setRemoteCursors] = useState({}); const [confirmation, setConfirmation] = useState(null);
@@ -905,6 +959,31 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     setTimeout(() => setFloatingMessages((items) => items.filter((item) => item.id !== id)), 5200);
   };
   const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); const soundManaged = emoji === PHOENIX_TRANSFORM_REACTION || emoji === 'ALIEN_BIRTHDAY'; setReactions((items) => [...items, { id, emoji, senderName: name, soundManaged }]); if (soundManaged) playMeetingReactionSound(emoji, id).then((played) => { if (!played) { stopMeetingReactionSound(id); setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); } }).catch(() => { stopMeetingReactionSound(id); setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); }); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => { stopMeetingReactionSound(id); setReactions((items) => items.filter((item) => item.id !== id)); }, lifetime); };
+  const applyMeetingMusicState = (next) => { musicStateRef.current = next; setMusicState(next); };
+  const receiveMeetingMusicState = (next) => {
+    if (!MEETING_MUSIC_TRACKS.some((track) => track.id === next.trackId) || next.revision <= musicStateRef.current.revision) return;
+    applyMeetingMusicState({ ...next, startedAt: next.playing ? Date.now() : null });
+  };
+  const sendCurrentMeetingMusicState = (target = null) => {
+    const current = musicStateRef.current; if (!current.trackId) return;
+    const now = Date.now();
+    connection.current?.publishMeetingMusicState({ ...current, position: meetingMusicPosition(current), startedAt: current.playing ? now : null, revision: Math.max(now, current.revision + 1) }, target);
+  };
+  const controlMeetingMusic = (command) => {
+    if (meeting?.role !== 'HOST') return;
+    const tracks = MEETING_MUSIC_TRACKS; const current = musicStateRef.current;
+    if (!tracks.length) { if (command.type !== 'volume') toast('La lista estará disponible cuando agregues las canciones.', 'info'); return; }
+    const activeIndex = Math.max(0, tracks.findIndex((track) => track.id === current.trackId)); const now = Date.now();
+    let trackId = current.trackId || tracks[0].id; let position = meetingMusicPosition(current); let playing = current.playing; let volume = current.volume;
+    if (command.type === 'select') { trackId = command.trackId; position = 0; playing = true; setMusicOpen(false); }
+    if (command.type === 'toggle') { if (!current.trackId) position = 0; playing = !current.playing; }
+    if (command.type === 'next') { trackId = tracks[(activeIndex + 1) % tracks.length].id; position = 0; playing = true; }
+    if (command.type === 'previous') { if (position > 3) position = 0; else { trackId = tracks[(activeIndex - 1 + tracks.length) % tracks.length].id; position = 0; } playing = true; }
+    if (command.type === 'seek') position = Math.max(0, command.position || 0);
+    if (command.type === 'volume') volume = Math.max(0, Math.min(1, command.volume));
+    const next = { trackId, position, playing, volume, startedAt: playing ? now : null, revision: Math.max(now, current.revision + 1) };
+    applyMeetingMusicState(next); connection.current?.publishMeetingMusicState(next);
+  };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
     if (role !== 'HOST' && active) { const track = mediaRef.current.getAudioTracks()[0]; setMeetingTrackEnabled(track, false); setMic(false); setLocalSpeaking(false); saveMediaPreferences({ mic: false }); connection.current?.setPresence({ mic: false, speaking: false }); }
@@ -978,7 +1057,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
 
   const stopMedia = () => { stopMeetingStream(mediaRef.current); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
-  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
+  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); setMusicOpen(false); applyMeetingMusicState({ trackId: null, playing: false, position: 0, startedAt: null, revision: 0, volume: .28 }); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
   useEffect(() => {
     const epoch = ++lifecycleEpoch.current;
     return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); stopMeetingStream(mediaRef.current); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
@@ -1016,6 +1095,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       onRemoteStream: (peerId, stream) => { if (isCurrent(client)) setRemoteStreams((current) => { const next = { ...current }; if (stream) next[peerId] = stream; else delete next[peerId]; return next; }); },
       onPeerState: (peerId, state) => { if (isCurrent(client)) setPeerStates((current) => ({ ...current, [peerId]: state })); }, onReaction: (value) => { if (isCurrent(client)) showReaction(value); }, onChat: (value, options) => { if (isCurrent(client)) { mergeMessage(value); if (options?.announce !== false) showFloatingMessage(value); } },
       onChatHistory: (history) => { if (isCurrent(client)) history.forEach(mergeMessage); }, onChatReaction: (value) => { if (isCurrent(client)) applyChatReaction(value); },
+      onMeetingMusicState: (value) => { if (isCurrent(client)) receiveMeetingMusicState(value); },
+      onMeetingMusicRequest: (peerId) => { if (isCurrent(client)) sendCurrentMeetingMusicState(peerId); },
       onCollaboration: (value) => { if (isCurrent(client)) handleCollaboration(value); },
       onCollaborationAccess: ({ enabled, by }) => { if (isCurrent(client)) enforceCollaborationAccess(enabled, by, true); },
       onForceMute: ({ by }) => { if (!isCurrent(client)) return; const track = mediaRef.current.getAudioTracks()[0]; setMeetingTrackEnabled(track, false); setMic(false); saveMediaPreferences({ mic: false }); client.setPresence({ mic: false, speaking: false }); toast(`${by || 'El anfitrión'} silenció tu micrófono.`, 'info'); },
@@ -1032,9 +1113,10 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
         setRelayReady(Boolean(relay?.relayReady));
       } catch { setRelayReady(false); }
       const usingTurn = iceServers?.some((server) => server.username && server.credential);
-      await client.connect({ roomId: normalized.meetingId, role: normalized.role, stream: mediaRef.current, iceServers, user });
+      await client.connect({ roomId: normalized.meetingId, role: normalized.role, hostId: normalized.hostId, stream: mediaRef.current, iceServers, user });
       if (!isCurrent(client)) { client.disconnect(); return false; }
       if (usingTurn) client.scheduleIceRefresh(relayInfo?.expiresIn);
+      if (normalized.role !== 'HOST') client.requestMeetingMusicState();
       toast(`Conectado a ${normalized.title}${usingTurn ? ' con relay TURN.' : '; TURN aún no está configurado.'}`, usingTurn ? undefined : 'info');
       return true;
     } catch (error) { client.disconnect(); if (!isCurrent(client) || error.name === 'AbortError') return false; connection.current = null; setJoined(false); throw error; }
@@ -1068,6 +1150,11 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     refresh(); const unsubscribe = api.onMeetingParticipantChange(meeting.meetingId, refresh); const timer = setInterval(refresh, 10_000);
     return () => { unsubscribe(); clearInterval(timer); };
   }, [joined, meeting?.meetingId, meeting?.role]);
+  useEffect(() => {
+    if (!joined || meeting?.role !== 'HOST' || !musicState.playing || !musicState.trackId) return undefined;
+    const timer = setInterval(() => sendCurrentMeetingMusicState(), 4000);
+    return () => clearInterval(timer);
+  }, [joined, meeting?.role, musicState.playing, musicState.trackId]);
   useEffect(() => {
     if (!inviteOpen || meeting?.role !== 'HOST' || !meeting?.meetingId) return undefined;
     let active = true;
@@ -1394,7 +1481,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   return <section className={`meeting-page ${mobilePanelOpen ? 'mobile-panel-open' : ''}`}>
     {mobilePanelOpen && <button className="meeting-mobile-scrim" type="button" aria-label="Cerrar chat" onClick={() => setMobilePanelOpen(false)} />}
     <button className={`mobile-chat-fab ${mobilePanelOpen ? 'active' : ''} ${messagePulse ? 'message-pulse' : ''}`} type="button" disabled={!joined} onClick={() => { setSideTab('chat'); setMobilePanelOpen((open) => !open); }}><MessageCircle /><span>{mobilePanelOpen ? 'Cerrar chat' : 'Abrir chat'}</span>{unreadMessages > 0 && <i aria-label={`${unreadMessages} mensajes sin leer`}>{unreadMessages}</i>}</button>
-    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Invitados sin cuenta' : meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar usuarios</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
+    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-controls"><MeetingMusicPlayer tracks={MEETING_MUSIC_TRACKS} state={musicState} isHost={isHost} open={musicOpen} onToggleOpen={() => setMusicOpen((value) => !value)} onCommand={controlMeetingMusic} /><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Invitados sin cuenta' : meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar usuarios</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div></div>
     <div className="meeting-grid">
       <div className={`meeting-stage-shell ${sharing ? 'has-analysis-tools' : ''}`}>
       <div className="meeting-stage">

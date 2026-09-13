@@ -9,6 +9,13 @@ export async function getMeetingAccess({ roomCode, password }) {
 function defaultIceServers() { return [{ urls: 'stun:stun.l.google.com:19302' }]; }
 const LIVE_REACTIONS = new Set(['👍', '👏', '❤️', '😂', '🎉', '🔥', 'MONEY_ROCKET', 'MONEY_CHARACTER', 'MONEY_ALIEN', 'GALACTIC_TAKE_PROFIT', 'PHOENIX_TRANSFORM', 'UFO', 'ALIEN', 'ALIEN_BIRTHDAY']);
 function isLiveReaction(value) { return typeof value === 'string' && LIVE_REACTIONS.has(value); }
+function safeMeetingMusicState(value) {
+  if (!value || typeof value !== 'object') return null;
+  const trackId = typeof value.trackId === 'string' && /^[a-z0-9_-]{1,120}$/i.test(value.trackId) ? value.trackId : null;
+  const position = Number(value.position); const startedAt = Number(value.startedAt); const revision = Number(value.revision); const volume = Number(value.volume);
+  if (!trackId || !Number.isFinite(position) || position < 0 || position > 86_400 || !Number.isFinite(revision) || revision < 0 || !Number.isFinite(volume) || volume < 0 || volume > 1) return null;
+  return { trackId, playing: value.playing === true, position, startedAt: Number.isFinite(startedAt) ? startedAt : null, revision, volume };
+}
 
 async function replaceMeetingSenderTrack(sender, track) {
   if (!sender) return;
@@ -142,9 +149,9 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     this.iceRefreshTimer = null;
   }
 
-  async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT', user }) {
+  async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT', hostId, user }) {
     const version = ++this.connectVersion;
-    this.roomId = roomId; this.role = role; this.selfId = crypto.randomUUID(); this.localStream = stream || new MediaStream(); this.iceServers = iceServers.length ? iceServers : defaultIceServers(); this.active = true; this.callbacks.onStatus?.('signaling');
+    this.roomId = roomId; this.role = role; this.hostId = hostId; this.selfId = crypto.randomUUID(); this.localStream = stream || new MediaStream(); this.iceServers = iceServers.length ? iceServers : defaultIceServers(); this.active = true; this.callbacks.onStatus?.('signaling');
     const identity = user || await api.me();
     this.identity = { peerId: this.selfId, userId: identity.id, name: identity.name, avatar: identity.avatar || '', membership: identity.membership, role, connectedAt: Date.now(), ...(this.presence || {}) };
     if (!identity.isGuest) primeRealtime(identity.id).catch(() => {});
@@ -261,6 +268,8 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (message.type === 'answer') return this.acceptAnswer(message);
     if (message.type === 'ice') return this.acceptIce(message);
     if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.source, senderName: this.participants.get(message.source)?.name, emoji: message.emoji }); return; }
+    if (message.type === 'meeting-music-state') { await this.handleMeetingMusicState(message); return; }
+    if (message.type === 'meeting-music-request') { await this.handleMeetingMusicRequest(message); return; }
     if (message.type === 'participant-mics-lock') { await this.handleParticipantMicsLock(message); return; }
     if (message.type === 'collab-access') { await this.handleCollaborationAccess(message); return; }
     if (message.type?.startsWith('collab-')) {
@@ -280,6 +289,19 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (sender?.role !== 'HOST') return;
     const state = await api.getMeetingState({ meetingId: this.roomId }).catch(() => null);
     if (state) this.callbacks.onParticipantMicsLock?.({ locked: Boolean(state.participantMicsLocked), by: sender.name });
+  }
+
+  async handleMeetingMusicState(message) {
+    if (!message?.source) return;
+    if (!this.participants.has(message.source)) await this.syncPresence();
+    const sender = this.participants.get(message.source); const state = safeMeetingMusicState(message.data);
+    if (sender?.role === 'HOST' && sender.userId === this.hostId && state) this.callbacks.onMeetingMusicState?.(state);
+  }
+
+  async handleMeetingMusicRequest(message) {
+    if (this.role !== 'HOST' || !message?.source) return;
+    if (!this.participants.has(message.source)) await this.syncPresence();
+    if (this.participants.has(message.source)) this.callbacks.onMeetingMusicRequest?.(message.source);
   }
 
   async handleCollaborationAccess(message) {
@@ -335,6 +357,12 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     else if (message.type?.startsWith('collab-')) this.broadcast('signal', { ...message, source: this.selfId });
     else if (message.type === 'moderation' && message.action === 'mute' && this.role === 'HOST') this.mutePeer(message.target);
   }
+  async publishMeetingMusicState(state, target = null) {
+    if (this.role !== 'HOST') return;
+    const safe = safeMeetingMusicState(state); if (!safe) return;
+    await this.broadcast('signal', { type: 'meeting-music-state', source: this.selfId, target, data: safe });
+  }
+  requestMeetingMusicState() { return this.broadcast('signal', { type: 'meeting-music-request', source: this.selfId }); }
   chat(message) { return this.broadcast('chat', { messageId: message.id }); }
   reactToChat(update) { return this.broadcast('chat-reaction', { messageId: update.messageId }); }
   async mutePeer(peerId) {
