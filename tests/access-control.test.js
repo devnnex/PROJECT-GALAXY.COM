@@ -33,7 +33,7 @@ describe('Galaxy owner and member access controls', () => {
     expect(schema).toContain('create table if not exists public.meeting_share_links');
     expect(schema).toContain("digest(v_token,'sha256')");
     expect(schema).toContain('function public.redeem_meeting_share_link(p_token text)');
-    expect(meeting).toContain("url.searchParams.set('invite', link.token)");
+    expect(meeting).toContain("url.searchParams.set('invite', token)");
     expect(meeting).not.toMatch(/searchParams\.set\(['\"]password/);
     expect(app).toContain('api.redeemMeetingShareLink(inviteToken)');
   });
@@ -50,6 +50,10 @@ describe('Galaxy owner and member access controls', () => {
     expect(api).toContain('joinMeetingAsGuest');
     expect(meeting).toContain('function GuestLinkModal');
     expect(meeting).toContain('Invitados sin cuenta');
+    expect(meeting).toContain('galaxy_guest_link_');
+    expect(meeting).toContain('localStorage.setItem(guestLinkStorageKey');
+    expect(meeting).toContain('Este enlace queda guardado en la reunión');
+    expect(meeting).toContain("api.inspectMeetingShareLink(link.token)");
   });
 
   it('offers optional owner privacy masks while preserving normal sharing', () => {

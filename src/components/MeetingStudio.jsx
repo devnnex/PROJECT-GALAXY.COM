@@ -808,7 +808,7 @@ function InvitePanel({ members, onlineUserIds, onInviteMany, onClose }) {
   </div></div>;
 }
 
-function GuestLinkModal({ busy, onCreate, onClose }) {
+function GuestLinkModal({ busy, link, onCreate, onCopy, onClose }) {
   const [guestLimit, setGuestLimit] = useState(1);
   const submit = (event) => {
     event.preventDefault();
@@ -816,11 +816,18 @@ function GuestLinkModal({ busy, onCreate, onClose }) {
     onCreate(count);
   };
   return <div className="modal-backdrop invite-modal-backdrop"><form className="guest-link-modal glass" role="dialog" aria-modal="true" aria-labelledby="guest-link-title" onSubmit={submit}>
-    <div className="modal-title"><div><p className="eyebrow">INVITADOS SIN CUENTA</p><h2 id="guest-link-title">Crear enlace de acceso directo</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Cerrar"><X /></button></div>
-    <p>Indica cuántas personas podrán usar el enlace. Cada invitado escribirá su nombre y entrará directamente, sin usuario ni contraseña.</p>
-    <label>Cantidad de invitados<input autoFocus required type="number" min="1" max="100" step="1" value={guestLimit} onChange={(event) => setGuestLimit(event.target.value)} /></label>
-    <small>El cupo se aplica únicamente a este enlace y no afecta a los usuarios registrados.</small>
-    <div className="modal-actions"><button className="secondary-button" type="button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={busy}><Copy /> {busy ? 'Creando…' : 'Crear y copiar enlace'}</button></div>
+    <div className="modal-title"><div><p className="eyebrow">INVITADOS SIN CUENTA</p><h2 id="guest-link-title">{link ? 'Enlace listo para compartir' : 'Crear enlace de acceso directo'}</h2></div><button className="icon-button" type="button" onClick={onClose} aria-label="Cerrar"><X /></button></div>
+    {link ? <>
+      <p>Este enlace queda guardado en la reunión para que puedas volver a copiarlo y seguir enviándolo.</p>
+      <label>Enlace de invitados<input autoFocus readOnly value={link.url} onFocus={(event) => event.target.select()} /></label>
+      <small>{link.guestsRemaining} de {link.guestLimit} {link.guestLimit === 1 ? 'acceso disponible' : 'accesos disponibles'}.</small>
+      <div className="modal-actions"><button className="secondary-button" type="button" onClick={onClose}>Cerrar</button><button className="primary-button" type="button" disabled={busy} onClick={onCopy}><Copy /> {busy ? 'Comprobando…' : 'Copiar enlace'}</button></div>
+    </> : <>
+      <p>Indica cuántas personas podrán usar el enlace. Cada invitado escribirá su nombre y entrará directamente, sin usuario ni contraseña.</p>
+      <label>Cantidad de invitados<input autoFocus required type="number" min="1" max="100" step="1" value={guestLimit} onChange={(event) => setGuestLimit(event.target.value)} /></label>
+      <small>El cupo se aplica únicamente a este enlace y no afecta a los usuarios registrados.</small>
+      <div className="modal-actions"><button className="secondary-button" type="button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={busy}><Copy /> {busy ? 'Creando…' : 'Crear y copiar enlace'}</button></div>
+    </>}
   </form></div>;
 }
 
@@ -838,7 +845,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const [mic, setMic] = useState(false); const [camera, setCamera] = useState(false); const [joined, setJoined] = useState(false); const [status, setStatus] = useState('offline'); const [relayReady, setRelayReady] = useState(null);
   const [participants, setParticipants] = useState([]); const [remoteStreams, setRemoteStreams] = useState({}); const [peerStates, setPeerStates] = useState({});
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
-  const [sideTab, setSideTab] = useState('people'); const [mobilePanelOpen, setMobilePanelOpen] = useState(false); const [messages, setMessages] = useState([]); const [floatingMessages, setFloatingMessages] = useState([]); const [unreadMessages, setUnreadMessages] = useState(0); const [messagePulse, setMessagePulse] = useState(false); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [guestLinkOpen, setGuestLinkOpen] = useState(false); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
+  const [sideTab, setSideTab] = useState('people'); const [mobilePanelOpen, setMobilePanelOpen] = useState(false); const [messages, setMessages] = useState([]); const [floatingMessages, setFloatingMessages] = useState([]); const [unreadMessages, setUnreadMessages] = useState(0); const [messagePulse, setMessagePulse] = useState(false); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [guestLinkOpen, setGuestLinkOpen] = useState(false); const [guestLink, setGuestLink] = useState(null); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [pipActive, setPipActive] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false); const [shareHasAudio, setShareHasAudio] = useState(false); const [shareAudioEnabled, setShareAudioEnabled] = useState(true); const [participantMicsLocked, setParticipantMicsLocked] = useState(false); const [collaborationEnabled, setCollaborationEnabled] = useState(true); const [collaborationMode, setCollaborationMode] = useState(null); const [collaborationColor, setCollaborationColor] = useState('#ffcf5a'); const [annotationTool, setAnnotationTool] = useState('pen'); const [analysisToolsOpen, setAnalysisToolsOpen] = useState(false);
   const [collaborationRequest, setCollaborationRequest] = useState(null); const [requestedCollaboration, setRequestedCollaboration] = useState(null); const [collaborationPermission, setCollaborationPermission] = useState(null);
@@ -1203,6 +1210,49 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const speakingChanged = useCallback((speaking) => { setLocalSpeaking(speaking); connection.current?.setPresence({ mic, camera, sharing: Boolean(sharing), handRaised, speaking }); }, [mic, camera, sharing, handRaised]);
   const sendChat = async (body) => { try { const message = await api.postMeetingMessage({ meetingId: meeting.meetingId, body, replyToId: replyTo?.id || '' }); mergeMessage(message); connection.current?.chat(message); setReplyTo(null); return true; } catch (error) { toast(error.message, 'error'); return false; } };
   const reactToMessage = async (message, emoji) => { try { const update = await api.reactToMeetingMessage({ meetingId: meeting.meetingId, messageId: message.id, emoji }); applyChatReaction(update); connection.current?.reactToChat(update); } catch (error) { toast(error.message, 'error'); } };
+  const guestLinkStorageKey = meeting?.meetingId ? `galaxy_guest_link_${user.id}_${meeting.meetingId}` : '';
+  const guestInviteUrl = (token) => {
+    const url = new URL(location.href);
+    url.pathname = url.pathname.replace(/\/dist\/index\.html$/, '/'); url.search = ''; url.hash = ''; url.searchParams.set('invite', token);
+    return url.href;
+  };
+  const saveGuestLink = (link) => {
+    setGuestLink(link);
+    if (guestLinkStorageKey) localStorage.setItem(guestLinkStorageKey, JSON.stringify(link));
+  };
+  const forgetGuestLink = () => {
+    setGuestLink(null);
+    if (guestLinkStorageKey) localStorage.removeItem(guestLinkStorageKey);
+  };
+  const copyGuestLink = async (link = guestLink) => {
+    if (!link?.token) return;
+    setBusy(true);
+    try {
+      const status = await api.inspectMeetingShareLink(link.token);
+      const current = { ...link, ...status, url: guestInviteUrl(link.token) };
+      saveGuestLink(current);
+      await navigator.clipboard.writeText(`${meeting.title}\n${current.url}`);
+      toast(`Enlace copiado. Quedan ${current.guestsRemaining} de ${current.guestLimit} accesos disponibles.`);
+    } catch (error) {
+      forgetGuestLink();
+      toast(error.message, 'error');
+    } finally { setBusy(false); }
+  };
+  const openGuestLinks = async () => {
+    setGuestLinkOpen(true);
+    if (!guestLinkStorageKey) return;
+    let stored = null;
+    try { stored = JSON.parse(localStorage.getItem(guestLinkStorageKey) || 'null'); } catch { localStorage.removeItem(guestLinkStorageKey); }
+    setGuestLink(stored?.token ? stored : null);
+    if (!stored?.token) { setGuestLink(null); return; }
+    setBusy(true);
+    try {
+      const status = await api.inspectMeetingShareLink(stored.token);
+      saveGuestLink({ ...stored, ...status, url: guestInviteUrl(stored.token) });
+    } catch {
+      forgetGuestLink();
+    } finally { setBusy(false); }
+  };
   const copyInvite = async (guestLimit = 1) => {
     if (meeting?.role !== 'HOST') {
       await navigator.clipboard.writeText(meeting?.roomCode || '');
@@ -1211,10 +1261,10 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     }
     setBusy(true);
     try {
-      const link = await api.createMeetingShareLink(meeting.meetingId, guestLimit); const url = new URL(location.href);
-      url.pathname = url.pathname.replace(/\/dist\/index\.html$/, '/'); url.search = ''; url.hash = ''; url.searchParams.set('invite', link.token);
-      await navigator.clipboard.writeText(`${meeting.title}\n${url.href}`);
-      setGuestLinkOpen(false);
+      const link = await api.createMeetingShareLink(meeting.meetingId, guestLimit);
+      const saved = { ...link, url: guestInviteUrl(link.token), guestsRemaining: link.guestLimit };
+      saveGuestLink(saved);
+      await navigator.clipboard.writeText(`${meeting.title}\n${saved.url}`);
       toast(`Enlace copiado para ${link.guestLimit} ${link.guestLimit === 1 ? 'invitado' : 'invitados'} sin cuenta.`);
     } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); }
   };
@@ -1344,7 +1394,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   return <section className={`meeting-page ${mobilePanelOpen ? 'mobile-panel-open' : ''}`}>
     {mobilePanelOpen && <button className="meeting-mobile-scrim" type="button" aria-label="Cerrar chat" onClick={() => setMobilePanelOpen(false)} />}
     <button className={`mobile-chat-fab ${mobilePanelOpen ? 'active' : ''} ${messagePulse ? 'message-pulse' : ''}`} type="button" disabled={!joined} onClick={() => { setSideTab('chat'); setMobilePanelOpen((open) => !open); }}><MessageCircle /><span>{mobilePanelOpen ? 'Cerrar chat' : 'Abrir chat'}</span>{unreadMessages > 0 && <i aria-label={`${unreadMessages} mensajes sin leer`}>{unreadMessages}</i>}</button>
-    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={() => isHost ? setGuestLinkOpen(true) : copyInvite()}><Copy /> {isHost ? 'Invitados sin cuenta' : meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar usuarios</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
+    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Invitados sin cuenta' : meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar usuarios</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div>
     <div className="meeting-grid">
       <div className={`meeting-stage-shell ${sharing ? 'has-analysis-tools' : ''}`}>
       <div className="meeting-stage">
@@ -1359,7 +1409,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       </div>
       {sharing && <AnalysisToolRail tool={annotationTool} open={analysisToolsOpen} disabled={!collaborationEnabled} onToggle={() => setAnalysisToolsOpen((current) => !current)} onSelect={chooseAnalysisTool} />}
       </div>
-      <aside className="meeting-side"><div className="meeting-side-tabs"><button className={sideTab === 'people' ? 'active' : ''} onClick={() => setSideTab('people')}><Users /> Personas <span>{participants.length + 1}</span></button><button className={sideTab === 'chat' ? 'active' : ''} onClick={() => setSideTab('chat')}><MessageCircle /> Chat <span className={`chat-count ${messagePulse ? 'pulse' : ''}`}>{messages.length}</span></button></div>{sideTab === 'people' ? <><div className="people-list"><div className={`person ${mic ? 'mic-on' : 'mic-off'} ${localSpeaking ? 'speaking' : ''}`}><ConstellationAvatar className="avatar avatar-sm" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><span>{user.name} · Tú {isHost && <small>Anfitrión</small>}</span>{handRaised && <Hand className="participant-hand-indicator" aria-label="Mano alzada" />}<AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} />{mic ? <Mic className="participant-mic-indicator" /> : <MicOff className="participant-mic-indicator" />}</div>{participants.map((peer) => <div className={`person ${peer.mic ? 'mic-on' : 'mic-off'} ${peer.speaking ? 'speaking' : ''}`} key={peer.peerId}><ConstellationAvatar className="avatar avatar-sm" seed={peer.userId || peer.peerId} name={peer.name} src={peer.avatar} membership={peer.membership} /><span>{peer.name}<small>{peer.role === 'HOST' ? 'Anfitrión' : peerStates[peer.peerId] === 'connected' ? 'Audio P2P conectado' : 'Enlazando medios'}</small></span>{peer.handRaised && <Hand className="participant-hand-indicator" aria-label="Mano alzada" />}<AudioMeter stream={remoteStreams[peer.peerId]} enabled={peer.mic} />{isHost && peer.role !== 'HOST' && peer.mic ? <button className="host-mute participant-mic-indicator" title="Silenciar participante" onClick={() => connection.current?.mutePeer(peer.peerId)}><Mic /></button> : peer.mic ? <Mic className="participant-mic-indicator" /> : <MicOff className="participant-mic-indicator" />}</div>)}</div>{isHost && waitingParticipants.length > 0 && <div className="waiting-list"><p className="eyebrow">ESPERANDO ({waitingParticipants.length})</p>{waitingParticipants.map((item) => <div className="person" key={item.id}><ConstellationAvatar className="avatar avatar-sm" seed={item.userId} name={item.name} src={item.avatar} membership={item.membership} /><span>{item.name}<small>@{item.username}</small></span><button title="Admitir" onClick={() => admission(item, true)}><Check /></button><button title="Rechazar" onClick={() => admission(item, false)}><X /></button></div>)}</div>}<div className="meeting-side-footer"><button className="secondary-button" onClick={() => isHost ? setGuestLinkOpen(true) : copyInvite()}><Copy /> {isHost ? 'Enlace para invitados' : 'Copiar código'}</button>{isHost && <button className="secondary-button" onClick={toggleLock}>{meeting.locked ? <Unlock /> : <Lock />} {meeting.locked ? 'Desbloquear' : 'Bloquear sala'}</button>}</div></> : <ChatPanel messages={messages} user={user} replyTo={replyTo} setReplyTo={setReplyTo} onSend={sendChat} onReact={reactToMessage} />}</aside>
+      <aside className="meeting-side"><div className="meeting-side-tabs"><button className={sideTab === 'people' ? 'active' : ''} onClick={() => setSideTab('people')}><Users /> Personas <span>{participants.length + 1}</span></button><button className={sideTab === 'chat' ? 'active' : ''} onClick={() => setSideTab('chat')}><MessageCircle /> Chat <span className={`chat-count ${messagePulse ? 'pulse' : ''}`}>{messages.length}</span></button></div>{sideTab === 'people' ? <><div className="people-list"><div className={`person ${mic ? 'mic-on' : 'mic-off'} ${localSpeaking ? 'speaking' : ''}`}><ConstellationAvatar className="avatar avatar-sm" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><span>{user.name} · Tú {isHost && <small>Anfitrión</small>}</span>{handRaised && <Hand className="participant-hand-indicator" aria-label="Mano alzada" />}<AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} />{mic ? <Mic className="participant-mic-indicator" /> : <MicOff className="participant-mic-indicator" />}</div>{participants.map((peer) => <div className={`person ${peer.mic ? 'mic-on' : 'mic-off'} ${peer.speaking ? 'speaking' : ''}`} key={peer.peerId}><ConstellationAvatar className="avatar avatar-sm" seed={peer.userId || peer.peerId} name={peer.name} src={peer.avatar} membership={peer.membership} /><span>{peer.name}<small>{peer.role === 'HOST' ? 'Anfitrión' : peerStates[peer.peerId] === 'connected' ? 'Audio P2P conectado' : 'Enlazando medios'}</small></span>{peer.handRaised && <Hand className="participant-hand-indicator" aria-label="Mano alzada" />}<AudioMeter stream={remoteStreams[peer.peerId]} enabled={peer.mic} />{isHost && peer.role !== 'HOST' && peer.mic ? <button className="host-mute participant-mic-indicator" title="Silenciar participante" onClick={() => connection.current?.mutePeer(peer.peerId)}><Mic /></button> : peer.mic ? <Mic className="participant-mic-indicator" /> : <MicOff className="participant-mic-indicator" />}</div>)}</div>{isHost && waitingParticipants.length > 0 && <div className="waiting-list"><p className="eyebrow">ESPERANDO ({waitingParticipants.length})</p>{waitingParticipants.map((item) => <div className="person" key={item.id}><ConstellationAvatar className="avatar avatar-sm" seed={item.userId} name={item.name} src={item.avatar} membership={item.membership} /><span>{item.name}<small>@{item.username}</small></span><button title="Admitir" onClick={() => admission(item, true)}><Check /></button><button title="Rechazar" onClick={() => admission(item, false)}><X /></button></div>)}</div>}<div className="meeting-side-footer"><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Enlace para invitados' : 'Copiar código'}</button>{isHost && <button className="secondary-button" onClick={toggleLock}>{meeting.locked ? <Unlock /> : <Lock />} {meeting.locked ? 'Desbloquear' : 'Bloquear sala'}</button>}</div></> : <ChatPanel messages={messages} user={user} replyTo={replyTo} setReplyTo={setReplyTo} onSend={sendChat} onReact={reactToMessage} />}</aside>
     </div>
     <div className="control-dock glass">
       <button type="button" className={mic ? 'active' : ''} disabled={!joined || (meeting.role !== 'HOST' && participantMicsLocked)} title={meeting.role !== 'HOST' && participantMicsLocked ? 'Micrófono bloqueado por el anfitrión' : ''} onClick={() => toggleTrack('audio')}>{mic ? <Mic /> : <MicOff />}<AudioMeter stream={media} enabled={mic} /><span>{meeting.role !== 'HOST' && participantMicsLocked ? 'Bloqueado' : mic ? 'Silenciar' : 'Activar audio'}</span></button>
@@ -1388,6 +1438,6 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       <button type="button" onClick={shareRearCamera}><Camera />Cámara trasera o documento<span>Alternativa compatible con móviles y tablets</span></button>
     </div>}
     {reactionMenu && <div className="reaction-menu mobile-action-menu glass">{EMOJIS.map((emoji) => <button type="button" key={emoji} onClick={() => react(emoji)}>{emoji}</button>)}</div>}
-    {cropSource && <CropEditor stream={cropSource} initialCrop={savedCrop} onConfirm={confirmCrop} onCancel={stopShare} />}{privacySource && <PrivacyMaskEditor stream={privacySource} initialMasks={savedMasks} onConfirm={confirmPrivacyMasks} onCancel={stopShare} />}{inviteOpen && <InvitePanel members={members} onlineUserIds={onlineUserIds} onInviteMany={inviteMany} onClose={() => setInviteOpen(false)} />}{guestLinkOpen && <GuestLinkModal busy={busy} onCreate={copyInvite} onClose={() => setGuestLinkOpen(false)} />}<CollaborationRequestModal request={collaborationRequest} onRespond={respondCollaboration} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} />
+    {cropSource && <CropEditor stream={cropSource} initialCrop={savedCrop} onConfirm={confirmCrop} onCancel={stopShare} />}{privacySource && <PrivacyMaskEditor stream={privacySource} initialMasks={savedMasks} onConfirm={confirmPrivacyMasks} onCancel={stopShare} />}{inviteOpen && <InvitePanel members={members} onlineUserIds={onlineUserIds} onInviteMany={inviteMany} onClose={() => setInviteOpen(false)} />}{guestLinkOpen && <GuestLinkModal busy={busy} link={guestLink} onCreate={copyInvite} onCopy={() => copyGuestLink()} onClose={() => setGuestLinkOpen(false)} />}<CollaborationRequestModal request={collaborationRequest} onRespond={respondCollaboration} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} />
   </section>;
 }
