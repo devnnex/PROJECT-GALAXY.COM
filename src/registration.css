@@ -6,8 +6,9 @@
 .constellation-avatar.membership-tier-3:after{border-color:rgba(80,220,255,.9);box-shadow:0 0 9px rgba(28,188,255,.5),inset 0 0 7px rgba(111,241,255,.24)}
 .constellation-avatar.membership-tier-4:after{border-color:rgba(255,108,192,.92);box-shadow:0 0 9px rgba(255,72,170,.5),inset 0 0 7px rgba(255,190,219,.24)}
 .constellation-avatar.membership-tier-5:after{border-color:rgba(255,220,117,.96);box-shadow:0 0 11px rgba(255,184,62,.62),inset 0 0 8px rgba(255,255,255,.32)}
-.avatar-membership-badge{position:absolute;z-index:4;right:-19%;bottom:-27%;width:60%;height:79%;pointer-events:none;background-image:var(--membership-badge-sprite);background-repeat:no-repeat;background-size:500% 100%;filter:drop-shadow(0 1px 2px rgba(0,0,0,.8)) drop-shadow(0 0 4px rgba(129,81,209,.62))}
-.avatar-membership-badge.tier-1{background-position:0 50%}.avatar-membership-badge.tier-2{background-position:25% 50%}.avatar-membership-badge.tier-3{background-position:50% 50%}.avatar-membership-badge.tier-4{background-position:75% 50%}.avatar-membership-badge.tier-5{right:-22%;bottom:-30%;width:66%;height:87%;background-position:100% 50%;filter:drop-shadow(0 1px 2px rgba(0,0,0,.85)) drop-shadow(0 0 6px rgba(255,210,91,.76))}
+.avatar-membership-badge{position:absolute;z-index:4;right:-10%;bottom:-15%;width:38%;height:64%;pointer-events:none;background-image:var(--membership-badge-sprite);background-repeat:no-repeat;background-size:500% 100%;image-rendering:auto;transform:translateZ(0);filter:drop-shadow(0 1px 2px rgba(0,0,0,.86)) drop-shadow(0 0 3px rgba(129,81,209,.72))}
+.avatar-membership-badge.tier-1{background-position:0 50%}.avatar-membership-badge.tier-2{background-position:25% 50%}.avatar-membership-badge.tier-3{background-position:50% 50%}.avatar-membership-badge.tier-4{background-position:75% 50%}.avatar-membership-badge.tier-5{background-position:100% 50%;filter:drop-shadow(0 1px 2px rgba(0,0,0,.88)) drop-shadow(0 0 4px rgba(255,210,91,.82))}
+.admin-user-avatar-shell .avatar-membership-badge,.invite-avatar-shell.online .avatar-membership-badge{right:auto;left:-10%}
 .meeting-side .people-list .person{overflow:visible}
 .constellation-card>.constellation-avatar.has-membership-badge{margin-bottom:22px}
 @media(max-width:600px){.registration-panel{padding:16px}.membership-ledger-row{flex-direction:column;gap:8px}.delete-account{grid-column:auto}}
