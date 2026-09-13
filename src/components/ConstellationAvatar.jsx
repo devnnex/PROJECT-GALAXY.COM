@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { CONFIG } from '../config';
-import { MEMBERSHIP_BADGE_TIER } from '../membership-badges';
+import { membershipBadgeTier } from '../membership-badges';
 
 const PALETTES = [
   ['#c8adff', '#6f46c7'], ['#9ed8ff', '#3d68c8'], ['#ffb8df', '#9a437d'],
@@ -50,8 +50,8 @@ function profileAvatarUrl(value) {
 }
 
 export default function ConstellationAvatar({ seed, name = 'Usuario', className = '', src = '', membership }) {
-  const badgeTier = membership?.isActive ? MEMBERSHIP_BADGE_TIER[membership.planCode] : null;
-  const badge = badgeTier ? <span className={`avatar-membership-badge tier-${badgeTier}`} style={{ '--membership-badge-sprite': `url("${MEMBERSHIP_BADGE_SPRITE}")` }} title={membership.planName} aria-label={`Insignia ${membership.planName}`} /> : null;
+  const badgeTier = membershipBadgeTier(membership);
+  const badge = badgeTier ? <span className={`avatar-membership-badge tier-${badgeTier}`} title={membership.planName || 'Membresía activa'} aria-label={`Insignia ${membership.planName || 'de membresía'}`}><img src={MEMBERSHIP_BADGE_SPRITE} alt="" draggable="false" /></span> : null;
   const membershipClass = badgeTier ? `has-membership-badge membership-tier-${badgeTier}` : '';
   const instanceId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
   const constellation = useMemo(() => createConstellation(seed || name), [seed, name]);

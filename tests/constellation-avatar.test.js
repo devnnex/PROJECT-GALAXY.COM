@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ConstellationAvatar, { createConstellation } from '../src/components/ConstellationAvatar';
-import { MEMBERSHIP_BADGE_TIER } from '../src/membership-badges';
+import { MEMBERSHIP_BADGE_TIER, membershipBadgeTier, membershipForAvatar } from '../src/membership-badges';
 
 const avatarSource = readFileSync(new URL('../src/components/ConstellationAvatar.jsx', import.meta.url), 'utf8');
 const avatarStyles = readFileSync(new URL('../src/registration.css', import.meta.url), 'utf8');
@@ -48,9 +48,18 @@ describe('Constellation avatar', () => {
     expect(avatarSource).toContain('membership-tier-${badgeTier}');
     expect(avatarStyles).toContain('.constellation-avatar.has-membership-badge');
     expect(avatarStyles).toContain('.avatar-membership-badge{position:absolute;z-index:4;right:');
+    expect(avatarStyles).toContain('.avatar-membership-badge>img');
     expect(avatarStyles).toContain('.admin-user-avatar-shell .avatar-membership-badge,.invite-avatar-shell.online .avatar-membership-badge{right:auto;left:');
     expect(avatarStyles).toContain('.constellation-avatar.has-membership-badge:after');
     expect(avatarStyles).not.toContain(':has(');
+  });
+
+  it('recognizes active membership payloads and always assigns Elkin the elite badge', () => {
+    expect(membershipBadgeTier({ is_active: true, plan_code: 'quarterly' })).toBe(2);
+    expect(membershipBadgeTier({ status: 'ACTIVE', planCode: 'annual' })).toBe(4);
+    expect(membershipBadgeTier({ isActive: false, planCode: 'VIP_ANNUAL' })).toBeNull();
+    expect(membershipForAvatar({ email: 'Elkin56ty@gmail.com', membership: { isActive: false } })).toEqual(expect.objectContaining({ planCode: 'ADMIN' }));
+    expect(membershipForAvatar({ email: 'guest@example.com', isGuest: true, role: 'ADMIN' })).toEqual({ isActive: false });
   });
 
   it('shows the correct badge for an active member and no badge for a guest', () => {
