@@ -4,6 +4,7 @@ import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 import { onOnlineUsersChange, primeRealtime, releaseRealtimePrime } from '../services/supabase';
 import { MEETING_MUSIC_TRACKS } from '../data/meetingMusic';
+import { getMeetingMusicPlaybackPlan, isMeetingMusicStateContinuous } from '../meeting-music-playback';
 import ConstellationAvatar from './ConstellationAvatar';
 
 const EMOJIS = ['👍', '👏', '❤️', '😂', '🎉', '🔥'];
@@ -846,37 +847,60 @@ function meetingMusicPosition(state) {
 }
 
 function MeetingMusicPlayer({ tracks, state, isHost, open, onToggleOpen, onCommand }) {
-  const audioRef = useRef(null); const [duration, setDuration] = useState(0); const [clock, setClock] = useState(Date.now()); const [playbackBlocked, setPlaybackBlocked] = useState(false); const [loadError, setLoadError] = useState(false);
+  const audioRef = useRef(null); const playbackStateRef = useRef(state); const appliedStateRef = useRef(null); const volumeFrameRef = useRef(0);
+  const [duration, setDuration] = useState(0); const [clock, setClock] = useState(Date.now()); const [playbackBlocked, setPlaybackBlocked] = useState(false); const [loadError, setLoadError] = useState(false);
   const track = tracks.find((item) => item.id === state.trackId) || null;
   const position = Math.min(duration || Infinity, meetingMusicPosition(state)); const remaining = duration ? Math.max(0, duration - position) : 0;
+  playbackStateRef.current = state;
+
+  const synchronizePlayback = async (forceSeek = false) => {
+    const audio = audioRef.current; const current = playbackStateRef.current;
+    if (!audio || !current?.trackId || audio.readyState < HTMLMediaElement.HAVE_METADATA) return;
+    const expected = Math.min(Number.isFinite(audio.duration) ? Math.max(0, audio.duration - .05) : Infinity, meetingMusicPosition(current));
+    const plan = getMeetingMusicPlaybackPlan(audio.currentTime, expected, forceSeek);
+    if (plan.seekTo !== null) {
+      try { audio.currentTime = plan.seekTo; } catch {}
+    }
+    audio.playbackRate = current.playing ? plan.playbackRate : 1;
+    if (!current.playing) { audio.pause(); setPlaybackBlocked(false); return; }
+    if (!audio.paused) return;
+    try { await audio.play(); setPlaybackBlocked(false); } catch { setPlaybackBlocked(true); }
+  };
 
   useEffect(() => {
     const audio = audioRef.current; if (!audio) return undefined;
-    setLoadError(false); setDuration(Number.isFinite(audio.duration) ? audio.duration : 0); audio.volume = state.volume;
+    setLoadError(false); setDuration(0); audio.volume = playbackStateRef.current.volume; audio.defaultPlaybackRate = 1; audio.playbackRate = 1; audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true;
     if (!track) { audio.pause(); audio.removeAttribute('src'); audio.load(); return undefined; }
     if (audio.src !== new URL(track.src, location.href).href) { audio.src = track.src; audio.load(); }
-    let disposed = false;
-    const align = async (force = false) => {
-      if (disposed) return;
-      const expected = Math.min(Number.isFinite(audio.duration) ? audio.duration : Infinity, meetingMusicPosition(state));
-      if (force || Math.abs(audio.currentTime - expected) > .65) try { audio.currentTime = expected; } catch {}
-      if (!state.playing) { audio.pause(); setPlaybackBlocked(false); return; }
-      try { await audio.play(); if (!disposed) setPlaybackBlocked(false); } catch { if (!disposed) setPlaybackBlocked(true); }
-    };
-    const ready = () => { setDuration(Number.isFinite(audio.duration) ? audio.duration : 0); align(true); };
-    audio.addEventListener('loadedmetadata', ready); audio.addEventListener('canplay', ready); align(true);
-    const timer = setInterval(() => { setClock(Date.now()); if (state.playing) align(false); }, 500);
-    const unlock = () => { if (state.playing) align(false); };
-    window.addEventListener('galaxy:resume-meeting-audio', unlock); window.addEventListener('pointerdown', unlock, true);
-    return () => { disposed = true; clearInterval(timer); audio.removeEventListener('loadedmetadata', ready); audio.removeEventListener('canplay', ready); window.removeEventListener('galaxy:resume-meeting-audio', unlock); window.removeEventListener('pointerdown', unlock, true); };
+    const ready = () => { setDuration(Number.isFinite(audio.duration) ? audio.duration : 0); synchronizePlayback(true); };
+    if (audio.readyState >= HTMLMediaElement.HAVE_METADATA) ready(); else audio.addEventListener('loadedmetadata', ready, { once: true });
+    return () => audio.removeEventListener('loadedmetadata', ready);
+  }, [track?.id]);
+  useEffect(() => {
+    const previous = appliedStateRef.current; const continuous = isMeetingMusicStateContinuous(previous, state, meetingMusicPosition);
+    appliedStateRef.current = state; synchronizePlayback(!continuous);
   }, [track?.id, state.playing, state.position, state.startedAt, state.revision]);
-  useEffect(() => { if (audioRef.current) audioRef.current.volume = state.volume; }, [state.volume]);
+  useEffect(() => {
+    const timer = setInterval(() => { setClock(Date.now()); if (playbackStateRef.current.playing) synchronizePlayback(false); }, 500);
+    const unlock = () => { if (playbackStateRef.current.playing) synchronizePlayback(true); };
+    window.addEventListener('galaxy:resume-meeting-audio', unlock); window.addEventListener('pointerdown', unlock, true);
+    return () => { clearInterval(timer); window.removeEventListener('galaxy:resume-meeting-audio', unlock); window.removeEventListener('pointerdown', unlock, true); };
+  }, []);
+  useEffect(() => {
+    const audio = audioRef.current; if (!audio) return undefined;
+    cancelAnimationFrame(volumeFrameRef.current);
+    const from = audio.volume; const to = Math.max(0, Math.min(1, state.volume)); const started = performance.now();
+    const ramp = (now) => { const progress = Math.min(1, (now - started) / 120); audio.volume = from + (to - from) * (1 - ((1 - progress) ** 3)); if (progress < 1) volumeFrameRef.current = requestAnimationFrame(ramp); };
+    volumeFrameRef.current = requestAnimationFrame(ramp);
+    return () => cancelAnimationFrame(volumeFrameRef.current);
+  }, [state.volume]);
+  useEffect(() => () => { cancelAnimationFrame(volumeFrameRef.current); const audio = audioRef.current; if (audio) { audio.pause(); audio.playbackRate = 1; } }, []);
   void clock;
 
   const choose = (trackId) => { if (isHost) onCommand({ type: 'select', trackId }); };
   const seek = (event) => { if (isHost) onCommand({ type: 'seek', position: Number(event.target.value) }); };
   return <div className={`meeting-music-player ${open ? 'open' : ''} ${state.playing ? 'playing' : ''}`}>
-    <audio ref={audioRef} preload="metadata" onEnded={() => isHost && onCommand({ type: 'next' })} onError={() => setLoadError(true)} />
+    <audio ref={audioRef} preload="auto" onEnded={() => isHost && onCommand({ type: 'next' })} onError={() => setLoadError(true)} />
     <button type="button" className="meeting-music-summary" aria-expanded={open} aria-label="Abrir lista de música" onClick={onToggleOpen}><span className="meeting-music-art"><Music2 /></span><span className="meeting-music-copy"><strong>{track?.title || 'Música de la reunión'}</strong><small>{loadError ? 'No se pudo cargar el audio' : track?.artist || (tracks.length ? 'Elige una canción' : 'Canciones pendientes')}</small></span><ListMusic /></button>
     <div className="meeting-music-transport" role="group" aria-label="Controles de música"><button type="button" disabled={!isHost || !tracks.length} aria-label="Canción anterior" onClick={() => onCommand({ type: 'previous' })}><SkipBack /></button><button type="button" className="meeting-music-play" disabled={!isHost || !tracks.length} aria-label={state.playing ? 'Pausar música' : 'Reproducir música'} onClick={() => onCommand({ type: 'toggle' })}>{state.playing ? <Pause /> : <Play />}</button><button type="button" disabled={!isHost || !tracks.length} aria-label="Siguiente canción" onClick={() => onCommand({ type: 'next' })}><SkipForward /></button></div>
     <div className="meeting-music-progress"><input type="range" min="0" max={duration || 1} step="0.1" value={Number.isFinite(position) ? position : 0} disabled={!isHost || !track || !duration} aria-label="Posición de la canción" onChange={seek} /><time>{track ? `-${musicTime(remaining)}` : '--:--'}</time></div>

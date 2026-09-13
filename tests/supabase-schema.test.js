@@ -293,6 +293,9 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('meetingMusicPosition(state)');
     expect(meetingStudio).toContain("client.requestMeetingMusicState()");
     expect(meetingStudio).toContain("setInterval(() => sendCurrentMeetingMusicState(), 4000)");
+    expect(meetingStudio).toContain('getMeetingMusicPlaybackPlan');
+    expect(meetingStudio).toContain('preload="auto"');
+    expect(meetingStudio).not.toContain('align(true)');
     expect(meetingClient).toContain("type === 'meeting-music-state'");
     expect(meetingClient).toContain("sender?.role === 'HOST' && sender.userId === this.hostId");
     expect(meetingClient).toContain('publishMeetingMusicState(state, target = null)');
