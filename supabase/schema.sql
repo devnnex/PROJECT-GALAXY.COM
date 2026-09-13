@@ -474,17 +474,18 @@ begin
   end if;
   insert into public.user_session_state(user_id) values(v_user) on conflict(user_id) do nothing;
   select * into v_state from public.user_session_state where user_id=v_user for update;
-  if v_state.conflict_until is not null and v_state.conflict_until>now() then
-    return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',v_state.conflict_until);
-  end if;
   if v_state.active_session_id is null or v_state.active_session_id=v_session
     or v_state.last_seen_at is null or v_state.last_seen_at<now()-interval '75 seconds' then
     update public.user_session_state set active_session_id=v_session,last_seen_at=now(),conflict_until=null,updated_at=now() where user_id=v_user;
     return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status,'singleSessionExempt',false);
   end if;
-  update public.user_session_state set active_session_id=null,last_seen_at=null,
-    conflict_until=now()+interval '30 seconds',updated_at=now() where user_id=v_user;
-  return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',now()+interval '30 seconds');
+  -- An explicit login or reload takes ownership immediately. The previous
+  -- browser is rejected by heartbeat, while the entering user is never placed
+  -- into a conflict window that would also invalidate Realtime meeting RLS.
+  update public.user_session_state set active_session_id=v_session,last_seen_at=now(),
+    conflict_until=null,updated_at=now() where user_id=v_user;
+  return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status,
+    'singleSessionExempt',false,'replacedPreviousSession',true);
 end; $$;
 
 create or replace function public.heartbeat_user_session() returns jsonb

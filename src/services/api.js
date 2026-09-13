@@ -283,7 +283,9 @@ export const api = {
     const state = await rpc('heartbeat_user_session');
     if (state?.status === 'DUPLICATE') {
       await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-      throw new Error('Esta cuenta se abriÃ³ en mÃ¡s de un navegador o dispositivo. Cerramos ambas sesiones por seguridad.');
+      const error = new Error('Esta cuenta se abriÃ³ en otro navegador o dispositivo. Esta sesiÃ³n anterior fue cerrada por seguridad.');
+      error.code = 'GALAXY_DUPLICATE_SESSION';
+      throw error;
     }
     return state;
   },

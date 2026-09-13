@@ -431,7 +431,8 @@ export default function App() {
         const state = await api.heartbeatSession();
         if (active && state?.accountStatus && state.accountStatus !== user.status) setUser((current) => current ? { ...current, status: state.accountStatus } : current);
       } catch (error) {
-        if (!active) return; setUser(null); setSessionError(error.message); setView('auth');
+        if (!active || error?.code !== 'GALAXY_DUPLICATE_SESSION') return;
+        setUser(null); setSessionError(error.message); setView('auth');
       }
     };
     const timer = setInterval(check, 15_000); return () => { active = false; clearInterval(timer); };

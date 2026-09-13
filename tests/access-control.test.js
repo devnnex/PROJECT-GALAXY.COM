@@ -18,14 +18,17 @@ describe('Galaxy owner and member access controls', () => {
     expect(app).toContain('<BlockedAccess user={user}');
   });
 
-  it('invalidates both regular sessions when a second Supabase session is detected', () => {
+  it('transfers a regular account to the newest session without invalidating meeting Realtime', () => {
     expect(schema).toContain('create table if not exists public.user_session_state');
     expect(schema).toContain("'status','DUPLICATE'");
-    expect(schema).toContain("conflict_until=now()+interval '30 seconds'");
+    expect(schema).toContain("'replacedPreviousSession',true");
+    expect(schema).not.toContain("conflict_until=now()+interval '30 seconds'");
     expect(schema).toContain("if v_profile.role='ADMIN'");
     expect(api).toContain("rpc('claim_user_session')");
     expect(api).toContain("rpc('heartbeat_user_session')");
     expect(api).toContain("signOut({ scope: 'local' })");
+    expect(api).toContain("error.code = 'GALAXY_DUPLICATE_SESSION'");
+    expect(app).toContain("error?.code !== 'GALAXY_DUPLICATE_SESSION'");
   });
 
   it('uses authenticated token links without putting meeting passwords in URLs', () => {
