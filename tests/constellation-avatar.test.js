@@ -51,15 +51,20 @@ describe('Constellation avatar', () => {
     expect(avatarStyles).toContain('.constellation-avatar.has-membership-badge .avatar-membership-badge>img');
     expect(avatarStyles).toContain('width:500%;max-width:none;height:121%;object-fit:fill');
     expect(avatarStyles).toContain('.admin-user-avatar-shell .avatar-membership-badge,.invite-avatar-shell.online .avatar-membership-badge{right:auto;left:');
+    expect(avatarStyles).toContain('.meeting-side .person .avatar-membership-badge.tier-5');
     expect(avatarStyles).toContain('.constellation-avatar.has-membership-badge:after');
     expect(avatarStyles).not.toContain(':has(');
   });
 
-  it('recognizes active membership payloads and always assigns Elkin the elite badge', () => {
+  it('recognizes active membership payloads and assigns the elite badge to the three selected accounts', () => {
     expect(membershipBadgeTier({ is_active: true, plan_code: 'quarterly' })).toBe(2);
     expect(membershipBadgeTier({ status: 'ACTIVE', planCode: 'annual' })).toBe(4);
     expect(membershipBadgeTier({ isActive: false, planCode: 'VIP_ANNUAL' })).toBeNull();
     expect(membershipForAvatar({ email: 'Elkin56ty@gmail.com', membership: { isActive: false } })).toEqual(expect.objectContaining({ planCode: 'ADMIN' }));
+    expect(membershipForAvatar({ email: 'jairgomez@gmail.com', membership: { isActive: false } })).toEqual({ isActive: false, badgeTier: 5 });
+    expect(membershipForAvatar({ email: 'edsonarias000@gmail.com', membership: { isActive: false } })).toEqual({ isActive: false, badgeTier: 5 });
+    expect(membershipForAvatar({ username: 'jairgomez', membership: { isActive: false } })).toEqual({ isActive: false, badgeTier: 5 });
+    expect(membershipBadgeTier({ isActive: false, badgeTier: 5 })).toBe(5);
     expect(membershipForAvatar({ email: 'guest@example.com', isGuest: true, role: 'ADMIN' })).toEqual({ isActive: false });
   });
 

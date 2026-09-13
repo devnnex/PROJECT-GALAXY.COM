@@ -309,7 +309,8 @@ describe('Supabase contract', () => {
     expect(schema).toContain("'senderAvatar',p.avatar,'senderMembership',public.membership_view(p.id)");
     expect(schema).toContain("'planCode','ADMIN'");
     expect(meetingStudio).toContain('className="meeting-message-avatar"');
-    expect(meetingStudio).toContain('membership={message.senderMembership || sender?.membership}');
+    expect(meetingStudio).toContain('membership={membershipForAvatar({ ...sender, username: message.senderUsername || sender?.username');
+    expect(meetingStudio).toContain('membership={membershipForAvatar(peer)}');
     expect(meetingStudio).toContain('membership={peer?.membership}');
     expect(meetingStyles).toContain('.floating-message-avatar.constellation-avatar');
     const meetingAvatars = meetingStudio.match(/<ConstellationAvatar\b[^>]*\/>/g) || [];
