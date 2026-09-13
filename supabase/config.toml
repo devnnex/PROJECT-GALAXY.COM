@@ -1,3 +1,6 @@
+[auth]
+enable_anonymous_sign_ins = true
+
 [functions.turn-credentials]
 verify_jwt = true
 

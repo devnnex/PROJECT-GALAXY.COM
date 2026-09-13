@@ -12,6 +12,7 @@ const parameterNames = Object.freeze({
   description: 'p_description', kind: 'p_kind', startsAt: 'p_starts_at', endsAt: 'p_ends_at',
   recurrence: 'p_recurrence', repeatUntil: 'p_repeat_until', avatar: 'p_avatar',
   priceUsdt: 'p_price_usdt', imagePath: 'p_image_path', soldOut: 'p_sold_out',
+  guestLimit: 'p_guest_limit',
 });
 
 const PROFILE_AVATAR_BUCKET = 'profile-avatars';
@@ -59,6 +60,9 @@ function friendlyError(error) {
   if (code === 'signup_disabled' || /signups?.*disabled/i.test(message)) {
     return new Error('El registro de nuevas cuentas está temporalmente deshabilitado.');
   }
+  if (/anonymous sign-ins? (?:are|is) disabled/i.test(message)) {
+    return new Error('El acceso de invitados todavía no está habilitado en Supabase Auth.');
+  }
   if (code === 'unexpected_failure' || /database error.*(saving|creating).*user/i.test(message)) {
     return new Error('No pudimos crear el perfil en este momento. El administrador debe revisar el registro de Auth.');
   }
@@ -90,11 +94,7 @@ async function rpc(name, payload = {}) {
 async function currentUser() {
   const { data: authData, error: authError } = await supabase.auth.getSession();
   if (authError || !authData.session) return null;
-  const sessionState = await rpc('claim_user_session');
-  if (sessionState?.status === 'DUPLICATE') {
-    await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-    throw new Error('Esta cuenta se abriÃ³ en mÃ¡s de un navegador o dispositivo. Cerramos ambas sesiones por seguridad.');
-  }
+  await rpc('claim_user_session');
   return rpc('get_current_user');
 }
 
@@ -168,6 +168,24 @@ export const api = {
     const { error } = await supabase.auth.signOut();
     if (error) throw friendlyError(error);
     return { loggedOut: true };
+  },
+  inspectMeetingShareLink: (token) => rpc('inspect_meeting_share_link', { token }),
+  async joinMeetingAsGuest({ token, name }) {
+    const guestName = String(name || '').trim();
+    if (guestName.length < 2 || guestName.length > 60) throw new Error('Escribe un nombre de 2 a 60 caracteres.');
+    await rpc('inspect_meeting_share_link', { token });
+    const username = `guest_${crypto.randomUUID().replaceAll('-', '').slice(0, 20)}`;
+    const { data, error } = await supabase.auth.signInAnonymously({
+      options: { data: { name: guestName, username, meeting_guest: true, meeting_invite_token: token } },
+    });
+    if (error) throw friendlyError(error);
+    try {
+      const access = await rpc('redeem_meeting_share_link', { token });
+      return { user: await currentUser(), session: data.session, access };
+    } catch (cause) {
+      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+      throw cause;
+    }
   },
   bootstrap: (modules = ['user']) => rpc('get_bootstrap_data', { modules }),
   me: currentUser,
@@ -246,7 +264,7 @@ export const api = {
   getTurnCredentials: (meetingId) => invokeSecure('turn-credentials', { meetingId }, 'El relay TURN no está disponible.'),
   getScannerDownload: () => invokeSecure('scanner-download', {}, 'No fue posible preparar la descarga privada.'),
   createMeeting: (payload) => rpc('create_meeting', payload),
-  createMeetingShareLink: (meetingId) => rpc('create_meeting_share_link', { meetingId }),
+  createMeetingShareLink: (meetingId, guestLimit = 1) => rpc('create_meeting_share_link', { meetingId, guestLimit }),
   redeemMeetingShareLink: (token) => rpc('redeem_meeting_share_link', { token }),
   getCalendarEvents: (payload) => rpc('get_calendar_events', payload),
   createCalendarEvent: (payload) => rpc('create_calendar_event', payload),
@@ -278,12 +296,7 @@ export const api = {
   requestMeetingMute: (payload) => rpc('request_meeting_mute', payload),
   consumeMeetingCommand: (payload) => rpc('consume_meeting_command', payload),
   async heartbeatSession() {
-    const state = await rpc('heartbeat_user_session');
-    if (state?.status === 'DUPLICATE') {
-      await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-      throw new Error('Esta cuenta se abriÃ³ en mÃ¡s de un navegador o dispositivo. Cerramos ambas sesiones por seguridad.');
-    }
-    return state;
+    return rpc('heartbeat_user_session');
   },
   onMeetingParticipantChange(meetingId, callback) {
     let active = true; let channel = null;

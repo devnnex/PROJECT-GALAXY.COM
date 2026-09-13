@@ -18,14 +18,15 @@ describe('Galaxy owner and member access controls', () => {
     expect(app).toContain('<BlockedAccess user={user}');
   });
 
-  it('invalidates both regular sessions when a second Supabase session is detected', () => {
+  it('keeps authenticated sessions alive until an explicit logout', () => {
     expect(schema).toContain('create table if not exists public.user_session_state');
-    expect(schema).toContain("'status','DUPLICATE'");
-    expect(schema).toContain("conflict_until=now()+interval '30 seconds'");
-    expect(schema).toContain("if v_profile.role='ADMIN'");
+    expect(schema).not.toContain("'status','DUPLICATE'");
+    expect(schema).not.toContain("conflict_until=now()+interval '30 seconds'");
+    expect(schema).toMatch(/function public\.is_current_session_valid[\s\S]*p\.status='ACTIVE'/);
     expect(api).toContain("rpc('claim_user_session')");
     expect(api).toContain("rpc('heartbeat_user_session')");
-    expect(api).toContain("signOut({ scope: 'local' })");
+    expect(app).toContain('A temporary heartbeat failure must never interrupt an active meeting.');
+    expect(app).not.toMatch(/catch \(error\) \{\s*if \(!active\) return; setUser\(null\)/);
   });
 
   it('uses authenticated token links without putting meeting passwords in URLs', () => {
@@ -35,6 +36,20 @@ describe('Galaxy owner and member access controls', () => {
     expect(meeting).toContain("url.searchParams.set('invite', link.token)");
     expect(meeting).not.toMatch(/searchParams\.set\(['\"]password/);
     expect(app).toContain('api.redeemMeetingShareLink(inviteToken)');
+  });
+
+  it('supports quota-limited guests who enter with only their name', () => {
+    expect(schema).toContain('guest_limit integer not null default 1');
+    expect(schema).toContain('guest_count integer not null default 0');
+    expect(schema).toContain('function public.inspect_meeting_share_link');
+    expect(schema).toContain('if v_link.guest_count>=v_link.guest_limit');
+    expect(schema).toContain('update public.meeting_share_links set guest_count=guest_count+1');
+    expect(api).toContain('supabase.auth.signInAnonymously');
+    expect(api).toContain('meeting_invite_token: token');
+    expect(schema).toContain("new.raw_user_meta_data->>'meeting_invite_token'");
+    expect(api).toContain('joinMeetingAsGuest');
+    expect(meeting).toContain('function GuestLinkModal');
+    expect(meeting).toContain('Invitados sin cuenta');
   });
 
   it('offers optional owner privacy masks while preserving normal sharing', () => {

@@ -247,9 +247,9 @@ function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose })
 
 function AppShell({ user, onUserChange, onLogout }) {
   const isAdmin = user.role === 'ADMIN'; const language = languageFor(user); const english = language === 'en';
-  const availableNavigation = (isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
+  const availableNavigation = (user.isGuest ? navigation.filter(([id]) => id === 'meetings') : isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
   const inviteToken = new URLSearchParams(location.search).get('invite') || '';
-  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(true); const [vipPromoOpen, setVipPromoOpen] = useState(false);
+  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(!user.isGuest); const [vipPromoOpen, setVipPromoOpen] = useState(false);
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [notificationItems, setNotificationItems] = useState([]); const [notificationFilter, setNotificationFilter] = useState('UNREAD'); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const [membershipCenter, setMembershipCenter] = useState({ membership: user.membership || { isActive: false }, plans: [], orders: [] });
@@ -258,7 +258,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
   useEffect(() => { if (page === 'marketplace') setVipPromoOpen(true); }, [page]);
   const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
-  useEffect(() => { reloadMembership().catch(() => {}); }, [user.id]);
+  useEffect(() => { if (!user.isGuest) reloadMembership().catch(() => {}); }, [user.id, user.isGuest]);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
   const membership = membershipCenter.membership || user.membership || { isActive: false };
   useEffect(() => {
@@ -364,9 +364,6 @@ export default function App() {
     api.me().then(async (found) => {
       if (!found) return;
       if (new URLSearchParams(location.hash.slice(1)).has('registration')) { await api.logout(); setView('auth'); return; }
-      if (sharedIntent && isScannerOwner(found)) {
-        await api.logout().catch(() => {}); setSessionError('Por seguridad, el enlace compartido requiere que el invitado inicie sesión con su propia cuenta.'); setView('auth'); return;
-      }
       setUser(found); setView('app');
     }).catch((error) => { setSessionError(error.message); setView('auth'); }).finally(() => setReady(true));
   }, [sharedIntent]);
@@ -377,8 +374,10 @@ export default function App() {
       try {
         const state = await api.heartbeatSession();
         if (active && state?.accountStatus && state.accountStatus !== user.status) setUser((current) => current ? { ...current, status: state.accountStatus } : current);
-      } catch (error) {
-        if (!active) return; setUser(null); setSessionError(error.message); setView('auth');
+      } catch {
+        // A temporary heartbeat failure must never interrupt an active meeting.
+        // Only the explicit logout action below clears the local session.
+        if (!active) return;
       }
     };
     const timer = setInterval(check, 15_000); return () => { active = false; clearInterval(timer); };

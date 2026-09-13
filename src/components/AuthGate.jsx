@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, Eye, EyeOff, LoaderCircle, MailCheck, Orbit } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, EyeOff, LoaderCircle, MailCheck, Orbit, Users } from 'lucide-react';
 import { api } from '../services/api';
 import { CONFIG } from '../config';
 import NeuralCanvas from './NeuralCanvas';
 
 export default function AuthGate({ onAuthenticated, onBack }) {
   const invitationAccess = new URLSearchParams(location.search).has('invite') || new URLSearchParams(location.search).has('meeting');
+  const [meetingInviteToken] = useState(() => new URLSearchParams(location.search).get('invite') || '');
   const [token] = useState(() => new URLSearchParams(location.hash.slice(1)).get('registration') || '');
   const [invitation, setInvitation] = useState(null);
+  const [meetingInvitation, setMeetingInvitation] = useState(null);
   const [now, setNow] = useState(Date.now());
   const [mode, setMode] = useState(token ? 'register' : 'login');
   useEffect(() => {
@@ -17,6 +19,16 @@ export default function AuthGate({ onAuthenticated, onBack }) {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => { active = false; clearInterval(timer); };
   }, [token]);
+  useEffect(() => {
+    if (!meetingInviteToken) return;
+    let active = true;
+    api.inspectMeetingShareLink(meetingInviteToken).then((data) => {
+      if (active) setMeetingInvitation(data);
+    }).catch((err) => {
+      if (active) setError(err.message);
+    });
+    return () => { active = false; };
+  }, [meetingInviteToken]);
   const seconds = invitation ? Math.max(0, Math.ceil((new Date(invitation.expires_at).getTime() - now) / 1000)) : 0;
   const [form, setForm] = useState({ name: '', username: '', email: '', password: '' });
   const [show, setShow] = useState(false);
@@ -28,6 +40,11 @@ export default function AuthGate({ onAuthenticated, onBack }) {
   const submit = async (event) => {
     event.preventDefault(); setError(''); setBusy(true);
     try {
+      if (meetingInviteToken) {
+        const result = await api.joinMeetingAsGuest({ token: meetingInviteToken, name: form.name });
+        onAuthenticated(result.user);
+        return;
+      }
       const result = await (mode === 'login' ? api.login(form) : api.register({ ...form, token }));
       if (result.registered) { setMode('login'); setError('Cuenta creada. Inicia sesión con tu contraseña.'); return; }
       if (result.requiresConfirmation) { setConfirmationEmail(result.email); return; }
@@ -40,7 +57,18 @@ export default function AuthGate({ onAuthenticated, onBack }) {
     <button className="ghost-button auth-back" onClick={onBack}><ArrowLeft size={17} /> Inicio</button>
     <section className="auth-card glass">
       <div className="brand auth-brand"><span className="brand-mark"><Orbit /></span><span>{CONFIG.APP_NAME}</span></div>
-      {confirmationEmail ? <div className="auth-confirmation" role="status">
+      {meetingInviteToken ? <div className="guest-entry">
+        <span className="auth-confirmation-icon"><Users /></span>
+        <p className="eyebrow">INVITACIÓN A REUNIÓN</p>
+        <h1>{meetingInvitation?.title || 'Entrar como invitado'}</h1>
+        <p className="muted">No necesitas usuario ni contraseña. Escribe el nombre con el que aparecerás dentro de la reunión.</p>
+        {meetingInvitation && <div className="mode-note">{meetingInvitation.guestsRemaining} {meetingInvitation.guestsRemaining === 1 ? 'acceso disponible' : 'accesos disponibles'} en este enlace.</div>}
+        <form onSubmit={submit}>
+          <label>Tu nombre<input autoFocus required minLength="2" maxLength="60" name="name" value={form.name} onChange={update} placeholder="Nombre para la reunión" autoComplete="name" /></label>
+          {error && <div className="inline-error" role="alert">{error}</div>}
+          <button className="primary-button auth-submit" disabled={busy || !meetingInvitation}>{busy ? <LoaderCircle className="spin" /> : <>Entrar directamente <ArrowRight size={18} /></>}</button>
+        </form>
+      </div> : confirmationEmail ? <div className="auth-confirmation" role="status">
         <span className="auth-confirmation-icon"><MailCheck /></span>
         <p className="eyebrow">ACCESO CREADO</p>
         <h1>Confirma tu acceso.</h1>

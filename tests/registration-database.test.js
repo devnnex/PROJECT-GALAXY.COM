@@ -11,7 +11,7 @@ beforeAll(async () => {
   db = new PGlite({ extensions: { pgcrypto } });
   await db.exec(`create extension pgcrypto; create schema auth;
     create role anon; create role authenticated; create role service_role;
-    create table auth.users(id uuid primary key default gen_random_uuid(), email text unique, raw_user_meta_data jsonb default '{}');
+    create table auth.users(id uuid primary key default gen_random_uuid(), email text unique, raw_user_meta_data jsonb default '{}', is_anonymous boolean not null default false);
     create table public.profiles(id uuid primary key references auth.users on delete cascade, name text, status text default 'ACTIVE',role text default 'USER');
     create table public.wallets(user_id uuid primary key references public.profiles on delete cascade,available_balance numeric default 0,pending_balance numeric default 0,total_earned numeric default 0,total_spent numeric default 0,updated_at timestamptz default now());
     create table public.membership_plans(code text primary key,name text,price_usd numeric,duration_months integer,active boolean default true);
