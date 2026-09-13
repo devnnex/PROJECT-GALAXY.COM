@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 const read = (path) => readFileSync(new URL(path, import.meta.url), 'utf8');
 const schema = read('../supabase/schema.sql');
+const sessionMigration = read('../supabase/migrations/20260913090000_fix_session_takeover_meeting_disconnect.sql');
 const app = read('../src/App.jsx');
 const api = read('../src/services/api.js');
 const meeting = read('../src/components/MeetingStudio.jsx');
@@ -29,6 +30,9 @@ describe('Galaxy owner and member access controls', () => {
     expect(api).toContain("signOut({ scope: 'local' })");
     expect(api).toContain("error.code = 'GALAXY_DUPLICATE_SESSION'");
     expect(app).toContain("error?.code !== 'GALAXY_DUPLICATE_SESSION'");
+    expect(sessionMigration).toContain('create table if not exists public.user_session_state');
+    expect(sessionMigration).toContain('function public.heartbeat_user_session()');
+    expect(sessionMigration).toContain('function public.is_current_session_valid()');
   });
 
   it('uses authenticated token links without putting meeting passwords in URLs', () => {
