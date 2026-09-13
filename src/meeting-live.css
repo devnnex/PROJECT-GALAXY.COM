@@ -446,7 +446,8 @@
 .presentation-reaction img { width:24px; height:24px; flex:0 0 24px; object-fit:contain; }.presentation-reaction>i { flex:0 0 auto; font:normal 18px/1 sans-serif; }.presentation-reaction small { overflow:hidden; font:600 8px/1.2 'Manrope'; text-overflow:ellipsis; white-space:nowrap; }
 @keyframes presentationReactionIn { 0% { opacity:0; transform:translateY(10px) scale(.82); } 15%,82% { opacity:1; transform:none; } 100% { opacity:0; transform:translateY(-8px) scale(.94); } }
 .host-only-grid { grid-template-columns:minmax(0,1fr); }
-.host-stage-placeholder { position:absolute; inset:0; display:grid; place-items:center; align-content:center; gap:10px; background:radial-gradient(circle at center,rgba(116,77,183,.13),transparent 48%),#09070c; color:#8d8493; text-align:center; }
+.audience-media-preserved { position:absolute!important; left:-10000px!important; top:0!important; width:1px!important; height:1px!important; min-height:0!important; overflow:hidden!important; opacity:.001; pointer-events:none; clip-path:inset(50%); }
+.host-stage-placeholder { position:absolute; inset:0; display:grid; place-items:center; align-content:center; gap:10px; pointer-events:none; background:radial-gradient(circle at center,rgba(116,77,183,.13),transparent 48%); color:#8d8493; text-align:center; }
 .host-stage-placeholder svg { width:52px; height:52px; color:#8e62dc; opacity:.7; }
 .host-stage-placeholder strong { color:#ded5e8; font:600 16px 'Manrope'; }
 .host-stage-placeholder span { font-size:10px; }

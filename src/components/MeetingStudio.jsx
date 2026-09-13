@@ -314,7 +314,7 @@ function AudioMeter({ stream, enabled = true, onSpeakingChange, label = 'Nivel d
   return <span className={`voice-meter ${level ? 'detecting' : ''}`} role="meter" aria-label={label} aria-valuenow={level} aria-valuemin="0" aria-valuemax="5">{[1, 2, 3, 4, 5].map((bar) => <i className={bar <= level ? 'on' : ''} key={bar} />)}</span>;
 }
 
-function VideoSurface({ stream, name, avatarSeed, avatar = '', muted = false, playAudio = true, speaking = false, handRaised = false, presentation = false, mirrored = false }) {
+function VideoSurface({ stream, name, avatarSeed, avatar = '', muted = false, playAudio = true, speaking = false, handRaised = false, presentation = false, mirrored = false, className = '' }) {
   const videoRef = useRef(null); const audioRef = useRef(null); const resumePlayback = useRef(null);
   const [playbackBlocked, setPlaybackBlocked] = useState(false); const [, refreshMedia] = useState(0);
   useEffect(() => {
@@ -357,7 +357,7 @@ function VideoSurface({ stream, name, avatarSeed, avatar = '', muted = false, pl
     return () => window.removeEventListener('pointerdown', unlock, true);
   }, [playbackBlocked]);
   const hasVideo = Boolean(stream?.getVideoTracks().some((track) => track.enabled && track.readyState === 'live'));
-  return <div className={`video-surface ${presentation ? 'presentation' : ''} ${mirrored ? 'mirrored' : ''} ${speaking ? 'speaking' : ''} ${hasVideo ? 'has-video' : 'audio-only-surface'}`}>
+  return <div className={`video-surface ${presentation ? 'presentation' : ''} ${mirrored ? 'mirrored' : ''} ${speaking ? 'speaking' : ''} ${hasVideo ? 'has-video' : 'audio-only-surface'} ${className}`.trim()}>
     <video className={hasVideo ? '' : 'audio-only'} ref={videoRef} autoPlay playsInline muted controls={false} disablePictureInPicture controlsList="nodownload noplaybackrate noremoteplayback" />
     <audio className="remote-audio" ref={audioRef} autoPlay controls={false} preload="auto" />
     {!hasVideo && <ConstellationAvatar className="video-avatar" seed={avatarSeed || name} name={name} src={avatar} />}
@@ -822,7 +822,7 @@ function InvitePanel({ members, onlineUserIds, meetingUserIds, onInviteMany, onC
 
 export default function MeetingStudio({ toast, user, joinRequest, onSessionChange, canCreate = false }) {
   const activeKey = `galaxy_active_meeting_${user.id}`; const resumeKey = `galaxy_resume_meeting_${user.id}`; const cropKey = `galaxy_share_crop_${user.id}`; const mediaKey = `galaxy_meeting_media_${user.id}`; const maskKey = `galaxy_privacy_masks_${user.id}`;
-  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null); const backgroundMicrophoneMode = useRef(null); const screenWakeLock = useRef(null);
+  const sourceStream = useRef(null); const sharingRef = useRef(null); const sharedAudio = useRef(null); const renderLoop = useRef(null); const connection = useRef(null); const mediaRef = useRef(new MediaStream()); const resumed = useRef(0); const resumeMediaRequested = useRef(false); const handledJoinRequest = useRef(null); const lifecycleEpoch = useRef(0); const connectSequence = useRef(0); const entrySequence = useRef(0); const entryInFlight = useRef(null); const backgroundMicrophoneMode = useRef(null); const screenWakeLock = useRef(null); const hostPeerId = useRef(null);
   const pipVideoRef = useRef(null); const pipPlaceholderRef = useRef(null);
   const collaborationGrants = useRef(new Map()); const collaborationRequestTimes = useRef(new Map()); const presentationOwner = useRef(null); const cursorTimer = useRef(null); const requestTimer = useRef(null); const collaborationEnabledRef = useRef(true);
   const chatVisibleRef = useRef(false); const messagePulseTimer = useRef(null);
@@ -969,7 +969,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
 
   const stopMedia = () => { stopMeetingStream(mediaRef.current); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
-  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
+  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; hostPeerId.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
   useEffect(() => {
     const epoch = ++lifecycleEpoch.current;
     return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); stopMeetingStream(mediaRef.current); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
@@ -987,6 +987,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     const sequence = ++connectSequence.current;
     const legacyParticipantStatus = ['ADMITTED', 'WAITING', 'INVITED', 'DENIED'].includes(access.status) ? access.status : null;
     const normalized = { ...access, role: access.role || (access.host ? 'HOST' : 'PARTICIPANT'), participantStatus: access.participantStatus || legacyParticipantStatus || (access.host ? 'ADMITTED' : null) };
+    hostPeerId.current = null;
     setMeeting(normalized); setMessages(normalized.messages || []); setUnreadMessages(0); setFloatingMessages([]); setParticipantMicsLocked(Boolean(normalized.participantMicsLocked)); collaborationEnabledRef.current = normalized.collaborationEnabled !== false; setCollaborationEnabled(normalized.collaborationEnabled !== false); rememberMeeting(normalized);
     if (normalized.participantStatus !== 'ADMITTED') { resumeMediaRequested.current = resumeMediaRequested.current || restoreMedia; setWaiting(true); setStatus('waiting'); return true; }
     let activeMedia = { mic, camera };
@@ -998,6 +999,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     client = new SupabaseMeetingConnection({
       onStatus: (value) => { if (isCurrent(client)) setStatus(value); }, onParticipants: (value) => {
         if (!isCurrent(client)) return;
+        const host = value.find((peer) => peer.userId === normalized.hostId) || value.find((peer) => peer.role === 'HOST');
+        if (host?.peerId) hostPeerId.current = host.peerId;
         if (participantSnapshotReady.current) for (const peer of value) {
           if (peer.handRaised && participantHandStates.current.get(peer.peerId) === false) announceRaisedHand(peer.name);
         }
@@ -1245,12 +1248,16 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     return () => clearTimeout(timer);
   }, [joined, meeting?.scheduledEndsAt]);
 
+  const isHostPeer = (peerId) => {
+    const peer = participants.find((item) => item.peerId === peerId);
+    return peerId === hostPeerId.current || peer?.userId === meeting?.hostId || peer?.role === 'HOST';
+  };
   const remotePresentationEntry = Object.entries(remoteStreams).find(([peerId, stream]) => {
     const peer = participants.find((item) => item.peerId === peerId);
-    return peer?.sharing && (meeting?.role === 'HOST' || peer.role === 'HOST') && stream.getVideoTracks().some((track) => track.readyState === 'live');
+    return peer?.sharing && (meeting?.role === 'HOST' || isHostPeer(peerId)) && stream.getVideoTracks().some((track) => track.readyState === 'live');
   });
   const currentPresentationOwner = sharing ? connection.current?.selfId || null : remotePresentationEntry?.[0] || null;
-  const firstRemoteVideo = Object.entries(remoteStreams).find(([peerId, stream]) => (meeting?.role === 'HOST' || participants.find((item) => item.peerId === peerId)?.role === 'HOST') && stream.getVideoTracks().some((track) => track.enabled && track.readyState === 'live'))?.[1];
+  const firstRemoteVideo = Object.entries(remoteStreams).find(([peerId, stream]) => (meeting?.role === 'HOST' || isHostPeer(peerId)) && stream.getVideoTracks().some((track) => track.enabled && track.readyState === 'live'))?.[1];
   const preferredPipStream = sharing || firstRemoteVideo || (camera && media?.getVideoTracks().some((track) => track.enabled && track.readyState === 'live') ? media : null);
   const pipMirrored = preferredPipStream === media;
   const syncPipSource = async () => {
@@ -1354,12 +1361,20 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
 
   const remoteEntries = Object.entries(remoteStreams); const isHost = meeting.role === 'HOST';
   const meetingUserIds = new Set(participants.map((participant) => participant.userId).filter(Boolean));
-  const visibleRemoteEntries = isHost ? remoteEntries : remoteEntries.filter(([peerId]) => participants.find((item) => item.peerId === peerId)?.role === 'HOST');
+  const visibleRemoteEntries = isHost ? remoteEntries : remoteEntries.filter(([peerId]) => isHostPeer(peerId));
   const remotePresentation = remotePresentationEntry;
   const presentationStream = sharing || remotePresentation?.[1];
   const presentationPeer = remotePresentation && participants.find((item) => item.peerId === remotePresentation[0]);
   const presentationSettings = presentationStream?.getVideoTracks()[0]?.getSettings?.() || {}; const presentationAspectRatio = Number(presentationSettings.aspectRatio) || (presentationSettings.width && presentationSettings.height ? presentationSettings.width / presentationSettings.height : 16 / 9);
   const canCollaborate = collaborationEnabled && (Boolean(sharing) || collaborationPermission?.presenterPeerId === currentPresentationOwner);
+  const cameraGrid = <div className={`video-grid ${isHost ? '' : 'host-only-grid'}`.trim()}>
+    <VideoSurface className={isHost ? '' : 'audience-media-preserved'} stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted mirrored speaking={localSpeaking} handRaised={handRaised} />
+    {remoteEntries.map(([peerId, stream]) => {
+      const peer = participants.find((item) => item.peerId === peerId); const visible = isHost || isHostPeer(peerId);
+      return <VideoSurface className={visible ? '' : 'audience-media-preserved'} key={peerId} stream={stream} name={isHost ? peer?.name || 'Participante' : `${peer?.name || 'Elkin'} · Anfitrión`} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />;
+    })}
+    {!isHost && !visibleRemoteEntries.length && <div className="host-stage-placeholder"><Orbit /><strong>Conectando con Elkin</strong><span>La reunión y el audio continúan conectados.</span></div>}
+  </div>;
   return <section className={`meeting-page ${mobilePanelOpen ? 'mobile-panel-open' : ''}`}>
     {mobilePanelOpen && <button className="meeting-mobile-scrim" type="button" aria-label="Cerrar chat" onClick={() => setMobilePanelOpen(false)} />}
     <button className={`mobile-chat-fab ${mobilePanelOpen ? 'active' : ''} ${messagePulse ? 'message-pulse' : ''}`} type="button" disabled={!joined} onClick={() => { setSideTab('chat'); setMobilePanelOpen((open) => !open); }}><MessageCircle /><span>{mobilePanelOpen ? 'Cerrar chat' : 'Abrir chat'}</span>{unreadMessages > 0 && <i aria-label={`${unreadMessages} mensajes sin leer`}>{unreadMessages}</i>}</button>
@@ -1372,7 +1387,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       </div>}
       <div className={`meeting-stage-shell ${sharing ? 'has-analysis-tools' : ''}`}>
       <div className="meeting-stage">
-        {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Elkin'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Elkin'} está compartiendo`}</span>{sharing && shareHasAudio && <button className={`presentation-audio-toggle ${shareAudioEnabled ? 'active' : ''}`} type="button" aria-pressed={shareAudioEnabled} title={shareAudioEnabled ? 'Silenciar sonido de la pantalla compartida' : 'Activar sonido de la pantalla compartida'} onClick={toggleSharedAudio}>{shareAudioEnabled ? <Volume2 /> : <VolumeX />}<span>{shareAudioEnabled ? 'Sonido compartido' : 'Sonido silenciado'}</span></button>}<CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} tool={sharing ? annotationTool : 'pen'} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} aspectRatio={presentationAspectRatio} onPoint={sendCollaborationPoint} onChange={updateAnnotation} onDelete={deleteAnnotation} onSelectionChange={setSelectedAnnotationId} /></> : isHost ? <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{visibleRemoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div> : visibleRemoteEntries.length ? <div className="video-grid host-only-grid">{visibleRemoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={`${peer?.name || 'Elkin'} · Anfitrión`} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div> : <div className="host-stage-placeholder"><Orbit /><strong>Esperando la pantalla de Elkin</strong><span>La reunión y el audio continúan conectados.</span></div>}
+        {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Elkin'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Elkin'} está compartiendo`}</span>{sharing && shareHasAudio && <button className={`presentation-audio-toggle ${shareAudioEnabled ? 'active' : ''}`} type="button" aria-pressed={shareAudioEnabled} title={shareAudioEnabled ? 'Silenciar sonido de la pantalla compartida' : 'Activar sonido de la pantalla compartida'} onClick={toggleSharedAudio}>{shareAudioEnabled ? <Volume2 /> : <VolumeX />}<span>{shareAudioEnabled ? 'Sonido compartido' : 'Sonido silenciado'}</span></button>}<CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} tool={sharing ? annotationTool : 'pen'} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} aspectRatio={presentationAspectRatio} onPoint={sendCollaborationPoint} onChange={updateAnnotation} onDelete={deleteAnnotation} onSelectionChange={setSelectedAnnotationId} /></> : cameraGrid}
         <RemoteAudioLayer streams={remoteStreams} onBlockedChange={setAudioBlocked} />
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
         <div className="floating-chat-layer" aria-live="polite">{floatingMessages.map((item) => <article className="floating-chat-message" key={item.id}><MessageCircle /><span><strong>{item.senderName}</strong><p>{item.body}</p></span></article>)}</div>

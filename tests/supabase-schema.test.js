@@ -68,6 +68,15 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain("lock?.release().catch(() => {})");
   });
 
+  it('keeps the host video mounted through transient presence updates', () => {
+    expect(meetingStudio).toContain("peer.userId === normalized.hostId");
+    expect(meetingStudio).toContain("peerId === hostPeerId.current");
+    expect(meetingStudio).toContain("remoteEntries.map(([peerId, stream])");
+    expect(meetingStudio).toContain("className={visible ? '' : 'audience-media-preserved'}");
+    expect(meetingStyles).toContain('.audience-media-preserved');
+    expect(meetingStyles).not.toContain("transparent 48%),#09070c");
+  });
+
   it('updates the admin user list on registration and shows live presence', () => {
     expect(schema).toContain('alter publication supabase_realtime add table public.profiles');
     expect(api).toContain('onAdminUserCreated(callback)');
