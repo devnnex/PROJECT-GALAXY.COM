@@ -1,5 +1,4 @@
 -- PROJECT GALAXY · Supabase/PostgreSQL schema
--- Proyecto objetivo: xdsqtuubsptpzwadecha
 -- Ejecutar completo en Supabase Dashboard > SQL Editor después de cada actualización del esquema.
 -- Es idempotente para objetos y políticas; conserva los datos de negocio y limpia
 -- únicamente chats de reuniones finalizadas, según la política de retención.
@@ -144,14 +143,6 @@ create table if not exists public.galaxy_store_products (
   updated_at timestamptz not null default now()
 );
 
--- Existing accounts keep the complete experience. Accounts created from new
--- invitations receive their category and initial visibility rules when the
--- invitation is consumed.
-alter table public.profiles add column if not exists user_kind text not null default 'PREMIUM'
-  check (user_kind in ('PREMIUM','NEW','GALACTIC'));
-alter table public.profiles add column if not exists section_permissions jsonb not null default
-  '{"dashboard":false,"discover":false,"marketplace":true,"store":true,"meetings":true,"calendar":true,"messages":true,"wallet":true,"orders":true,"profile":true,"promotions":true}'::jsonb;
-
 insert into public.digital_products(code,name,description,price_usd,storage_bucket,storage_path,sort_order) values
   ('SCANNER_POWER_ELITE','Scanner Power Elite','Indicador privado para TradingView entregado como archivo Pine Script. Promoción recurrente renovada cada 24 horas.',650,'premium-downloads','SCANNER-POWER-ELITE.pine',1)
 on conflict (code) do update set name=excluded.name,description=excluded.description,price_usd=excluded.price_usd,
@@ -282,13 +273,6 @@ create table if not exists public.user_session_state (
   conflict_until timestamptz,
   updated_at timestamptz not null default now()
 );
-
--- Clear conflict windows created by the previous session implementation. The
--- active session id alone now decides ownership, so a new login never revokes
--- Realtime access from both browsers at the same time.
-update public.user_session_state
-set conflict_until=null,updated_at=now()
-where conflict_until is not null;
 
 create table if not exists public.calendar_events (
   id uuid primary key default gen_random_uuid(),
@@ -482,18 +466,17 @@ begin
   end if;
   insert into public.user_session_state(user_id) values(v_user) on conflict(user_id) do nothing;
   select * into v_state from public.user_session_state where user_id=v_user for update;
+  if v_state.conflict_until is not null and v_state.conflict_until>now() then
+    return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',v_state.conflict_until);
+  end if;
   if v_state.active_session_id is null or v_state.active_session_id=v_session
     or v_state.last_seen_at is null or v_state.last_seen_at<now()-interval '75 seconds' then
     update public.user_session_state set active_session_id=v_session,last_seen_at=now(),conflict_until=null,updated_at=now() where user_id=v_user;
     return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status,'singleSessionExempt',false);
   end if;
-  -- An explicit login or reload takes ownership immediately. The previous
-  -- browser is rejected by heartbeat, while the entering user is never placed
-  -- into a conflict window that would also invalidate Realtime meeting RLS.
-  update public.user_session_state set active_session_id=v_session,last_seen_at=now(),
-    conflict_until=null,updated_at=now() where user_id=v_user;
-  return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status,
-    'singleSessionExempt',false,'replacedPreviousSession',true);
+  update public.user_session_state set active_session_id=null,last_seen_at=null,
+    conflict_until=now()+interval '30 seconds',updated_at=now() where user_id=v_user;
+  return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',now()+interval '30 seconds');
 end; $$;
 
 create or replace function public.heartbeat_user_session() returns jsonb
@@ -504,13 +487,15 @@ declare
 begin
   if v_user is null or v_session is null then raise exception 'Inicia sesion para continuar.' using errcode='P0001'; end if;
   select * into v_profile from public.profiles where id=v_user;
-  if v_profile.id is null then raise exception 'Tu perfil no esta disponible.' using errcode='P0001'; end if;
   if v_profile.role='ADMIN' then return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status); end if;
   select * into v_state from public.user_session_state where user_id=v_user for update;
-  if v_state.user_id is null or v_state.active_session_id is distinct from v_session then
+  if v_state.conflict_until is not null and v_state.conflict_until>now() then
+    return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',v_state.conflict_until);
+  end if;
+  if v_state.active_session_id is distinct from v_session then
     return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status);
   end if;
-  update public.user_session_state set last_seen_at=now(),conflict_until=null,updated_at=now() where user_id=v_user;
+  update public.user_session_state set last_seen_at=now(),updated_at=now() where user_id=v_user;
   return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status);
 end; $$;
 
@@ -518,7 +503,7 @@ create or replace function public.release_user_session() returns jsonb
 language plpgsql security definer set search_path=public,auth as $$
 declare v_user uuid:=auth.uid(); v_session uuid:=nullif(auth.jwt()->>'session_id','')::uuid;
 begin
-  update public.user_session_state set active_session_id=null,last_seen_at=null,conflict_until=null,updated_at=now()
+  update public.user_session_state set active_session_id=null,last_seen_at=null,updated_at=now()
   where user_id=v_user and active_session_id=v_session;
   return jsonb_build_object('released',found);
 end; $$;
@@ -532,7 +517,7 @@ begin
   if v_user is null then raise exception 'Inicia sesion para continuar.' using errcode='P0001'; end if;
   select role into v_role from public.profiles where id=v_user;
   if v_role='ADMIN' then return v_user; end if;
-  select active_session_id=v_session into v_valid
+  select active_session_id=v_session and (conflict_until is null or conflict_until<=now()) into v_valid
   from public.user_session_state where user_id=v_user;
   if not coalesce(v_valid,false) then raise exception 'GALAXY_DUPLICATE_SESSION' using errcode='P0001'; end if;
   return v_user;
@@ -550,9 +535,10 @@ end; $$;
 
 create or replace function public.is_current_session_valid() returns boolean
 language sql stable security definer set search_path=public,auth as $$
-  select exists(select 1 from public.profiles p where p.id=auth.uid() and p.role='ADMIN' and p.status='ACTIVE') or exists(
+  select exists(select 1 from public.profiles p where p.id=auth.uid() and p.role='ADMIN') or exists(
     select 1 from public.user_session_state s where s.user_id=auth.uid()
       and s.active_session_id=nullif(auth.jwt()->>'session_id','')::uuid
+      and (s.conflict_until is null or s.conflict_until<=now())
   );
 $$;
 
@@ -822,7 +808,6 @@ create or replace function public.get_current_user() returns jsonb
 language sql stable security definer set search_path = public, auth as $$
   select jsonb_build_object('id', p.id, 'name', p.name, 'username', p.username, 'email', u.email,
     'avatar',p.avatar,'bio', p.bio, 'role', p.role, 'level', p.level, 'xp', p.xp, 'status', p.status,
-    'userKind',p.user_kind,'sectionPermissions',p.section_permissions,
     'createdAt', p.created_at, 'emailVerified', u.email_confirmed_at is not null,
     'membership',public.membership_view(p.id),
     'wallet',coalesce((select jsonb_build_object('availableBalance',w.available_balance,'pendingBalance',w.pending_balance,
@@ -836,7 +821,6 @@ language sql stable security definer set search_path=public,auth as $$
   with admin as (select public.require_admin() id)
   select coalesce(jsonb_agg(jsonb_build_object(
     'id',p.id,'name',p.name,'username',p.username,'email',u.email,'avatar',p.avatar,'membership',public.membership_view(p.id),'role',p.role,'status',p.status,
-    'userKind',p.user_kind,'sectionPermissions',p.section_permissions,
     'createdAt',p.created_at,'lastSeenAt',s.last_seen_at,'sessionActive',s.active_session_id is not null and s.last_seen_at>now()-interval '75 seconds'
   ) order by case when p.role='ADMIN' then 0 else 1 end,p.created_at desc),'[]'::jsonb)
   from public.profiles p join auth.users u on u.id=p.id cross join admin
@@ -854,49 +838,6 @@ begin
   update public.profiles set status=case when coalesce(p_active,false) then 'ACTIVE' else 'SUSPENDED' end
   where id=p_user_id returning * into v_profile;
   return jsonb_build_object('id',v_profile.id,'status',v_profile.status,'active',v_profile.status='ACTIVE');
-end; $$;
-
-create or replace function public.update_admin_user(
-  p_user_id uuid,p_name text,p_username text,p_user_kind text,p_section_permissions jsonb
-) returns jsonb
-language plpgsql security definer set search_path=public,auth as $$
-declare
-  v_admin uuid:=public.require_admin(); v_profile public.profiles;
-  v_name text:=trim(coalesce(p_name,'')); v_username text:=lower(trim(coalesce(p_username,'')));
-  v_kind text:=upper(trim(coalesce(p_user_kind,''))); v_permissions jsonb:=coalesce(p_section_permissions,'{}'::jsonb);
-begin
-  if p_user_id=v_admin or exists(select 1 from public.profiles where id=p_user_id and role='ADMIN') then
-    raise exception 'No puedes modificar esa cuenta administrativa.' using errcode='P0001';
-  end if;
-  if char_length(v_name) not between 2 and 100 then raise exception 'El nombre debe tener entre 2 y 100 caracteres.' using errcode='P0001'; end if;
-  if v_username !~ '^[a-z0-9_]{3,32}$' then raise exception 'El usuario debe tener entre 3 y 32 caracteres: letras minúsculas, números o guion bajo.' using errcode='P0001'; end if;
-  if v_kind not in ('PREMIUM','NEW','GALACTIC') then raise exception 'Selecciona una categoría válida.' using errcode='P0001'; end if;
-  if jsonb_typeof(v_permissions)<>'object' or exists(
-    select 1 from jsonb_object_keys(v_permissions) as permission_keys(permission_key)
-    where permission_key not in ('dashboard','discover','marketplace','store','meetings','calendar','messages','wallet','orders','profile','promotions')
-  ) then raise exception 'Los permisos de secciones no son válidos.' using errcode='P0001'; end if;
-  begin
-    update public.profiles set name=v_name,username=v_username,user_kind=v_kind,
-      section_permissions=jsonb_build_object(
-        'dashboard',coalesce((v_permissions->>'dashboard')::boolean,false),
-        'discover',coalesce((v_permissions->>'discover')::boolean,false),
-        'marketplace',coalesce((v_permissions->>'marketplace')::boolean,false),
-        'store',coalesce((v_permissions->>'store')::boolean,false),
-        'meetings',coalesce((v_permissions->>'meetings')::boolean,false),
-        'calendar',coalesce((v_permissions->>'calendar')::boolean,false),
-        'messages',coalesce((v_permissions->>'messages')::boolean,false),
-        'wallet',coalesce((v_permissions->>'wallet')::boolean,false),
-        'orders',coalesce((v_permissions->>'orders')::boolean,false),
-        'profile',coalesce((v_permissions->>'profile')::boolean,false),
-        'promotions',coalesce((v_permissions->>'promotions')::boolean,false)
-      )
-    where id=p_user_id and role<>'ADMIN' returning * into v_profile;
-  exception when unique_violation then
-    raise exception 'Ese nombre de usuario ya está en uso.' using errcode='P0001';
-  end;
-  if v_profile.id is null then raise exception 'No encontramos ese usuario.' using errcode='P0001'; end if;
-  return jsonb_build_object('id',v_profile.id,'name',v_profile.name,'username',v_profile.username,
-    'userKind',v_profile.user_kind,'sectionPermissions',v_profile.section_permissions);
 end; $$;
 
 create or replace function public.update_profile(p_name text,p_username text,p_bio text default '') returns jsonb
@@ -1360,6 +1301,9 @@ begin
   if not exists(select 1 from public.meetings where id=p_meeting_id and host_id=v_host and status='ACTIVE') then raise exception 'Solo el anfitrión puede invitar.' using errcode='P0001'; end if;
   select * into v_profile from public.profiles where id=p_user_id and status='ACTIVE'; if v_profile.id is null or p_user_id=v_host then raise exception 'No encontramos a ese usuario activo.' using errcode='P0001'; end if;
   if not public.has_active_membership(p_user_id) then raise exception 'Ese usuario necesita una cuenta activa para recibir invitaciones.' using errcode='P0001'; end if;
+  if exists(select 1 from public.meeting_participants where meeting_id=p_meeting_id and user_id=p_user_id and status='ADMITTED') then
+    raise exception 'Ese usuario ya se encuentra dentro de la reunión.' using errcode='P0001';
+  end if;
   select * into v_invite from public.meeting_invitations where meeting_id=p_meeting_id and invitee_id=p_user_id;
   if v_invite.id is not null and v_invite.status='PENDING' then
     return jsonb_build_object('id',v_invite.id,'userId',p_user_id,'name',v_profile.name,'status','PENDING',
@@ -1606,13 +1550,13 @@ grant execute on function public.confirm_crypto_payment(uuid,text,integer,numeri
 grant execute on function public.get_turn_provider_config() to service_role;
 
 revoke execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),
-  public.require_admin(),public.is_current_session_valid(),public.get_admin_users(),public.set_user_access(uuid,boolean),public.update_admin_user(uuid,text,text,text,jsonb),
+  public.require_admin(),public.is_current_session_valid(),public.get_admin_users(),public.set_user_access(uuid,boolean),
   public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),public.set_meeting_collaboration_enabled(uuid,boolean),
   public.cleanup_old_calendar_events(),public.get_calendar_events(timestamptz,timestamptz),
   public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
 from public,anon,authenticated;
 grant execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),public.is_current_session_valid(),
-  public.get_admin_users(),public.set_user_access(uuid,boolean),public.update_admin_user(uuid,text,text,text,jsonb),
+  public.get_admin_users(),public.set_user_access(uuid,boolean),
   public.create_meeting_share_link(uuid),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),public.set_meeting_collaboration_enabled(uuid,boolean),
   public.get_calendar_events(timestamptz,timestamptz),
   public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)

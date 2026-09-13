@@ -79,21 +79,21 @@ export function InvitationForm({ users, toast, onClose }) {
     return () => { modal.close(); previousFocus?.focus(); };
   }, []);
   const [plans, setPlans] = useState([]); const [email, setEmail] = useState('');
-  const [planCode, setPlanCode] = useState(''); const [referrerId, setReferrerId] = useState(''); const [userKind, setUserKind] = useState('NEW');
+  const [planCode, setPlanCode] = useState(''); const [referrerId, setReferrerId] = useState('');
   const [busy, setBusy] = useState(false); const [sent, setSent] = useState(null);
   useEffect(() => { api.getMembershipCenter().then(data => { setPlans(data.plans); setPlanCode(data.plans[0]?.code || ''); }).catch(error => toast(error.message, 'error')); }, []);
   const plan = plans.find(item => item.code === planCode);
   const submit = async event => {
     event.preventDefault(); setBusy(true); setSent(null);
-    try { const result = await api.inviteUser({ email, planCode, referrerId: userKind === 'NEW' ? '' : referrerId, userKind }); setSent({ email, ...result }); setEmail(''); toast('Invitación enviada.'); }
+    try { const result = await api.inviteUser({ email, planCode, referrerId }); setSent({ email, ...result }); setEmail(''); toast('Invitación enviada.'); }
     catch (error) { toast(error.message, 'error'); } finally { setBusy(false); }
   };
   return createPortal(<dialog ref={dialog} className="invitation-dialog" aria-labelledby="invitation-title" aria-describedby="invitation-description" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }} onClick={event => { if (event.target === dialog.current && !busy) { const bounds = dialog.current.getBoundingClientRect(); if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) onClose(); } }}>
     <section className="registration-panel invitation-glass"><header className="invitation-heading"><span className="invitation-symbol"><MailPlus size={24} /></span><button type="button" className="invitation-close" disabled={busy} onClick={onClose} aria-label="Cerrar invitación"><X size={20} /></button></header><p className="eyebrow">ACCESO A GALAXY</p><h2 id="invitation-title">Una nueva conexión.</h2><p id="invitation-description">Invita a un miembro y personaliza su acceso. Su enlace será válido durante 7 minutos.</p>
     <form onSubmit={submit}><label>Correo electrónico<input autoFocus required type="email" placeholder="nombre@correo.com" maxLength={254} value={email} onChange={e => setEmail(e.target.value)} /></label>
-      <label>Tipo de usuario<select required value={userKind} onChange={e => setUserKind(e.target.value)}><option value="NEW">Nuevo · invitado a reunión gratis</option><option value="GALACTIC">Usuario Galáctico · acceso completo</option></select></label>
-      {userKind === 'GALACTIC' && <><label>Membresía y badge<select required value={planCode} onChange={e => setPlanCode(e.target.value)}>{plans.map(item => <option value={item.code} key={item.code}>{MEMBERSHIP_EMOJI[item.code]} {item.name} · {amount(item.priceUsd)} USDT · {item.durationMonths} meses</option>)}</select></label><label>Referido por<select value={referrerId} onChange={e => setReferrerId(e.target.value)}><option value="">Sin referido</option>{users.filter(item => item.status === 'ACTIVE').map(item => <option key={item.id} value={item.id}>{item.name} · {item.email}</option>)}</select></label></>}
-      <p>{userKind === 'NEW' ? 'Invitación gratuita: entra directamente a reuniones y no ve áreas comerciales ni publicidad hasta que las habilites en Usuarios.' : <>{referrerId ? `${amount(Number(plan?.priceUsd || 0) * 0.1)} USDT de comisión inmediata al referente. ` : 'No se genera comisión por referido. '}El ingreso restante se acredita al completar el registro.</>}</p>
+      <label>Membresía y badge<select required value={planCode} onChange={e => setPlanCode(e.target.value)}>{plans.map(item => <option value={item.code} key={item.code}>{MEMBERSHIP_EMOJI[item.code]} {item.name} · {amount(item.priceUsd)} USDT · {item.durationMonths} meses</option>)}</select></label>
+      <label>Referido por<select value={referrerId} onChange={e => setReferrerId(e.target.value)}><option value="">Sin referido</option>{users.filter(item => item.status === 'ACTIVE').map(item => <option key={item.id} value={item.id}>{item.name} · {item.email}</option>)}</select></label>
+      <p>Al enviarse: {referrerId ? `${amount(Number(plan?.priceUsd || 0) * 0.1)} USDT de comisión inmediata al referente. ` : 'No se genera comisión por referido. '}El ingreso restante se acredita al completar el registro.</p>
       <footer className="invitation-actions"><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Cerrar</button><button className="primary-button" disabled={busy || !planCode}><Send size={16} />{busy ? 'Enviando…' : 'Enviar invitación'}</button></footer>
     </form>{sent && <p role="status">Enviada a {sent.email}. {Number(sent.commissionAmount || 0) > 0 && `Comisión de ${amount(sent.commissionAmount)} USDT acreditada. `}Vence el {date(sent.expiresAt)}.</p>}
   </section></dialog>, document.body);

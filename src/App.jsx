@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, ArrowRight, Bell, Bookmark, Boxes, CalendarDays, Check, ChevronDown, CircleDollarSign,
   Clock3, Compass, Copy, CreditCard, Eye, EyeOff, Heart, Home, KeyRound, Languages, LayoutGrid, LockKeyhole,
@@ -33,11 +33,6 @@ const navigation = [
   ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['users', 'Usuarios', Users], ['profile', 'Perfil', User],
 ];
 const memberNavigation = navigation.filter(([id]) => ['marketplace', 'store', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id));
-const sectionAccessOptions = [
-  ['marketplace', 'Marketplace'], ['store', 'Galaxy Store'], ['meetings', 'Reuniones'], ['calendar', 'Calendario'], ['messages', 'Mensajes'], ['wallet', 'Wallet'],
-  ['orders', 'Órdenes'], ['profile', 'Perfil'], ['promotions', 'Imágenes publicitarias'],
-];
-const fullSectionAccess = Object.fromEntries(sectionAccessOptions.map(([id]) => [id, true]));
 
 const navigationEnglish = {
   dashboard: 'Home', discover: 'Discover', marketplace: 'Marketplace', store: 'Galaxy Store', meetings: 'Meetings',
@@ -54,28 +49,9 @@ const membershipMarketplacePlans = [
 ];
 
 function PromotionImageModal({ image, alt, onClose, className = '' }) {
-  const [ready, setReady] = useState(false);
-  useEffect(() => {
-    let active = true;
-    const preloader = new Image();
-    const isChromeMobile = /(?:Android.*Chrome\/|CriOS\/)/i.test(navigator.userAgent)
-      && !/(?:EdgA\/|OPR\/|SamsungBrowser\/)/i.test(navigator.userAgent);
-    const reveal = async () => {
-      if (isChromeMobile && typeof preloader.decode === 'function') {
-        try { await preloader.decode(); } catch { /* onload still confirms a valid image */ }
-      }
-      if (active && preloader.naturalWidth > 0) setReady(true);
-    };
-    preloader.onload = reveal;
-    preloader.onerror = () => { if (active) onClose(); };
-    preloader.src = image;
-    if (preloader.complete && preloader.naturalWidth > 0) reveal();
-    return () => { active = false; preloader.onload = null; preloader.onerror = null; };
-  }, [image]);
-  if (!ready) return null;
   return <div className={`promotion-image-backdrop ${className}`} role="dialog" aria-modal="true" aria-label={alt}>
     <div className="promotion-image-modal">
-      <img src={image} alt={alt} onError={onClose} />
+      <img src={image} alt={alt} />
       <button className="promotion-image-close" type="button" onClick={onClose} aria-label="Cerrar"><X /></button>
     </div>
   </div>;
@@ -83,7 +59,7 @@ function PromotionImageModal({ image, alt, onClose, className = '' }) {
 
 function Brand() { return <div className="brand"><span className="brand-mark"><Orbit /></span><span>{CONFIG.APP_NAME}</span></div>; }
 
-function Toast({ item }) { return item && <div className={`toast ${item.kind || ''}`} role="status"><span className="toast-orbit"><Check /></span><div><strong>{item.kind === 'error' ? 'Revisa esta acción' : item.kind === 'success' ? 'Reunión actualizada' : 'Sistema actualizado'}</strong><p>{item.message}</p></div></div>; }
+function Toast({ item }) { return item && <div className={`toast ${item.kind || ''}`} role="status"><span className="toast-orbit"><Check /></span><div><strong>{item.kind === 'error' ? 'Revisa esta acción' : 'Sistema actualizado'}</strong><p>{item.message}</p></div></div>; }
 
 function Landing({ onEnter }) {
   return <main className="landing">
@@ -200,20 +176,18 @@ function ProfileEditor({ user, onClose, onSaved }) {
   </section></div>;
 }
 
-function ProfilePage({ user, toast, onUserChange, navigate, membership, showMembership = true }) {
+function ProfilePage({ user, toast, onUserChange, navigate, membership }) {
   const [editing, setEditing] = useState(false);
   const language = languageFor(user); const english = language === 'en';
   const level = Number(user.level || 1); const xp = Number(user.xp || 0);
   const memberSince = user.createdAt ? new Intl.DateTimeFormat(english ? 'en-US' : 'es-CO', { month: 'short', year: 'numeric' }).format(new Date(user.createdAt)) : english ? 'No date' : 'Sin fecha';
   const save = async (values, avatarChange) => { const { language: nextLanguage, ...profile } = values; let updated = await api.updateProfile(profile); if (nextLanguage !== languageFor(user)) updated = await api.setInterfaceLanguage(nextLanguage); if (avatarChange.file) updated = await api.uploadProfileAvatar(avatarChange.file); else if (avatarChange.remove && user.avatar) updated = await api.removeProfileAvatar(); onUserChange(updated); toast(nextLanguage === 'en' ? 'Your profile was updated.' : 'Tu perfil se actualizó correctamente.'); };
-  return <div className="page-stack"><div className="profile-cover"><NeuralCanvas compact /><ConstellationAvatar className="profile-avatar" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /></div><header className="profile-head"><div><h1>{user.name}</h1><p>@{user.username} · {english ? 'Level' : 'Nivel'} {level}</p><p className={`profile-bio ${user.bio ? '' : 'muted'}`}>{user.bio || (english ? 'You have not added a bio yet.' : 'Aún no has agregado una biografía.')}</p></div><button className="secondary-button" onClick={() => setEditing(true)}><Settings /> {english ? 'Edit profile' : 'Editar perfil'}</button></header>{showMembership && <MembershipProfileCard membership={membership || user.membership} onRenew={() => navigate('marketplace')} />}<div className="profile-stats"><div><strong>{level}</strong><span>{english ? 'Current level' : 'Nivel real'}</span></div><div><strong>{xp}</strong><span>{english ? 'Total XP' : 'XP acumulados'}</span></div><div><strong>{memberSince}</strong><span>{english ? 'Member since' : 'Miembro desde'}</span></div><div><strong>{user.status === 'ACTIVE' ? (english ? 'Active' : 'Activa') : user.status}</strong><span>{english ? 'Account status' : 'Estado de cuenta'}</span></div></div><div className="dashboard-grid profile-data-grid"><section className="surface"><div className="section-title"><div><p className="eyebrow">{english ? 'REAL PROGRESS' : 'PROGRESO REAL'}</p><h2>{english ? 'Journey' : 'Trayectoria'}</h2></div></div><div className="profile-level-value"><span>{english ? 'LEVEL' : 'NIVEL'}</span><strong>{level}</strong></div><p>{xp} {english ? 'XP registered in your account.' : 'XP registrados en tu cuenta.'}</p>{xp === 0 && <p className="muted">{english ? 'Your journey starts here. Progress will appear when verified actions award XP.' : 'Tu trayectoria comienza aquí. El progreso aparecerá cuando existan acciones verificadas que otorguen XP.'}</p>}</section><section className="surface constellation-card"><div className="section-title"><div><p className="eyebrow">{english ? 'VISUAL IDENTITY' : 'IDENTIDAD VISUAL'}</p><h2>{user.avatar ? (english ? 'Your profile photo' : 'Tu foto de perfil') : (english ? 'Your constellation' : 'Tu constelación')}</h2></div></div><ConstellationAvatar seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><p>{user.avatar ? (english ? 'Your chosen image identifies your account in the community.' : 'Tu imagen elegida identifica tu cuenta dentro de la comunidad.') : (english ? 'Your constellation is your visual identity until you choose a profile photo.' : 'Tu constelación se muestra como identidad visual hasta que elijas una foto de perfil.')}</p></section></div>{editing && <ProfileEditor user={user} onClose={() => setEditing(false)} onSaved={save} />}</div>;
+  return <div className="page-stack"><div className="profile-cover"><NeuralCanvas compact /><ConstellationAvatar className="profile-avatar" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /></div><header className="profile-head"><div><h1>{user.name}</h1><p>@{user.username} · {english ? 'Level' : 'Nivel'} {level}</p><p className={`profile-bio ${user.bio ? '' : 'muted'}`}>{user.bio || (english ? 'You have not added a bio yet.' : 'Aún no has agregado una biografía.')}</p></div><button className="secondary-button" onClick={() => setEditing(true)}><Settings /> {english ? 'Edit profile' : 'Editar perfil'}</button></header><MembershipProfileCard membership={membership || user.membership} onRenew={() => navigate('marketplace')} /><div className="profile-stats"><div><strong>{level}</strong><span>{english ? 'Current level' : 'Nivel real'}</span></div><div><strong>{xp}</strong><span>{english ? 'Total XP' : 'XP acumulados'}</span></div><div><strong>{memberSince}</strong><span>{english ? 'Member since' : 'Miembro desde'}</span></div><div><strong>{user.status === 'ACTIVE' ? (english ? 'Active' : 'Activa') : user.status}</strong><span>{english ? 'Account status' : 'Estado de cuenta'}</span></div></div><div className="dashboard-grid profile-data-grid"><section className="surface"><div className="section-title"><div><p className="eyebrow">{english ? 'REAL PROGRESS' : 'PROGRESO REAL'}</p><h2>{english ? 'Journey' : 'Trayectoria'}</h2></div></div><div className="profile-level-value"><span>{english ? 'LEVEL' : 'NIVEL'}</span><strong>{level}</strong></div><p>{xp} {english ? 'XP registered in your account.' : 'XP registrados en tu cuenta.'}</p>{xp === 0 && <p className="muted">{english ? 'Your journey starts here. Progress will appear when verified actions award XP.' : 'Tu trayectoria comienza aquí. El progreso aparecerá cuando existan acciones verificadas que otorguen XP.'}</p>}</section><section className="surface constellation-card"><div className="section-title"><div><p className="eyebrow">{english ? 'VISUAL IDENTITY' : 'IDENTIDAD VISUAL'}</p><h2>{user.avatar ? (english ? 'Your profile photo' : 'Tu foto de perfil') : (english ? 'Your constellation' : 'Tu constelación')}</h2></div></div><ConstellationAvatar seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><p>{user.avatar ? (english ? 'Your chosen image identifies your account in the community.' : 'Tu imagen elegida identifica tu cuenta dentro de la comunidad.') : (english ? 'Your constellation is your visual identity until you choose a profile photo.' : 'Tu constelación se muestra como identidad visual hasta que elijas una foto de perfil.')}</p></section></div>{editing && <ProfileEditor user={user} onClose={() => setEditing(false)} onSaved={save} />}</div>;
 }
 
 function AdminUsersPage({ toast }) {
   const [inviting, setInviting] = useState(false);
   const [deleting, setDeleting] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [userFilter, setUserFilter] = useState('ALL'); const [userQuery, setUserQuery] = useState('');
   const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [users, setUsers] = useState([]); const [loading, setLoading] = useState(true); const [busyId, setBusyId] = useState('');
   const load = async (showLoading = true) => { if (showLoading) setLoading(true); try { setUsers(await api.getAdminUsers()); } catch (error) { toast(error.message, 'error'); } finally { if (showLoading) setLoading(false); } };
@@ -235,30 +209,16 @@ function AdminUsersPage({ toast }) {
       toast(active ? `${account.name} ya puede acceder.` : `Acceso suspendido para ${account.name}.`);
     } catch (error) { toast(error.message, 'error'); } finally { setBusyId(''); }
   };
-  const visibleUsers = users.filter((account) => {
-    const categoryMatches = userFilter === 'ALL' || account.userKind === userFilter;
-    const searchable = `${account.name} ${account.username} ${account.email}`.toLowerCase();
-    return categoryMatches && searchable.includes(userQuery.trim().toLowerCase());
-  });
   return <div className="page-stack admin-users-page"><header className="page-header"><div><p className="eyebrow">CONTROL DE ACCESO</p><h1>Usuarios</h1><p>Activa o suspende cuentas y revisa si mantienen una sesión vigente.</p></div><div className="admin-users-actions"><button className="secondary-button" onClick={load} disabled={loading}>Actualizar</button><button className="primary-button" onClick={() => setInviting(true)}><Plus size={17} /> Crear invitación</button></div></header>
     {deleting && <DeleteUserDialog account={deleting} onClose={() => setDeleting(null)} onDeleted={account => { setUsers(items => items.filter(item => item.id !== account.id)); setDeleting(null); toast('Usuario eliminado.'); }} />}
     {inviting && <InvitationForm users={users} toast={toast} onClose={() => setInviting(false)} />}
-    {editing && <AdminUserEditor account={editing} toast={toast} onClose={() => setEditing(null)} onSaved={(updated) => { setUsers((items) => items.map((item) => item.id === updated.id ? { ...item, ...updated } : item)); setEditing(null); }} />}
-    <section className="admin-users-filters" aria-label="Filtros de usuarios"><label className="search-field"><Search /><input value={userQuery} onChange={(event) => setUserQuery(event.target.value)} placeholder="Buscar por nombre, usuario o correo…" /></label><div role="group" aria-label="Categoría">{[['ALL','Todos'],['NEW','Nuevos'],['PREMIUM','Premium'],['GALACTIC','Galácticos']].map(([value,label]) => <button className={userFilter === value ? 'active' : ''} onClick={() => setUserFilter(value)} key={value}>{label}</button>)}</div></section>
     <section className="surface admin-users-table"><div className="table-head"><span>USUARIO</span><span>ROL</span><span>SESIÓN</span><span>ACCESO</span><span>CONTROL</span></div>
-      {visibleUsers.map((account) => {
+      {users.map((account) => {
         const online = onlineUserIds.has(account.id);
-        return <div className={`admin-user-row ${account.status !== 'ACTIVE' ? 'suspended' : ''}`} key={account.id}><span className="admin-user-identity"><span className="admin-user-avatar-shell" title={online ? 'Conectado ahora' : 'Desconectado'}><ConstellationAvatar className="avatar avatar-sm" seed={account.id} name={account.name} src={account.avatar} membership={account.membership} /><i className={`admin-user-presence-dot ${online ? 'online' : ''}`} role="status" aria-label={online ? `${account.name} está conectado` : `${account.name} está desconectado`} /></span><span><strong>{account.name}</strong><small>{account.email}</small><small className={`user-kind kind-${(account.userKind || 'PREMIUM').toLowerCase()}`}>{account.role === 'ADMIN' ? 'PROPIETARIO' : account.userKind === 'NEW' ? 'NUEVO' : account.userKind === 'GALACTIC' ? 'GALÁCTICO' : 'PREMIUM'}</small></span></span><span>{account.role === 'ADMIN' ? 'Administrador' : 'Miembro'}</span><span>{account.role === 'ADMIN' ? 'Sin límite' : account.sessionActive ? 'Activa' : 'Cerrada'}</span><span className={`account-state ${account.status.toLowerCase()}`}>{account.status === 'ACTIVE' ? 'Permitido' : 'Suspendido'}</span><span className="admin-user-controls"><label className="access-toggle"><input type="checkbox" checked={account.status === 'ACTIVE'} disabled={account.role === 'ADMIN' || busyId === account.id} onChange={() => toggle(account)} /><span /><em>{account.role === 'ADMIN' ? 'Protegido' : account.status === 'ACTIVE' ? 'Quitar acceso' : 'Dar acceso'}</em></label>{account.role !== 'ADMIN' && <><button className="text-button" disabled={busyId === account.id} onClick={() => setEditing(account)}><Settings size={14} /> Editar y limitar</button><button className="text-button delete-account" disabled={busyId === account.id} onClick={() => setDeleting(account)}><Trash2 size={14} /> Eliminar</button></>}</span></div>;
+        return <div className={`admin-user-row ${account.status !== 'ACTIVE' ? 'suspended' : ''}`} key={account.id}><span className="admin-user-identity"><span className="admin-user-avatar-shell" title={online ? 'Conectado ahora' : 'Desconectado'}><ConstellationAvatar className="avatar avatar-sm" seed={account.id} name={account.name} src={account.avatar} membership={account.membership} /><i className={`admin-user-presence-dot ${online ? 'online' : ''}`} role="status" aria-label={online ? `${account.name} está conectado` : `${account.name} está desconectado`} /></span><span><strong>{account.name}</strong><small>{account.email}</small></span></span><span>{account.role === 'ADMIN' ? 'Administrador' : 'Miembro'}</span><span>{account.role === 'ADMIN' ? 'Sin límite' : account.sessionActive ? 'Activa' : 'Cerrada'}</span><span className={`account-state ${account.status.toLowerCase()}`}>{account.status === 'ACTIVE' ? 'Permitido' : 'Suspendido'}</span><label className="access-toggle"><input type="checkbox" checked={account.status === 'ACTIVE'} disabled={account.role === 'ADMIN' || busyId === account.id} onChange={() => toggle(account)} /><span /><em>{account.role === 'ADMIN' ? 'Protegido' : account.status === 'ACTIVE' ? 'Quitar acceso' : 'Dar acceso'}</em></label>{account.role !== 'ADMIN' && <button className="text-button delete-account" disabled={busyId === account.id} onClick={() => setDeleting(account)}><Trash2 size={14} /> Eliminar</button>}</div>;
       })}
-      {!loading && !visibleUsers.length && <EmptyState icon={Users} title="No hay coincidencias" text="Prueba otro filtro o término de búsqueda." />}
+      {!loading && !users.length && <EmptyState icon={Users} title="No hay usuarios" text="Las cuentas registradas aparecerán aquí." />}
     </section></div>;
-}
-
-function AdminUserEditor({ account, toast, onClose, onSaved }) {
-  const [form, setForm] = useState({ name: account.name, username: account.username, userKind: account.userKind || 'PREMIUM', sectionPermissions: { ...fullSectionAccess, ...(account.sectionPermissions || {}) } });
-  const [busy, setBusy] = useState(false); const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
-  const submit = async (event) => { event.preventDefault(); setBusy(true); try { const updated = await api.updateAdminUser({ userId: account.id, ...form }); onSaved(updated); toast(`Información y accesos de ${updated.name} actualizados.`); } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); } };
-  return <div className="modal-backdrop" onMouseDown={() => !busy && onClose()}><section className="admin-user-editor glass" role="dialog" aria-modal="true" aria-labelledby="admin-user-editor-title" onMouseDown={(event) => event.stopPropagation()}><button className="icon-button modal-close" type="button" disabled={busy} onClick={onClose} aria-label="Cerrar"><X /></button><p className="eyebrow">VISIBILIDAD INDIVIDUAL</p><h2 id="admin-user-editor-title">Editar usuario</h2><p className="muted">{account.email}</p><form onSubmit={submit}><div className="field-row"><label>Nombre<input required minLength="2" maxLength="100" value={form.name} onChange={(event) => update('name', event.target.value)} /></label><label>Usuario<input required minLength="3" maxLength="32" value={form.username} onChange={(event) => update('username', event.target.value.toLowerCase())} /></label></div><label>Categoría<select value={form.userKind} onChange={(event) => update('userKind', event.target.value)}><option value="NEW">Nuevo</option><option value="GALACTIC">Usuario Galáctico</option><option value="PREMIUM">Premium · registro anterior</option></select></label><fieldset><legend>Secciones e imágenes que puede ver</legend><div className="permission-grid">{sectionAccessOptions.map(([id,label]) => <label className="permission-check" key={id}><input type="checkbox" checked={Boolean(form.sectionPermissions[id])} onChange={(event) => update('sectionPermissions', { ...form.sectionPermissions, [id]: event.target.checked })} /><span><Check />{label}</span></label>)}</div></fieldset><footer className="modal-actions"><button type="button" className="secondary-button" disabled={busy} onClick={onClose}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button></footer></form></section></div>;
 }
 
 function BlockedAccess({ user, onLogout }) {
@@ -271,7 +231,7 @@ function CommandPalette({ onClose, navigate, items }) { const [query, setQuery] 
 function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose }) {
   if (!notice) return null;
   const joinRequest = notice.type === 'MEETING_JOIN_REQUEST';
-  return <div className="modal-backdrop meeting-invitation-backdrop" onMouseDown={onClose}><section className="notification-action-modal glass" role="dialog" aria-modal="true" aria-labelledby="notification-action-title" onMouseDown={(event) => event.stopPropagation()}>
+  return <div className="modal-backdrop" onMouseDown={onClose}><section className="notification-action-modal glass" role="dialog" aria-modal="true" aria-labelledby="notification-action-title" onMouseDown={(event) => event.stopPropagation()}>
     <button className="icon-button modal-close" type="button" onClick={onClose} aria-label="Cerrar"><X /></button>
     <span className="notification-action-icon"><Video /></span>
     <p className="eyebrow">{joinRequest ? 'SALA DE ESPERA' : 'INVITACIÓN A REUNIÓN'}</p>
@@ -287,21 +247,17 @@ function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose })
 
 function AppShell({ user, onUserChange, onLogout }) {
   const isAdmin = user.role === 'ADMIN'; const language = languageFor(user); const english = language === 'en';
-  const canView = (id) => isAdmin || user.sectionPermissions?.[id] !== false;
-  const canViewPromotions = isAdmin || user.sectionPermissions?.promotions === true;
-  const baseNavigation = (isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
-  const availableNavigation = baseNavigation.filter(([id]) => canView(id));
+  const availableNavigation = (isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
   const inviteToken = new URLSearchParams(location.search).get('invite') || '';
-  const [page, setPage] = useState(() => (inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) || localStorage.getItem(`galaxy_resume_meeting_${user.id}`)) && canView('meetings') ? 'meetings' : isAdmin ? 'dashboard' : availableNavigation[0]?.[0] || 'restricted'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(canViewPromotions); const [vipPromoOpen, setVipPromoOpen] = useState(false);
+  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(true); const [vipPromoOpen, setVipPromoOpen] = useState(false);
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [notificationItems, setNotificationItems] = useState([]); const [notificationFilter, setNotificationFilter] = useState('UNREAD'); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
-  const notificationStartedAt = useRef(Date.now()); const [shownDepartures, setShownDepartures] = useState(() => new Set());
   const [membershipCenter, setMembershipCenter] = useState({ membership: user.membership || { isActive: false }, plans: [], orders: [] });
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
-  const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : availableNavigation[0]?.[0] || 'restricted'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
-  useEffect(() => { if (page === 'marketplace' && canViewPromotions) setVipPromoOpen(true); }, [page, canViewPromotions]);
-  const reloadMembership = async () => { if (!isAdmin && !canView('marketplace') && !canView('wallet') && !canView('orders')) return membershipCenter; const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
+  const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
+  useEffect(() => { if (page === 'marketplace') setVipPromoOpen(true); }, [page]);
+  const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); return center; };
   useEffect(() => { reloadMembership().catch(() => {}); }, [user.id]);
   useEffect(() => { document.documentElement.lang = language; }, [language]);
   const membership = membershipCenter.membership || user.membership || { isActive: false };
@@ -329,14 +285,6 @@ function AppShell({ user, onUserChange, onLogout }) {
     const pending = notificationItems.find((notice) => !notice.readAt && actionableNotice(notice) && !dismissedNotices.has(notice.id));
     if (pending) setActiveNotice(pending);
   }, [notificationItems, activeNotice, dismissedNotices]);
-  useEffect(() => {
-    if (!isMeetingOwner(user)) return;
-    const departure = notificationItems.find((notice) => notice.type === 'MEETING_PARTICIPANT_LEFT' && !shownDepartures.has(notice.id) && new Date(notice.createdAt).getTime() >= notificationStartedAt.current);
-    if (!departure) return;
-    setShownDepartures((items) => new Set(items).add(departure.id));
-    toast(departure.title, 'success');
-    api.markNotificationRead(departure.id).catch(() => {});
-  }, [notificationItems, shownDepartures]);
   useEffect(() => {
     if (activeNotice?.type !== 'MEETING_INVITE' || activeNotice.invitationStatus !== 'PENDING' || !activeNotice.invitationId) return;
     api.markMeetingInvitationSeen(activeNotice.invitationId).catch(() => {});
@@ -393,18 +341,17 @@ function AppShell({ user, onUserChange, onLogout }) {
   else if (page === 'wallet') content = <WalletActivity user={user} />;
   else if (page === 'orders') content = <MembershipOrdersPage orders={membershipCenter.orders} onRefresh={() => reloadMembership().catch((error) => toast(error.message, 'error'))} />;
   else if (page === 'users' && isAdmin) content = <AdminUsersPage toast={toast} />;
-  else if (page === 'profile') content = <ProfilePage user={user} toast={toast} onUserChange={onUserChange} navigate={navigate} membership={membership} showMembership={canView('marketplace')} />;
-  else content = <section className="surface restricted-sections"><LockKeyhole /><h1>Acceso limitado</h1><p>El administrador todavía no habilitó secciones para esta cuenta.</p></section>;
+  else content = <ProfilePage user={user} toast={toast} onUserChange={onUserChange} navigate={navigate} membership={membership} />;
   return <div className="app-shell">
     <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{availableNavigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{id === 'messages' && <i>3</i>}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><div><strong>{user.name}</strong><span>{isAdmin ? 'ADMIN' : english ? 'COMMUNITY' : 'COMUNIDAD'} · LVL {user.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> {english ? 'Sign out' : 'Cerrar sesión'}</button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
-    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>{english ? 'Search Galaxy' : 'Buscar en Galaxy'}</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)} aria-label={english ? 'Notifications' : 'Notificaciones'}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>{english ? 'Notifications' : 'Notificaciones'}</h3><span>{unread} {english ? 'new' : 'nuevas'}</span></div><div className="notification-filters" role="group" aria-label={english ? 'Notification filter' : 'Filtro de notificaciones'}><button className={notificationFilter === 'ALL' ? 'active' : ''} onClick={() => setNotificationFilter('ALL')}>{english ? 'All' : 'Todas'}</button><button className={notificationFilter === 'UNREAD' ? 'active' : ''} onClick={() => setNotificationFilter('UNREAD')}>{english ? 'Unread' : 'No leídas'}{unread > 0 && <span>{unread}</span>}</button></div><div className="notification-list">{visibleNotifications.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}><Bell /></span><div><strong>{notice.title}</strong><small>{notice.body || notice.meetingTitle || (english ? 'Account activity' : 'Actividad de tu cuenta')}</small></div></button>)}</div>{!visibleNotifications.length && <p className="notifications-empty">{notificationFilter === 'UNREAD' ? (english ? 'You have no unread notifications.' : 'No tienes notificaciones sin leer.') : (english ? 'You have no notifications.' : 'No tienes notificaciones.')}</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>{english ? 'Mark all as read' : 'Marcar todas como leídas'}</button></div>}</header><div className="page-content">{canView('meetings') && <div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={user} joinRequest={joinRequest} onSessionChange={setMeetingSession} canCreate={isMeetingOwner(user)} /></div>}{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
+    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>{english ? 'Search Galaxy' : 'Buscar en Galaxy'}</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)} aria-label={english ? 'Notifications' : 'Notificaciones'}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>{english ? 'Notifications' : 'Notificaciones'}</h3><span>{unread} {english ? 'new' : 'nuevas'}</span></div><div className="notification-filters" role="group" aria-label={english ? 'Notification filter' : 'Filtro de notificaciones'}><button className={notificationFilter === 'ALL' ? 'active' : ''} onClick={() => setNotificationFilter('ALL')}>{english ? 'All' : 'Todas'}</button><button className={notificationFilter === 'UNREAD' ? 'active' : ''} onClick={() => setNotificationFilter('UNREAD')}>{english ? 'Unread' : 'No leídas'}{unread > 0 && <span>{unread}</span>}</button></div><div className="notification-list">{visibleNotifications.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}><Bell /></span><div><strong>{notice.title}</strong><small>{notice.body || notice.meetingTitle || (english ? 'Account activity' : 'Actividad de tu cuenta')}</small></div></button>)}</div>{!visibleNotifications.length && <p className="notifications-empty">{notificationFilter === 'UNREAD' ? (english ? 'You have no unread notifications.' : 'No tienes notificaciones sin leer.') : (english ? 'You have no notifications.' : 'No tienes notificaciones.')}</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>{english ? 'Mark all as read' : 'Marcar todas como leídas'}</button></div>}</header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={user} joinRequest={joinRequest} onSessionChange={setMeetingSession} canCreate={isMeetingOwner(user)} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
     {meetingSession.active && page !== 'meetings' && <div className="background-meeting-bar glass"><button className="background-meeting-main" onClick={() => navigate('meetings')}><span className="meeting-live-dot" /><span><strong>{meetingSession.title || 'Reunión en curso'}</strong><small>{meetingSession.waiting ? 'Esperando admisión' : 'Audio y conexión activos en segundo plano'}</small></span></button>{meetingSession.audioBlocked && <button className="background-audio-button" title="Activar sonido" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /></button>}<button className="secondary-button" onClick={() => navigate('meetings')}>Volver</button></div>}
     <nav className="bottom-nav">{availableNavigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>
     {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} items={availableNavigation} />}
     <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} toast={toast} membershipCenter={membershipCenter} user={user} />
-    {canViewPromotions && page !== 'meetings' && lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
-    {canViewPromotions && !lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
+    {lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
+    {!lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
     <Toast item={toastItem} />
   </div>;
@@ -431,13 +378,12 @@ export default function App() {
         const state = await api.heartbeatSession();
         if (active && state?.accountStatus && state.accountStatus !== user.status) setUser((current) => current ? { ...current, status: state.accountStatus } : current);
       } catch (error) {
-        if (!active || error?.code !== 'GALAXY_DUPLICATE_SESSION') return;
-        setUser(null); setSessionError(error.message); setView('auth');
+        if (!active) return; setUser(null); setSessionError(error.message); setView('auth');
       }
     };
     const timer = setInterval(check, 15_000); return () => { active = false; clearInterval(timer); };
   }, [user?.id, user?.status]);
-  const logout = async () => { if (user?.id) { localStorage.removeItem(`galaxy_active_meeting_${user.id}`); localStorage.removeItem(`galaxy_resume_meeting_${user.id}`); } await api.logout(); setUser(null); setSessionError(''); setView(sharedIntent ? 'auth' : 'landing'); };
+  const logout = async () => { await api.logout(); setUser(null); setSessionError(''); setView(sharedIntent ? 'auth' : 'landing'); };
   if (!ready) return <div className="boot-screen"><span className="neural-loader"><i /><i /><i /></span><p>ALINEANDO SISTEMAS</p></div>;
   if (view === 'landing') return <Landing onEnter={() => setView('auth')} />;
   if (view === 'auth' && !user) return <><AuthGate onBack={() => setView(sharedIntent ? 'auth' : 'landing')} onAuthenticated={(current) => { setSessionError(''); setUser(current); setView('app'); }} />{sessionError && <div className="auth-session-alert" role="alert">{sessionError}</div>}</>;

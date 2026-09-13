@@ -264,10 +264,8 @@ export const api = {
   endMeeting: (payload) => rpc('end_meeting', payload),
   restartMeeting: (payload) => rpc('restart_meeting', payload),
   removeEndedMeeting: (payload) => rpc('remove_ended_meeting', payload),
-  leaveMeeting: (meetingId) => rpc('leave_meeting', { meetingId }),
   getAdminUsers: () => rpc('get_admin_users'),
   setUserAccess: (payload) => rpc('set_user_access', payload),
-  updateAdminUser: (payload) => rpc('update_admin_user', payload),
   getCommunityMembers: (query = '') => rpc('get_community_members', { query }),
   getMeetingInviteCandidates: (meetingId, query = '') => rpc('get_meeting_invite_candidates', { meetingId, query }),
   markMeetingInvitationSeen: (invitationId) => rpc('mark_meeting_invitation_seen', { invitationId }),
@@ -283,9 +281,7 @@ export const api = {
     const state = await rpc('heartbeat_user_session');
     if (state?.status === 'DUPLICATE') {
       await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
-      const error = new Error('Esta cuenta se abriÃ³ en otro navegador o dispositivo. Esta sesiÃ³n anterior fue cerrada por seguridad.');
-      error.code = 'GALAXY_DUPLICATE_SESSION';
-      throw error;
+      throw new Error('Esta cuenta se abriÃ³ en mÃ¡s de un navegador o dispositivo. Cerramos ambas sesiones por seguridad.');
     }
     return state;
   },

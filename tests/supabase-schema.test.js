@@ -49,32 +49,11 @@ describe('Supabase contract', () => {
     expect(supabaseClient).toContain("channel.track({ userId, onlineAt:");
     expect(supabaseClient).toContain('export function onOnlineUsersChange(callback)');
     expect(meetingStudio).toContain('onlineUserIds.has(member.id)');
-    expect(meetingStudio).toContain('!meetingUserIds.has(member.id)');
-    expect(meetingStudio).toContain("'Salió de la reunión · disponible para Reinvitar'");
-    expect(meetingStudio).toContain('meetingUserIds={meetingUserIds}');
     expect(meetingStudio).toContain('Promise.allSettled(selectedMembers.map');
     expect(meetingStudio).toContain('onInviteMany={inviteMany}');
     expect(meetingStudio).toContain('className="invite-online-dot"');
     expect(meetingStyles).toContain('.invite-avatar-shell.online:before');
     expect(meetingStyles).toContain('flex: 0 0 48px!important');
-    const inviteRpc = schema.slice(schema.indexOf('function public.invite_to_meeting'), schema.indexOf('function public.respond_to_meeting_invitation'));
-    expect(inviteRpc).not.toContain('Ese usuario ya se encuentra dentro de la reunión.');
-  });
-
-  it('keeps mobile screens awake throughout an active meeting', () => {
-    expect(meetingStudio).toContain("navigator.wakeLock.request('screen')");
-    expect(meetingStudio).toContain("document.addEventListener('visibilitychange', resumeScreenLock)");
-    expect(meetingStudio).toContain("document.addEventListener('pointerdown', keepScreenAwake)");
-    expect(meetingStudio).toContain("lock?.release().catch(() => {})");
-  });
-
-  it('keeps the host video mounted through transient presence updates', () => {
-    expect(meetingStudio).toContain("peer.userId === normalized.hostId");
-    expect(meetingStudio).toContain("peerId === hostPeerId.current");
-    expect(meetingStudio).toContain("remoteEntries.map(([peerId, stream])");
-    expect(meetingStudio).toContain("className={visible ? '' : 'audience-media-preserved'}");
-    expect(meetingStyles).toContain('.audience-media-preserved');
-    expect(meetingStyles).not.toContain("transparent 48%),#09070c");
   });
 
   it('updates the admin user list on registration and shows live presence', () => {
@@ -250,15 +229,6 @@ describe('Supabase contract', () => {
     expect(supabaseClient).toContain('MissingPartition');
     expect(supabaseClient).toContain('subscribeRealtimeChannel');
     expect(supabaseClient).toContain('supabase.realtime.setAuth');
-  });
-
-  it('does not render or abandon the meeting while its private channel is still connecting', () => {
-    expect(meetingStudio).toMatch(/setWaiting\(false\); setJoined\(false\); setStatus\('signaling'\)[\s\S]*await client\.connect[\s\S]*setJoined\(true\)/);
-    expect(meetingStudio).toContain("if (!joined) return <div className={`meeting-connection-state surface");
-    expect(meetingStudio).toContain('setConnectionError(error.message');
-    expect(meetingStudio).toContain('const retryConnection = async () =>');
-    expect(supabaseClient).toContain('timeoutMs = 8000');
-    expect(supabaseClient).toContain('REALTIME_AUTHORIZATION_FAILED');
   });
 
   it('renders local and remote screen shares on a full-size stage', () => {
