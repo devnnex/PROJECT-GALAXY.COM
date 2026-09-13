@@ -1,6 +1,7 @@
 .registration-panel{padding:24px}.registration-panel>p,.registration-panel form>p{color:var(--muted);line-height:1.6}.registration-panel form{display:grid;gap:16px}.registration-panel label{display:grid;gap:8px}.registration-panel input,.registration-panel select{width:100%;min-width:0;padding:12px;border:1px solid var(--line);border-radius:8px;background:#100c18;color:#f3eefb}.membership-ledger-row{display:flex;justify-content:space-between;gap:20px;padding:18px 0;border-top:1px solid var(--line)}.membership-ledger-row p{font-size:12px}.membership-ledger-row small{color:var(--muted)}.delete-account{color:#ff9da9;grid-column:5}
 .constellation-avatar.has-membership-badge{overflow:visible;-webkit-clip-path:none;clip-path:none}
 .constellation-avatar.has-membership-badge>img,.constellation-avatar.has-membership-badge>svg{position:relative;z-index:1;border-radius:50%;box-shadow:0 0 0 1px rgba(255,255,255,.12),0 0 13px rgba(82,48,130,.38)}
+.admin-user-avatar-shell .constellation-avatar.profile-photo.has-membership-badge>img{position:absolute;inset:0;width:100%;height:100%;min-width:100%;min-height:100%;object-fit:cover;object-position:center;border-radius:50%;-webkit-clip-path:circle(50%);clip-path:circle(50%)}
 .constellation-avatar.has-membership-badge:after{content:"";position:absolute;z-index:2;inset:-2px;border:2px solid rgba(91,164,255,.82);border-radius:50%;pointer-events:none;box-shadow:0 0 8px rgba(66,133,255,.42),inset 0 0 7px rgba(255,203,92,.22)}
 .constellation-avatar.membership-tier-2:after{border-color:rgba(189,117,255,.9);box-shadow:0 0 9px rgba(151,73,255,.5),inset 0 0 7px rgba(238,179,255,.24)}
 .constellation-avatar.membership-tier-3:after{border-color:rgba(80,220,255,.9);box-shadow:0 0 9px rgba(28,188,255,.5),inset 0 0 7px rgba(111,241,255,.24)}
@@ -11,6 +12,7 @@
 .admin-user-avatar-shell .avatar-membership-badge,.invite-avatar-shell.online .avatar-membership-badge{right:auto;left:-10%}
 .meeting-side .people-list .person{overflow:visible}
 .meeting-side .person .avatar-membership-badge{z-index:5}.meeting-side .person .avatar-membership-badge.tier-1{filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)) drop-shadow(0 0 5px rgba(50,145,255,.92))}.meeting-side .person .avatar-membership-badge.tier-2{filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)) drop-shadow(0 0 5px rgba(174,82,255,.94))}.meeting-side .person .avatar-membership-badge.tier-3{filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)) drop-shadow(0 0 5px rgba(38,211,255,.94))}.meeting-side .person .avatar-membership-badge.tier-4{filter:drop-shadow(0 1px 2px rgba(0,0,0,.9)) drop-shadow(0 0 5px rgba(255,77,178,.94))}.meeting-side .person .avatar-membership-badge.tier-5{filter:drop-shadow(0 1px 2px rgba(0,0,0,.92)) drop-shadow(0 0 6px rgba(255,196,70,.98))}
+.video-avatar.constellation-avatar .avatar-membership-badge{right:-4px;bottom:-7px;width:22px}
 .constellation-card>.constellation-avatar.has-membership-badge{margin-bottom:22px}
 @media(max-width:600px){.registration-panel{padding:16px}.membership-ledger-row{flex-direction:column;gap:8px}.delete-account{grid-column:auto}}
 .admin-users-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
