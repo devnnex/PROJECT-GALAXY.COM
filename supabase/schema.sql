@@ -1,4 +1,5 @@
 -- PROJECT GALAXY · Supabase/PostgreSQL schema
+-- Proyecto objetivo: xdsqtuubsptpzwadecha
 -- Ejecutar completo en Supabase Dashboard > SQL Editor después de cada actualización del esquema.
 -- Es idempotente para objetos y políticas; conserva los datos de negocio y limpia
 -- únicamente chats de reuniones finalizadas, según la política de retención.
@@ -282,6 +283,13 @@ create table if not exists public.user_session_state (
   updated_at timestamptz not null default now()
 );
 
+-- Clear conflict windows created by the previous session implementation. The
+-- active session id alone now decides ownership, so a new login never revokes
+-- Realtime access from both browsers at the same time.
+update public.user_session_state
+set conflict_until=null,updated_at=now()
+where conflict_until is not null;
+
 create table if not exists public.calendar_events (
   id uuid primary key default gen_random_uuid(),
   meeting_id uuid references public.meetings(id) on delete set null,
@@ -496,15 +504,13 @@ declare
 begin
   if v_user is null or v_session is null then raise exception 'Inicia sesion para continuar.' using errcode='P0001'; end if;
   select * into v_profile from public.profiles where id=v_user;
+  if v_profile.id is null then raise exception 'Tu perfil no esta disponible.' using errcode='P0001'; end if;
   if v_profile.role='ADMIN' then return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status); end if;
   select * into v_state from public.user_session_state where user_id=v_user for update;
-  if v_state.conflict_until is not null and v_state.conflict_until>now() then
-    return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status,'retryAt',v_state.conflict_until);
-  end if;
-  if v_state.active_session_id is distinct from v_session then
+  if v_state.user_id is null or v_state.active_session_id is distinct from v_session then
     return jsonb_build_object('status','DUPLICATE','accountStatus',v_profile.status);
   end if;
-  update public.user_session_state set last_seen_at=now(),updated_at=now() where user_id=v_user;
+  update public.user_session_state set last_seen_at=now(),conflict_until=null,updated_at=now() where user_id=v_user;
   return jsonb_build_object('status','ACTIVE','accountStatus',v_profile.status);
 end; $$;
 
@@ -512,7 +518,7 @@ create or replace function public.release_user_session() returns jsonb
 language plpgsql security definer set search_path=public,auth as $$
 declare v_user uuid:=auth.uid(); v_session uuid:=nullif(auth.jwt()->>'session_id','')::uuid;
 begin
-  update public.user_session_state set active_session_id=null,last_seen_at=null,updated_at=now()
+  update public.user_session_state set active_session_id=null,last_seen_at=null,conflict_until=null,updated_at=now()
   where user_id=v_user and active_session_id=v_session;
   return jsonb_build_object('released',found);
 end; $$;
@@ -526,7 +532,7 @@ begin
   if v_user is null then raise exception 'Inicia sesion para continuar.' using errcode='P0001'; end if;
   select role into v_role from public.profiles where id=v_user;
   if v_role='ADMIN' then return v_user; end if;
-  select active_session_id=v_session and (conflict_until is null or conflict_until<=now()) into v_valid
+  select active_session_id=v_session into v_valid
   from public.user_session_state where user_id=v_user;
   if not coalesce(v_valid,false) then raise exception 'GALAXY_DUPLICATE_SESSION' using errcode='P0001'; end if;
   return v_user;
@@ -544,10 +550,9 @@ end; $$;
 
 create or replace function public.is_current_session_valid() returns boolean
 language sql stable security definer set search_path=public,auth as $$
-  select exists(select 1 from public.profiles p where p.id=auth.uid() and p.role='ADMIN') or exists(
+  select exists(select 1 from public.profiles p where p.id=auth.uid() and p.role='ADMIN' and p.status='ACTIVE') or exists(
     select 1 from public.user_session_state s where s.user_id=auth.uid()
       and s.active_session_id=nullif(auth.jwt()->>'session_id','')::uuid
-      and (s.conflict_until is null or s.conflict_until<=now())
   );
 $$;
 
@@ -555,7 +560,7 @@ create or replace function public.get_galaxy_store() returns jsonb
 language plpgsql stable security definer set search_path=public,auth as $$
 declare v_user uuid:=public.require_user(); v_products jsonb;
 begin
-  if not exists(select 1 from public.profiles where id=v_user and status='ACTIVE' and (role='ADMIN' or coalesce((section_permissions->>'store')::boolean,true))) then
+  if not exists(select 1 from public.profiles where id=v_user and status='ACTIVE') then
     raise exception 'Tu cuenta debe estar activa para acceder a Galaxy Store.' using errcode='P0001';
   end if;
   select coalesce(jsonb_agg(jsonb_build_object(
@@ -655,17 +660,13 @@ language sql stable security definer set search_path=public,auth as $$
     'plans',coalesce((select jsonb_agg(jsonb_build_object(
       'code',p.code,'name',p.name,'durationMonths',p.duration_months,'priceUsd',p.price_usd,
       'badgeTone',p.badge_tone,'features',p.features
-    ) order by p.sort_order) from public.membership_plans p where p.active and exists(
-      select 1 from public.profiles viewer where viewer.id=me.id and (viewer.role='ADMIN' or coalesce((viewer.section_permissions->>'marketplace')::boolean,true))
-    )),'[]'::jsonb),
+    ) order by p.sort_order) from public.membership_plans p where p.active),'[]'::jsonb),
     'orders',coalesce((select jsonb_agg(jsonb_build_object(
       'id',o.id,'planCode',o.plan_code,'network',o.network,'providerPaymentId',o.provider_payment_id,
       'priceUsd',o.price_usd,'payAmount',o.pay_amount,'actuallyPaid',o.actually_paid,
       'payCurrency',o.pay_currency,'payAddress',o.pay_address,'status',o.status,
       'expiresAt',o.expires_at,'confirmedAt',o.confirmed_at,'createdAt',o.created_at
-    ) order by o.created_at desc) from (select * from public.membership_payment_orders where user_id=me.id and exists(
-      select 1 from public.profiles viewer where viewer.id=me.id and (viewer.role='ADMIN' or coalesce((viewer.section_permissions->>'orders')::boolean,true))
-    ) order by created_at desc limit 20) o),'[]'::jsonb)
+    ) order by o.created_at desc) from (select * from public.membership_payment_orders where user_id=me.id order by created_at desc limit 20) o),'[]'::jsonb)
   ) from me;
 $$;
 
@@ -720,8 +721,7 @@ language sql stable security definer set search_path=public,auth as $$
       'code',p.code,'name',p.name,'description',p.description,'priceUsd',p.price_usd,
       'owned',exists(select 1 from public.product_entitlements e where e.user_id=me.id and e.product_code=p.code and e.revoked_at is null)
     ) order by p.sort_order) from public.digital_products p
-      where p.active and exists(select 1 from public.profiles viewer where viewer.id=me.id and viewer.status='ACTIVE'
-        and (viewer.role='ADMIN' or coalesce((viewer.section_permissions->>'marketplace')::boolean,true)))),'[]'::jsonb),
+      where p.active and exists(select 1 from public.profiles viewer where viewer.id=me.id and viewer.status='ACTIVE')),'[]'::jsonb),
     'orders',coalesce((select jsonb_agg(jsonb_build_object(
       'id',o.id,'itemType',o.item_type,'itemCode',coalesce(o.plan_code,o.product_code),'network',o.network,
       'priceUsd',o.price_usd,'payAmount',o.expected_amount,'payCurrency','USDT','payAddress',o.destination_address,
@@ -1171,26 +1171,6 @@ begin
     'iceServers',coalesce(v_ice,'[]'::jsonb),'messages',case when v_status='ADMITTED' then public.get_meeting_messages(v_meeting.id,100) else '[]'::jsonb end);
 end; $$;
 
-create or replace function public.leave_meeting(p_meeting_id uuid) returns jsonb
-language plpgsql security definer set search_path=public,auth as $$
-declare v_user uuid:=public.require_active_membership(); v_meeting public.meetings; v_name text;
-begin
-  select * into v_meeting from public.meetings where id=p_meeting_id;
-  if v_meeting.id is null or not exists(
-    select 1 from public.meeting_participants where meeting_id=p_meeting_id and user_id=v_user and status='ADMITTED'
-  ) then raise exception 'No perteneces a esta reunión.' using errcode='P0001'; end if;
-  update public.meeting_participants set left_at=now() where meeting_id=p_meeting_id and user_id=v_user;
-  select name into v_name from public.profiles where id=v_user;
-  if v_meeting.host_id<>v_user and exists(
-    select 1 from public.profiles p join auth.users u on u.id=p.id
-    where p.id=v_meeting.host_id and lower(u.email)='elkin56ty@gmail.com'
-  ) then
-    insert into public.notifications(user_id,actor_id,type,title,body,resource_type,resource_id)
-    values(v_meeting.host_id,v_user,'MEETING_PARTICIPANT_LEFT',coalesce(v_name,'Un participante')||' abandonó la reunión',v_meeting.title,'Meeting',v_meeting.id);
-  end if;
-  return jsonb_build_object('meetingId',v_meeting.id,'status',v_meeting.status,'leftAt',now());
-end; $$;
-
 create or replace function public.get_my_meetings() returns jsonb
 language plpgsql security definer set search_path = public, auth as $$
 declare v_user uuid:=public.require_active_membership(); v_result jsonb;
@@ -1616,10 +1596,10 @@ revoke all on all tables in schema public from anon;
 revoke usage on schema public from anon;
 alter default privileges in schema public revoke all on tables from anon;
 alter default privileges in schema public revoke execute on functions from public, anon;
-revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.get_turn_provider_config(),public.membership_view(uuid),public.has_active_membership(uuid),public.require_active_membership(),public.get_membership_center(),public.get_crypto_store(),public.activate_membership_from_payment(uuid,text,text,numeric,jsonb),public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.update_profile_avatar(text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.leave_meeting(uuid),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon, authenticated;
+revoke execute on function public.touch_updated_at(),public.handle_new_user(),public.require_user(),public.get_turn_provider_config(),public.membership_view(uuid),public.has_active_membership(uuid),public.require_active_membership(),public.get_membership_center(),public.get_crypto_store(),public.activate_membership_from_payment(uuid,text,text,numeric,jsonb),public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb),public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text),public.meeting_summary(public.meetings,uuid),public.get_current_user(),public.update_profile(text,text,text),public.update_profile_avatar(text),public.get_bootstrap_data(text[]),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.message_view(public.meeting_messages,uuid),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.update_admission(uuid,uuid,text),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) from public, anon, authenticated;
 grant usage on schema public to authenticated;
 grant select on public.profiles,public.wallets,public.meetings,public.meeting_participants,public.meeting_messages,public.meeting_message_reactions,public.notifications,public.membership_plans,public.membership_payment_orders,public.memberships,public.digital_products,public.galaxy_store_products,public.crypto_payment_orders,public.product_entitlements to authenticated;
-grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.update_profile_avatar(text),public.get_bootstrap_data(text[]),public.get_membership_center(),public.get_crypto_store(),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.leave_meeting(uuid),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
+grant execute on function public.get_current_user(),public.update_profile(text,text,text),public.update_profile_avatar(text),public.get_bootstrap_data(text[]),public.get_membership_center(),public.get_crypto_store(),public.get_my_notifications(integer),public.mark_notification_read(uuid),public.mark_all_notifications_read(),public.create_meeting(text,text,boolean),public.join_meeting(text,text),public.get_my_meetings(),public.get_meeting_state(uuid),public.admit_meeting_participant(uuid,uuid),public.deny_meeting_participant(uuid,uuid),public.set_meeting_locked(uuid,boolean),public.end_meeting(uuid),public.restart_meeting(uuid),public.remove_ended_meeting(uuid),public.get_community_members(text),public.get_meeting_invite_candidates(uuid,text),public.mark_meeting_invitation_seen(uuid),public.invite_to_meeting(uuid,uuid),public.respond_to_meeting_invitation(uuid,text),public.get_meeting_messages(uuid,integer),public.get_meeting_message(uuid,uuid),public.post_meeting_message(uuid,text,uuid),public.react_to_meeting_message(uuid,uuid,text),public.request_meeting_mute(uuid,uuid),public.consume_meeting_command(uuid) to authenticated;
 grant execute on function public.is_admitted_to_meeting(uuid),public.can_access_realtime_topic(text,text) to authenticated;
 grant execute on function public.activate_membership_from_payment(uuid,text,text,numeric,jsonb) to service_role;
 grant execute on function public.confirm_crypto_payment(uuid,text,integer,numeric,jsonb) to service_role;
@@ -1643,11 +1623,6 @@ grant execute on function public.get_galaxy_store(),public.save_galaxy_store_pro
 to authenticated;
 
 -- Migration: invitation-only registration and membership ledger.
--- Kept here as well because this migration is safe to execute independently.
-alter table public.profiles add column if not exists user_kind text not null default 'PREMIUM'
-  check (user_kind in ('PREMIUM','NEW','GALACTIC'));
-alter table public.profiles add column if not exists section_permissions jsonb not null default
-  '{"dashboard":false,"discover":false,"marketplace":true,"store":true,"meetings":true,"calendar":true,"messages":true,"wallet":true,"orders":true,"profile":true,"promotions":true}'::jsonb;
 create table if not exists public.registration_invitations (
  id uuid primary key default gen_random_uuid(), email text not null,
  token_hash text not null unique, plan_code text not null references public.membership_plans(code),
@@ -1659,11 +1634,6 @@ create table if not exists public.registration_invitations (
  member_id uuid references public.profiles(id) on delete set null
 );
 alter table public.registration_invitations add column if not exists sent_at timestamptz;
-alter table public.registration_invitations add column if not exists user_kind text not null default 'GALACTIC'
-  check (user_kind in ('NEW','GALACTIC'));
-alter table public.registration_invitations alter column user_kind set default 'NEW';
-alter table public.registration_invitations add column if not exists section_permissions jsonb not null default
-  '{"dashboard":false,"discover":false,"marketplace":false,"store":false,"meetings":true,"calendar":true,"messages":true,"wallet":false,"orders":false,"profile":true,"promotions":false}'::jsonb;
 create table if not exists public.membership_ledger (
  id uuid primary key default gen_random_uuid(), invitation_id uuid not null references public.registration_invitations(id),
  beneficiary_id uuid references public.profiles(id) on delete set null,
@@ -1678,14 +1648,9 @@ alter table public.membership_ledger enable row level security;
 revoke all on public.registration_invitations,public.membership_ledger from anon,authenticated;
 grant all on public.registration_invitations,public.membership_ledger to service_role;
 
-drop function if exists public.create_registration_invitation(text,text,uuid);
-create or replace function public.create_registration_invitation(
-  p_email text,p_plan_code text,p_referrer_id uuid default null,p_user_kind text default 'GALACTIC',p_section_permissions jsonb default null
-) returns jsonb
+create or replace function public.create_registration_invitation(p_email text,p_plan_code text,p_referrer_id uuid default null) returns jsonb
 language plpgsql security definer set search_path=public,extensions,auth as $$
-declare
- v_admin uuid:=public.require_admin(); v_plan public.membership_plans; v_token text:=encode(gen_random_bytes(32),'hex'); v_inv public.registration_invitations;
- v_kind text:=upper(trim(coalesce(p_user_kind,'GALACTIC'))); v_permissions jsonb;
+declare v_admin uuid:=public.require_admin(); v_plan public.membership_plans; v_token text:=encode(gen_random_bytes(32),'hex'); v_inv public.registration_invitations;
 begin
  p_email:=lower(trim(p_email));
  if p_email is null or p_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' or length(p_email)>254 then raise exception 'Correo inválido.' using errcode='P0001'; end if;
@@ -1693,33 +1658,28 @@ begin
  if exists(select 1 from auth.users where lower(email)=p_email) then raise exception 'Ese correo ya tiene una cuenta.' using errcode='P0001'; end if;
  select * into v_plan from public.membership_plans where code=p_plan_code and active;
  if not found then raise exception 'Selecciona una membresía activa.' using errcode='P0001'; end if;
- if v_kind not in ('NEW','GALACTIC') then raise exception 'Selecciona Nuevo o Usuario Galáctico.' using errcode='P0001'; end if;
- v_permissions:=coalesce(p_section_permissions,case when v_kind='GALACTIC' then
-   '{"dashboard":false,"discover":false,"marketplace":true,"store":true,"meetings":true,"calendar":true,"messages":true,"wallet":true,"orders":true,"profile":true,"promotions":true}'::jsonb
- else
-   '{"dashboard":false,"discover":false,"marketplace":false,"store":false,"meetings":true,"calendar":true,"messages":true,"wallet":false,"orders":false,"profile":true,"promotions":false}'::jsonb end);
  if p_referrer_id is not null and not exists(select 1 from public.profiles where id=p_referrer_id and status='ACTIVE') then raise exception 'El referido debe ser una cuenta activa.' using errcode='P0001'; end if;
  if not exists(select 1 from auth.users u join public.profiles p on p.id=u.id where lower(u.email)='elkin56ty@gmail.com') then raise exception 'No existe la cuenta propietaria para recibir los ingresos.' using errcode='P0001'; end if;
  update public.registration_invitations set revoked_at=now() where email=p_email and consumed_at is null and revoked_at is null;
- insert into public.registration_invitations(email,token_hash,plan_code,price_usd,duration_months,referrer_id,created_by,user_kind,section_permissions)
- values(p_email,encode(digest(v_token,'sha256'),'hex'),v_plan.code,case when v_kind='NEW' then 0 else v_plan.price_usd end,v_plan.duration_months,case when v_kind='NEW' then null else p_referrer_id end,v_admin,v_kind,v_permissions) returning * into v_inv;
+ insert into public.registration_invitations(email,token_hash,plan_code,price_usd,duration_months,referrer_id,created_by)
+ values(p_email,encode(digest(v_token,'sha256'),'hex'),v_plan.code,v_plan.price_usd,v_plan.duration_months,p_referrer_id,v_admin) returning * into v_inv;
  return jsonb_build_object('id',v_inv.id,'token',v_token,'email',p_email,'expiresAt',v_inv.expires_at,'planName',v_plan.name);
 end; $$;
 
 create or replace function public.get_registration_invitation(p_token text) returns jsonb
 language plpgsql stable security definer set search_path=public,extensions as $$
-declare v_email text; v_plan_code text; v_plan_name text; v_expires_at timestamptz; v_user_kind text;
+declare v_email text; v_plan_code text; v_plan_name text; v_expires_at timestamptz;
 begin
  if coalesce(p_token,'') !~ '^[0-9a-f]{64}$' then raise exception 'Invitación inválida o vencida.' using errcode='P0001'; end if;
- select invitation.email,invitation.plan_code,plan.name,invitation.expires_at,invitation.user_kind
- into v_email,v_plan_code,v_plan_name,v_expires_at,v_user_kind
+ select invitation.email,invitation.plan_code,plan.name,invitation.expires_at
+ into v_email,v_plan_code,v_plan_name,v_expires_at
  from public.registration_invitations invitation
  join public.membership_plans plan on plan.code=invitation.plan_code
  where invitation.token_hash=encode(digest(lower(p_token),'sha256'),'hex')
    and invitation.consumed_at is null and invitation.revoked_at is null
    and invitation.expires_at>clock_timestamp();
  if not found then raise exception 'Invitación inválida, utilizada o vencida. Solicita una nueva.' using errcode='P0001'; end if;
- return jsonb_build_object('email',v_email,'plan_code',v_plan_code,'planName',v_plan_name,'userKind',v_user_kind,'expires_at',v_expires_at);
+ return jsonb_build_object('email',v_email,'plan_code',v_plan_code,'planName',v_plan_name,'expires_at',v_expires_at);
 end; $$;
 
 create or replace function public.revoke_registration_invitation(p_token text) returns void
@@ -1793,24 +1753,21 @@ begin
  if not found or v_inv.expires_at<=clock_timestamp() then raise exception 'Se requiere una invitación vigente.'; end if;
  select id into v_owner from auth.users where lower(email)='elkin56ty@gmail.com';
  if v_owner is null then raise exception 'Cuenta propietaria no disponible.'; end if;
- if v_inv.user_kind='GALACTIC' then
-   v_expiry:=now()+make_interval(months=>v_inv.duration_months);
-   select coalesce(amount,0) into v_commission from public.membership_ledger
-   where invitation_id=v_inv.id and kind='REFERRAL_COMMISSION';
-   v_commission:=coalesce(v_commission,0);
-   insert into public.memberships(user_id,plan_code,status,starts_at,expires_at) values(new.id,v_inv.plan_code,'ACTIVE',now(),v_expiry);
-   insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
-   values(v_inv.id,v_owner,new.id,v_inv.plan_code,'MEMBERSHIP_INCOME',v_inv.price_usd,v_inv.price_usd-v_commission,v_expiry);
-   update public.membership_ledger set member_id=new.id,membership_expires_at=v_expiry
-   where invitation_id=v_inv.id and kind='REFERRAL_COMMISSION';
-   insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
-   values(v_inv.id,new.id,new.id,v_inv.plan_code,'MEMBERSHIP_PURCHASE',v_inv.price_usd,-v_inv.price_usd,v_expiry);
-   -- Lock balances in a deterministic order for concurrent registrations.
-   perform 1 from public.wallets where user_id=v_owner for update;
-   update public.wallets set available_balance=available_balance+v_inv.price_usd-v_commission,total_earned=total_earned+v_inv.price_usd-v_commission where user_id=v_owner;
-   update public.wallets set total_spent=total_spent+v_inv.price_usd where user_id=new.id;
- end if;
- update public.profiles set user_kind=v_inv.user_kind,section_permissions=v_inv.section_permissions where id=new.id;
+ v_expiry:=now()+make_interval(months=>v_inv.duration_months);
+ select coalesce(amount,0) into v_commission from public.membership_ledger
+ where invitation_id=v_inv.id and kind='REFERRAL_COMMISSION';
+ v_commission:=coalesce(v_commission,0);
+ insert into public.memberships(user_id,plan_code,status,starts_at,expires_at) values(new.id,v_inv.plan_code,'ACTIVE',now(),v_expiry);
+ insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
+ values(v_inv.id,v_owner,new.id,v_inv.plan_code,'MEMBERSHIP_INCOME',v_inv.price_usd,v_inv.price_usd-v_commission,v_expiry);
+ update public.membership_ledger set member_id=new.id,membership_expires_at=v_expiry
+ where invitation_id=v_inv.id and kind='REFERRAL_COMMISSION';
+ insert into public.membership_ledger(invitation_id,beneficiary_id,member_id,plan_code,kind,gross_amount,amount,membership_expires_at)
+ values(v_inv.id,new.id,new.id,v_inv.plan_code,'MEMBERSHIP_PURCHASE',v_inv.price_usd,-v_inv.price_usd,v_expiry);
+ -- Lock balances in a deterministic order for concurrent registrations.
+ perform 1 from public.wallets where user_id=v_owner for update;
+ update public.wallets set available_balance=available_balance+v_inv.price_usd-v_commission,total_earned=total_earned+v_inv.price_usd-v_commission where user_id=v_owner;
+ update public.wallets set total_spent=total_spent+v_inv.price_usd where user_id=new.id;
  update public.registration_invitations set consumed_at=now(),member_id=new.id where id=v_inv.id;
  return new;
 end; $$;
@@ -1821,9 +1778,6 @@ create or replace function public.get_wallet_activity() returns jsonb
 language plpgsql stable security definer set search_path=public,auth as $$
 declare v_user uuid:=public.require_user();
 begin
- if not exists(select 1 from public.profiles where id=v_user and (role='ADMIN' or coalesce((section_permissions->>'wallet')::boolean,true))) then
-   raise exception 'El administrador no habilitó la Wallet para esta cuenta.' using errcode='P0001';
- end if;
  return jsonb_build_object('wallet',(public.get_current_user())->'wallet','entries',coalesce((
  select jsonb_agg(jsonb_build_object('id',l.id,'kind',l.kind,'amount',l.amount,'grossAmount',l.gross_amount,
  'planCode',l.plan_code,'memberName',coalesce(p.name,i.email,'Usuario eliminado'),'createdAt',l.created_at,
@@ -1871,9 +1825,9 @@ begin
  update public.registration_invitations set email='deleted-'||id::text,token_hash='deleted-'||id::text where member_id=p_user_id;
  delete from auth.users where id=p_user_id;
 end; $$;
-revoke all on function public.create_registration_invitation(text,text,uuid,text,jsonb),public.get_registration_invitation(text),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.accept_registration_invitation(),public.get_wallet_activity(),public.reset_wallet_accounting(),public.delete_registered_user(uuid) from public,anon,authenticated;
+revoke all on function public.create_registration_invitation(text,text,uuid),public.get_registration_invitation(text),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.accept_registration_invitation(),public.get_wallet_activity(),public.reset_wallet_accounting(),public.delete_registered_user(uuid) from public,anon,authenticated;
 grant usage on schema public to anon;
 grant execute on function public.get_registration_invitation(text) to anon,authenticated;
-grant execute on function public.create_registration_invitation(text,text,uuid,text,jsonb),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.get_wallet_activity(),public.reset_wallet_accounting(),public.delete_registered_user(uuid) to authenticated;
+grant execute on function public.create_registration_invitation(text,text,uuid),public.revoke_registration_invitation(text),public.confirm_registration_invitation_sent(text),public.get_wallet_activity(),public.reset_wallet_accounting(),public.delete_registered_user(uuid) to authenticated;
 
 commit;

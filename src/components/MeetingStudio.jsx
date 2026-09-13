@@ -831,7 +831,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [privacySource, setPrivacySource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } }); const [savedMasks, setSavedMasks] = useState(() => { try { return JSON.parse(localStorage.getItem(maskKey) || 'null'); } catch { return null; } });
-  const [mic, setMic] = useState(false); const [camera, setCamera] = useState(false); const [joined, setJoined] = useState(false); const [status, setStatus] = useState('offline'); const [relayReady, setRelayReady] = useState(null);
+  const [mic, setMic] = useState(false); const [camera, setCamera] = useState(false); const [joined, setJoined] = useState(false); const [status, setStatus] = useState('offline'); const [relayReady, setRelayReady] = useState(null); const [connectionError, setConnectionError] = useState('');
   const [participants, setParticipants] = useState([]); const [remoteStreams, setRemoteStreams] = useState({}); const [peerStates, setPeerStates] = useState({});
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
   const [sideTab, setSideTab] = useState('people'); const [mobilePanelOpen, setMobilePanelOpen] = useState(false); const [messages, setMessages] = useState([]); const [floatingMessages, setFloatingMessages] = useState([]); const [unreadMessages, setUnreadMessages] = useState(0); const [messagePulse, setMessagePulse] = useState(false); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
@@ -969,7 +969,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
 
   const stopMedia = () => { stopMeetingStream(mediaRef.current); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
-  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; hostPeerId.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
+  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; hostPeerId.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setConnectionError(''); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
   useEffect(() => {
     const epoch = ++lifecycleEpoch.current;
     return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); stopMeetingStream(mediaRef.current); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
@@ -987,13 +987,13 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     const sequence = ++connectSequence.current;
     const legacyParticipantStatus = ['ADMITTED', 'WAITING', 'INVITED', 'DENIED'].includes(access.status) ? access.status : null;
     const normalized = { ...access, role: access.role || (access.host ? 'HOST' : 'PARTICIPANT'), participantStatus: access.participantStatus || legacyParticipantStatus || (access.host ? 'ADMITTED' : null) };
-    hostPeerId.current = null;
+    hostPeerId.current = null; setConnectionError('');
     setMeeting(normalized); setMessages(normalized.messages || []); setUnreadMessages(0); setFloatingMessages([]); setParticipantMicsLocked(Boolean(normalized.participantMicsLocked)); collaborationEnabledRef.current = normalized.collaborationEnabled !== false; setCollaborationEnabled(normalized.collaborationEnabled !== false); rememberMeeting(normalized);
     if (normalized.participantStatus !== 'ADMITTED') { resumeMediaRequested.current = resumeMediaRequested.current || restoreMedia; setWaiting(true); setStatus('waiting'); return true; }
     let activeMedia = { mic, camera };
     if (restoreMedia || resumeMediaRequested.current) { activeMedia = await restoreMediaPreferences(); resumeMediaRequested.current = false; }
     if (normalized.role !== 'HOST' && normalized.participantMicsLocked) { const track = mediaRef.current.getAudioTracks()[0]; setMeetingTrackEnabled(track, false); activeMedia.mic = false; setMic(false); saveMediaPreferences({ mic: false }); }
-    setWaiting(false); setJoined(true); setStatus('signaling'); connection.current?.disconnect(); participantHandStates.current.clear(); participantSnapshotReady.current = false;
+    setWaiting(false); setJoined(false); setStatus('signaling'); connection.current?.disconnect(); participantHandStates.current.clear(); participantSnapshotReady.current = false;
     const isCurrent = (client) => expectedEpoch === lifecycleEpoch.current && sequence === connectSequence.current && connection.current === client;
     let client;
     client = new SupabaseMeetingConnection({
@@ -1027,10 +1027,18 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       const usingTurn = iceServers?.some((server) => server.username && server.credential);
       await client.connect({ roomId: normalized.meetingId, role: normalized.role, stream: mediaRef.current, iceServers, user });
       if (!isCurrent(client)) { client.disconnect(); return false; }
+      setJoined(true); setConnectionError('');
       if (usingTurn) client.scheduleIceRefresh(relayInfo?.expiresIn);
       toast(`Conectado a ${normalized.title}${usingTurn ? ' con relay TURN.' : '; TURN aún no está configurado.'}`, usingTurn ? undefined : 'info');
       return true;
-    } catch (error) { client.disconnect(); if (!isCurrent(client) || error.name === 'AbortError') return false; connection.current = null; setJoined(false); throw error; }
+    } catch (error) {
+      client.disconnect();
+      if (!isCurrent(client) || error.name === 'AbortError') return false;
+      connection.current = null; setJoined(false); setStatus('error');
+      setConnectionError(error.message || 'No fue posible abrir el canal seguro de la reunión.');
+      toast(error.message || 'No fue posible conectar con la reunión.', 'error');
+      return false;
+    }
   };
 
   const enterMeeting = ({ roomCode, password = '', restoreMedia = false }) => {
@@ -1238,6 +1246,12 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const removeEndedMeetingNow = async (item) => { setBusy(true); try { const result = await api.removeEndedMeeting({ meetingId: item.meetingId || item.id }); setMeetings((items) => items.filter((current) => current.id !== item.id)); toast(result.scope === 'GLOBAL' ? 'Reunión eliminada definitivamente.' : 'Reunión retirada de tu historial.'); } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); } };
   const removeEndedMeeting = (item) => setConfirmation({ title: item.host ? `Eliminar “${item.title}”` : `Quitar “${item.title}”`, body: item.host ? 'La reunión y todos sus registros se eliminarán definitivamente.' : 'La reunión desaparecerá de tu historial personal.', confirmLabel: item.host ? 'Eliminar definitivamente' : 'Quitar del historial', danger: true, action: () => removeEndedMeetingNow(item) });
   const confirmAction = async () => { const current = confirmation; if (!current?.action) return; setConfirmation(null); await current.action(); };
+  const retryConnection = async () => {
+    if (!meeting || busy) return;
+    setBusy(true);
+    try { await connectAccess(meeting, lifecycleEpoch.current); }
+    finally { setBusy(false); }
+  };
 
   useEffect(() => {
     if (!joined || !meeting?.scheduledEndsAt) return undefined;
@@ -1358,6 +1372,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
 
   if (!meeting) return <><MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} onRestart={restartMeeting} onRemove={removeEndedMeeting} canCreate={canCreate} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} /></>;
   if (waiting) return <div className="meeting-waiting surface"><span className="waiting-orbit" /><p className="eyebrow">SALA DE ESPERA</p><h1>{meeting.title}</h1><p>El anfitrión recibió tu solicitud. Esta pantalla entrará automáticamente cuando te admita.</p><strong>{meeting.roomCode}</strong><button className="secondary-button" onClick={() => disconnect(true)}>Cancelar</button></div>;
+
+  if (!joined) return <div className={`meeting-connection-state surface ${connectionError ? 'failed' : ''}`}><span className="waiting-orbit" /><p className="eyebrow">{connectionError ? 'CONEXIÓN INTERRUMPIDA' : 'ENTRANDO A LA REUNIÓN'}</p><h1>{meeting.title}</h1><p>{connectionError || 'Estamos autorizando el canal privado y preparando audio y video. Mantén esta pantalla abierta.'}</p><strong>{meeting.roomCode}</strong>{connectionError && <div className="meeting-connection-actions"><button className="primary-button" disabled={busy} onClick={retryConnection}><RotateCcw /> {busy ? 'Reintentando…' : 'Reintentar'}</button><button className="secondary-button" disabled={busy} onClick={() => disconnect(true)}>Volver</button></div>}</div>;
 
   const remoteEntries = Object.entries(remoteStreams); const isHost = meeting.role === 'HOST';
   const meetingUserIds = new Set(participants.map((participant) => participant.userId).filter(Boolean));

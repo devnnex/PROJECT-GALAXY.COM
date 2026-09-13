@@ -23,6 +23,9 @@ describe('Galaxy owner and member access controls', () => {
     expect(schema).toContain("'status','DUPLICATE'");
     expect(schema).toContain("'replacedPreviousSession',true");
     expect(schema).not.toContain("conflict_until=now()+interval '30 seconds'");
+    expect(schema).toContain('set conflict_until=null,updated_at=now()');
+    expect(schema).toContain('if v_state.user_id is null or v_state.active_session_id is distinct from v_session then');
+    expect(schema).toContain("p.role='ADMIN' and p.status='ACTIVE'");
     expect(schema).toContain("if v_profile.role='ADMIN'");
     expect(api).toContain("rpc('claim_user_session')");
     expect(api).toContain("rpc('heartbeat_user_session')");

@@ -201,6 +201,10 @@
 .meeting-status-dot { width: 7px; height: 7px; border-radius: 50%; background: #5ec08d; box-shadow: 0 0 8px rgba(94, 192, 141, .5); }.meeting-status-dot.ended { background: #5a555e; box-shadow: none; }
 .meeting-waiting { min-height: 520px; display: grid; place-items: center; align-content: center; gap: 12px; padding: 30px; text-align: center; border-radius: 16px; }
 .meeting-waiting h1 { margin: 0; font: 600 32px 'Manrope'; }.meeting-waiting > p:not(.eyebrow) { max-width: 520px; color: #88818e; }.meeting-waiting > strong { letter-spacing: .16em; color: #b995f4; }
+.meeting-connection-state { min-height: 520px; display: grid; place-items: center; align-content: center; gap: 12px; padding: 30px; text-align: center; border-radius: 16px; }
+.meeting-connection-state h1 { margin: 0; font: 600 32px 'Manrope'; }.meeting-connection-state > p:not(.eyebrow) { max-width: 560px; color: #88818e; }.meeting-connection-state > strong { letter-spacing: .16em; color: #b995f4; }
+.meeting-connection-state.failed .waiting-orbit { animation-duration: 2.4s; border-color: rgba(224, 87, 111, .25); border-top-color: #e4657b; }.meeting-connection-state.failed > p:not(.eyebrow) { color: #cf9da7; }
+.meeting-connection-actions { display: flex; justify-content: center; gap: 9px; flex-wrap: wrap; margin-top: 5px; }.meeting-connection-actions button { min-width: 130px; }.meeting-connection-actions svg { width: 15px; }
 .waiting-orbit { width: 56px; height: 56px; border: 2px solid rgba(145, 92, 228, .2); border-top-color: #9a6ce5; border-radius: 50%; animation: spin 1s linear infinite; }
 .meeting-top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }.meeting-top-actions .secondary-button { min-height: 34px; padding: 0 11px; font-size: 9px; }.meeting-top-actions svg { width: 14px; }
 .meeting-duration { display:inline-flex; align-items:center; gap:7px; margin-top:7px; color:#77dcff; font:700 12px/1 'Manrope'; letter-spacing:.13em; text-shadow:0 0 12px rgba(58,190,255,.42); font-variant-numeric:tabular-nums; }.meeting-duration svg { width:14px; height:14px; }

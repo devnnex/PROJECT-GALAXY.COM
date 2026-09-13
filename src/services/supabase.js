@@ -16,7 +16,7 @@ export const supabase = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_K
   realtime: { params: { eventsPerSecond: 30 } },
 });
 
-const realtimeRetryDelays = [0, 250, 700, 1500];
+const realtimeRetryDelays = [0, 600, 1600];
 let realtimePrime = null;
 const onlineUserListeners = new Set();
 
@@ -28,8 +28,12 @@ export function isTransientRealtimeError(error) {
 }
 
 const isPartitionError = (error) => /MissingPartition|expected messages partition|no partition/i.test(errorText(error));
+const isAuthorizationError = (error) => /unauthori[sz]ed|not authorized|permission|policy|row.level.security|rls|private.channel/i.test(errorText(error));
 
 function publicRealtimeError(error) {
+  if (isAuthorizationError(error)) {
+    return Object.assign(new Error('La sesión no pudo autorizar el canal privado de la reunión. Ejecuta el schema actualizado y vuelve a intentarlo.'), { code: 'REALTIME_AUTHORIZATION_FAILED', cause: error });
+  }
   if (isPartitionError(error)) {
     return new Error('Estamos preparando el canal seguro de la reunión. Intenta nuevamente en unos segundos.');
   }
@@ -83,7 +87,7 @@ function subscribeOnce(channel, timeoutMs, onSubscribed) {
   });
 }
 
-export async function subscribeRealtimeChannel(createChannel, { timeoutMs = 4500, onSubscribed } = {}) {
+export async function subscribeRealtimeChannel(createChannel, { timeoutMs = 8000, onSubscribed } = {}) {
   await authorizeRealtime();
   let lastError;
   for (let attempt = 0; attempt < realtimeRetryDelays.length; attempt += 1) {
@@ -95,7 +99,7 @@ export async function subscribeRealtimeChannel(createChannel, { timeoutMs = 4500
     } catch (error) {
       lastError = error;
       await supabase.removeChannel(channel).catch(() => {});
-      if (!isTransientRealtimeError(error) || (!isPartitionError(error) && attempt >= 1)) break;
+      if (!isTransientRealtimeError(error)) break;
     }
   }
   throw publicRealtimeError(lastError);

@@ -252,6 +252,15 @@ describe('Supabase contract', () => {
     expect(supabaseClient).toContain('supabase.realtime.setAuth');
   });
 
+  it('does not render or abandon the meeting while its private channel is still connecting', () => {
+    expect(meetingStudio).toMatch(/setWaiting\(false\); setJoined\(false\); setStatus\('signaling'\)[\s\S]*await client\.connect[\s\S]*setJoined\(true\)/);
+    expect(meetingStudio).toContain("if (!joined) return <div className={`meeting-connection-state surface");
+    expect(meetingStudio).toContain('setConnectionError(error.message');
+    expect(meetingStudio).toContain('const retryConnection = async () =>');
+    expect(supabaseClient).toContain('timeoutMs = 8000');
+    expect(supabaseClient).toContain('REALTIME_AUTHORIZATION_FAILED');
+  });
+
   it('renders local and remote screen shares on a full-size stage', () => {
     expect(meetingStyles).toMatch(/\.video-surface\.presentation\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%;[^}]*height:\s*100%/);
     expect(meetingStudio).toContain('await waitForVideoMetadata(video)');
