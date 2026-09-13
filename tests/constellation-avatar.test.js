@@ -48,7 +48,8 @@ describe('Constellation avatar', () => {
     expect(avatarSource).toContain('membership-tier-${badgeTier}');
     expect(avatarStyles).toContain('.constellation-avatar.has-membership-badge');
     expect(avatarStyles).toContain('.avatar-membership-badge{position:absolute;z-index:4;right:');
-    expect(avatarStyles).toContain('.avatar-membership-badge>img');
+    expect(avatarStyles).toContain('.constellation-avatar.has-membership-badge .avatar-membership-badge>img');
+    expect(avatarStyles).toContain('width:500%;max-width:none;height:121%;object-fit:fill');
     expect(avatarStyles).toContain('.admin-user-avatar-shell .avatar-membership-badge,.invite-avatar-shell.online .avatar-membership-badge{right:auto;left:');
     expect(avatarStyles).toContain('.constellation-avatar.has-membership-badge:after');
     expect(avatarStyles).not.toContain(':has(');
