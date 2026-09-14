@@ -12,6 +12,7 @@ const avatar = readFileSync(new URL('../src/components/ConstellationAvatar.jsx',
 const appHtml = readFileSync(new URL('../app.html', import.meta.url), 'utf8');
 const reportsPage = readFileSync(new URL('../src/components/ReportsPage.jsx', import.meta.url), 'utf8');
 const directMessagesPage = readFileSync(new URL('../src/components/DirectMessagesPage.jsx', import.meta.url), 'utf8');
+const profilePhotoCropper = readFileSync(new URL('../src/components/ProfilePhotoCropper.jsx', import.meta.url), 'utf8');
 
 const publicRpc = [
   'get_current_user', 'update_profile', 'update_profile_avatar', 'get_bootstrap_data', 'create_meeting', 'join_meeting', 'get_my_meetings',
@@ -25,7 +26,7 @@ const publicRpc = [
   'get_membership_center', 'reset_wallet_accounting',
   'get_galaxy_store', 'save_galaxy_store_product',
   'get_platform_reports', 'create_platform_report', 'update_platform_report', 'delete_platform_report', 'clear_platform_reports',
-  'get_direct_message_contacts', 'get_direct_messages', 'send_direct_message', 'mark_direct_messages_read',
+  'get_direct_message_contacts', 'get_direct_messages', 'send_direct_message', 'mark_direct_messages_read', 'mark_direct_messages_delivered',
 ];
 
 describe('Supabase contract', () => {
@@ -333,6 +334,11 @@ describe('Supabase contract', () => {
     expect(schema).toContain("p_topic like 'db:direct-messages:'||(select auth.uid())::text||':%'");
     expect(schema).toContain('alter publication supabase_realtime add table public.direct_messages');
     expect(directMessagesPage).toContain('onOnlineUsersChange');
+    expect(directMessagesPage).toContain('MessageReceipt');
+    expect(directMessagesPage).toContain('Escribiendo…');
+    expect(api).toContain('openDirectTypingChannel');
+    expect(schema).toContain("public.direct_messages_controller_id() in (p_user_id,p_peer_id)");
+    expect(schema).toContain("'deliveredAt',p_message.delivered_at");
     expect(api).toContain("table: 'direct_messages'");
   });
 
@@ -343,6 +349,12 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain("meeting-stage ${presentationStream ? 'presenting' : ''}");
     expect(meetingStudio).toContain('onParticipantLeft: (participant)');
     expect(meetingStyles).toContain('.meeting-stage.presenting .video-grid');
+  });
+
+  it('crops every selected profile photo before upload', () => {
+    expect(app).toContain('ProfilePhotoCropper');
+    expect(profilePhotoCropper).toContain("canvas.toBlob(resolve, 'image/webp', .92)");
+    expect(profilePhotoCropper).toContain('Arrastra la imagen');
   });
 
   it('shows membership frames in meeting people and chat while guests remain unbadged', () => {

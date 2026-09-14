@@ -353,6 +353,7 @@ export const api = {
   getDirectMessages: (userId, limit = 200) => rpc('get_direct_messages', { userId, limit }),
   sendDirectMessage: (recipientId, body) => rpc('send_direct_message', { recipientId, body }),
   markDirectMessagesRead: (senderId) => rpc('mark_direct_messages_read', { senderId }),
+  markDirectMessagesDelivered: () => rpc('mark_direct_messages_delivered'),
   getMeetingInviteCandidates: (meetingId, query = '') => rpc('get_meeting_invite_candidates', { meetingId, query }),
   markMeetingInvitationSeen: (invitationId) => rpc('mark_meeting_invitation_seen', { invitationId }),
   inviteToMeeting: (payload) => rpc('invite_to_meeting', payload),
@@ -392,9 +393,36 @@ export const api = {
       if (!active) return;
       channel = supabase.channel(`db:direct-messages:${userId}:${crypto.randomUUID()}`, { config: { private: true } })
         .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `recipient_id=eq.${userId}` }, callback)
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'direct_messages', filter: `sender_id=eq.${userId}` }, callback)
         .subscribe();
     }).catch(() => {});
     return () => { active = false; if (channel) supabase.removeChannel(channel); };
+  },
+  openDirectTypingChannel(userId, peerId, callback) {
+    let active = true; let channel = null; let subscribed = false; let pending = null;
+    const topic = `direct:${[String(userId), String(peerId)].sort().join(':')}`;
+    const publish = (typing) => {
+      pending = { senderId: userId, recipientId: peerId, typing: Boolean(typing), sentAt: Date.now() };
+      if (subscribed && channel) {
+        const payload = pending; pending = null;
+        channel.send({ type: 'broadcast', event: 'typing', payload }).catch(() => {});
+      }
+    };
+    authorizeRealtime().then(() => {
+      if (!active) return;
+      channel = supabase.channel(topic, { config: { private: true, broadcast: { self: false, ack: false } } })
+        .on('broadcast', { event: 'typing' }, ({ payload }) => {
+          if (payload?.senderId === peerId && payload?.recipientId === userId) callback?.(Boolean(payload.typing));
+        })
+        .subscribe((status) => {
+          subscribed = status === 'SUBSCRIBED';
+          if (subscribed && pending) publish(pending.typing);
+        });
+    }).catch(() => {});
+    return {
+      send: publish,
+      close: () => { active = false; subscribed = false; if (channel) supabase.removeChannel(channel); },
+    };
   },
   onWalletChange(userId, callback) {
     let active = true; let channel = null;

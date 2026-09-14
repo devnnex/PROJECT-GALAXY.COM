@@ -20,6 +20,7 @@ import ConstellationAvatar from './components/ConstellationAvatar';
 import GalaxyStore from './components/GalaxyStore';
 import ReportsPage from './components/ReportsPage';
 import DirectMessagesPage from './components/DirectMessagesPage';
+import ProfilePhotoCropper from './components/ProfilePhotoCropper';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
 import { membershipForAvatar } from './membership-badges';
 import lotajesImage from '../LOTAJES.jpeg';
@@ -152,15 +153,16 @@ function WalletPage({ user }) { const wallet = user.wallet || {}; const currency
 function OrdersPage() { return <div className="page-stack"><header className="page-header"><div><p className="eyebrow">PURCHASES</p><h1>Mis órdenes</h1><p>Estado verificable de cada compra.</p></div></header><section className="surface"><div className="table-head"><span>ORDEN</span><span>PRODUCTO</span><span>RED</span><span>IMPORTE</span><span>ESTADO</span></div><EmptyState icon={Package} title="No hay órdenes" text="Una orden aparecerá aquí después de crear una solicitud real de compra." /></section></div>; }
 function ProfileEditor({ user, onClose, onSaved }) {
   const [form, setForm] = useState({ name: user.name || '', username: user.username || '', bio: user.bio || '', language: languageFor(user) });
-  const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [avatarFile, setAvatarFile] = useState(null); const [avatarPreview, setAvatarPreview] = useState(''); const [removeAvatar, setRemoveAvatar] = useState(false);
+  const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [avatarFile, setAvatarFile] = useState(null); const [avatarPreview, setAvatarPreview] = useState(''); const [removeAvatar, setRemoveAvatar] = useState(false); const [cropFile, setCropFile] = useState(null);
   useEffect(() => () => { if (avatarPreview) URL.revokeObjectURL(avatarPreview); }, [avatarPreview]);
   const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.name === 'username' ? event.target.value.toLowerCase() : event.target.value }));
   const selectAvatar = (event) => {
     const file = event.target.files?.[0]; if (!file) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('Selecciona una imagen JPG, PNG o WebP.'); event.target.value = ''; return; }
     if (file.size > 5 * 1024 * 1024) { setError('La foto de perfil debe pesar como máximo 5 MB.'); event.target.value = ''; return; }
-    setError(''); setAvatarFile(file); setRemoveAvatar(false); setAvatarPreview(URL.createObjectURL(file));
+    setError(''); setCropFile(file); event.target.value = '';
   };
+  const applyAvatarCrop = (file) => { setAvatarFile(file); setRemoveAvatar(false); setAvatarPreview(URL.createObjectURL(file)); setCropFile(null); };
   const submit = async (event) => {
     event.preventDefault(); setBusy(true); setError('');
     try { await onSaved(form, { file: avatarFile, remove: removeAvatar }); onClose(); } catch (cause) { setError(cause.message); } finally { setBusy(false); }
@@ -176,7 +178,7 @@ function ProfileEditor({ user, onClose, onSaved }) {
       {error && <div className="inline-error" role="alert">{error}</div>}
       <div className="modal-actions"><button className="secondary-button" type="button" onClick={onClose}>Cancelar</button><button className="primary-button" disabled={busy}>{busy ? 'Guardando…' : 'Guardar cambios'}</button></div>
     </form>
-  </section></div>;
+  </section>{cropFile && <ProfilePhotoCropper file={cropFile} onCancel={() => setCropFile(null)} onApply={applyAvatarCrop} />}</div>;
 }
 
 function ProfilePage({ user, toast, onUserChange, navigate, membership }) {

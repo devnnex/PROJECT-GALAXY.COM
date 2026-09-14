@@ -860,7 +860,7 @@ function meetingMusicPosition(state) {
 }
 
 function MeetingMusicPlayer({ tracks, state, canControl, voiceActive, open, onToggleOpen, onCommand, onUpload, uploading }) {
-  const audioRef = useRef(null); const playbackStateRef = useRef(state); const appliedStateRef = useRef(null); const volumeFrameRef = useRef(0);
+  const audioRef = useRef(null); const playbackStateRef = useRef(state); const appliedStateRef = useRef(null);
   const [duration, setDuration] = useState(0); const [clock, setClock] = useState(Date.now()); const [playbackBlocked, setPlaybackBlocked] = useState(false); const [loadError, setLoadError] = useState(false); const [buffering, setBuffering] = useState(false); const [dragging, setDragging] = useState(false);
   const track = tracks.find((item) => item.id === state.trackId) || null;
   const position = Math.min(duration || Infinity, meetingMusicPosition(state)); const remaining = duration ? Math.max(0, duration - position) : 0;
@@ -892,22 +892,24 @@ function MeetingMusicPlayer({ tracks, state, canControl, voiceActive, open, onTo
   }, [track?.id]);
   useEffect(() => {
     const previous = appliedStateRef.current; const continuous = isMeetingMusicStateContinuous(previous, state, meetingMusicPosition);
+    if (state.syncMode === 'volume' && previous?.trackId === state.trackId && previous?.playing === state.playing) { appliedStateRef.current = state; return; }
     appliedStateRef.current = state; synchronizePlayback(state.syncMode === 'transport' || !continuous);
   }, [track?.id, state.playing, state.position, state.startedAt, state.revision, state.syncMode]);
   useEffect(() => {
     const timer = setInterval(() => { if (canControl) setClock(Date.now()); if (playbackStateRef.current.playing) synchronizePlayback(false); }, 1000);
     const unlock = () => { if (playbackStateRef.current.playing) synchronizePlayback(true); };
-    window.addEventListener('galaxy:resume-meeting-audio', unlock); window.addEventListener('pointerdown', unlock, true);
-    return () => { clearInterval(timer); window.removeEventListener('galaxy:resume-meeting-audio', unlock); window.removeEventListener('pointerdown', unlock, true); };
+    window.addEventListener('galaxy:resume-meeting-audio', unlock);
+    return () => { clearInterval(timer); window.removeEventListener('galaxy:resume-meeting-audio', unlock); };
   }, [canControl]);
   useEffect(() => {
-    const audio = audioRef.current; if (!audio) return undefined;
-    cancelAnimationFrame(volumeFrameRef.current);
-    const from = audio.volume; const to = Math.max(0, Math.min(1, state.volume * (voiceActive ? .32 : 1))); const started = performance.now(); const durationMs = voiceActive ? 110 : 420;
-    const ramp = (now) => { const progress = Math.min(1, (now - started) / durationMs); audio.volume = from + (to - from) * (1 - ((1 - progress) ** 3)); if (progress < 1) volumeFrameRef.current = requestAnimationFrame(ramp); };
-    volumeFrameRef.current = requestAnimationFrame(ramp);
-    return () => cancelAnimationFrame(volumeFrameRef.current);
+    const audio = audioRef.current; if (audio) audio.volume = Math.max(0, Math.min(1, state.volume * (voiceActive ? .32 : 1)));
   }, [state.volume, voiceActive]);
+  useEffect(() => {
+    if (!playbackBlocked) return undefined;
+    const unlock = () => synchronizePlayback(true);
+    window.addEventListener('pointerdown', unlock, { capture: true, once: true });
+    return () => window.removeEventListener('pointerdown', unlock, true);
+  }, [playbackBlocked]);
   useEffect(() => {
     if (!state.playing || tracks.length < 2 || !track) return undefined;
     const index = tracks.findIndex((item) => item.id === track.id); const next = tracks[(index + 1) % tracks.length];
@@ -915,7 +917,7 @@ function MeetingMusicPlayer({ tracks, state, canControl, voiceActive, open, onTo
     const preload = new Audio(); preload.preload = 'auto'; preload.src = next.src; preload.load();
     return () => { preload.pause(); preload.removeAttribute('src'); preload.load(); };
   }, [state.playing, track?.id, tracks]);
-  useEffect(() => () => { cancelAnimationFrame(volumeFrameRef.current); const audio = audioRef.current; if (audio) { audio.pause(); audio.playbackRate = 1; } }, []);
+  useEffect(() => () => { const audio = audioRef.current; if (audio) { audio.pause(); audio.playbackRate = 1; } }, []);
   void clock;
 
   const choose = (trackId) => { if (canControl) onCommand({ type: 'select', trackId }); };
