@@ -10,6 +10,8 @@ const meetingStyles = readFileSync(new URL('../src/meeting-live.css', import.met
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const avatar = readFileSync(new URL('../src/components/ConstellationAvatar.jsx', import.meta.url), 'utf8');
 const appHtml = readFileSync(new URL('../app.html', import.meta.url), 'utf8');
+const reportsPage = readFileSync(new URL('../src/components/ReportsPage.jsx', import.meta.url), 'utf8');
+const directMessagesPage = readFileSync(new URL('../src/components/DirectMessagesPage.jsx', import.meta.url), 'utf8');
 
 const publicRpc = [
   'get_current_user', 'update_profile', 'update_profile_avatar', 'get_bootstrap_data', 'create_meeting', 'join_meeting', 'get_my_meetings',
@@ -22,6 +24,8 @@ const publicRpc = [
   'get_my_notifications', 'mark_notification_read', 'mark_all_notifications_read', 'respond_to_meeting_invitation',
   'get_membership_center', 'reset_wallet_accounting',
   'get_galaxy_store', 'save_galaxy_store_product',
+  'get_platform_reports', 'create_platform_report', 'update_platform_report', 'delete_platform_report', 'clear_platform_reports',
+  'get_direct_message_contacts', 'get_direct_messages', 'send_direct_message', 'mark_direct_messages_read',
 ];
 
 describe('Supabase contract', () => {
@@ -112,13 +116,13 @@ describe('Supabase contract', () => {
   it('keeps remote meeting audio direct and independent from the screen-share mixer', () => {
     expect(meetingStudio).toContain('audio.defaultMuted = false; audio.muted = false; audio.volume = 1');
     expect(meetingStudio).toContain('audio.srcObject = tracks.length ? new MediaStream(tracks) : null');
-    expect(meetingStudio).toContain('mixedSource.connect(output.input)');
+    expect(meetingStudio).not.toContain('mixedSource.connect(output.input)');
     expect(meetingStudio).toContain('function meetingOutputBus()');
     expect(meetingStudio).not.toContain("track.addEventListener('mute', changed)");
     expect(meetingStudio).toContain("window.addEventListener('pageshow', resume)");
     expect(meetingStudio).toContain("document.addEventListener('visibilitychange', visibilityChanged)");
-    expect(meetingStudio).toContain("!document.hidden && output?.context.state === 'running'");
-    expect(meetingStudio).toContain('audio.defaultMuted = true; audio.muted = true; await audio.play()');
+    expect(meetingStudio).toContain('function keepMeetingMediaAlive()');
+    expect(meetingStudio).toContain("new Blob([buffer], { type: 'audio/wav' })");
   });
 
   it('queues early WebRTC signals and primes one shared audio engine before joining', () => {
@@ -265,7 +269,7 @@ describe('Supabase contract', () => {
 
   it('uses adaptive WebRTC sender limits for low-latency meeting media', () => {
     expect(meetingClient).toContain('async function replaceMeetingSenderTrack(sender, track)');
-    expect(meetingClient).toContain('encoding.maxBitrate = 96_000');
+    expect(meetingClient).toContain('encoding.maxBitrate = 128_000');
     expect(meetingClient).toContain('mobile ? 2_200_000 : 4_500_000');
     expect(meetingClient).toContain("parameters.degradationPreference = detailed ? 'balanced' : 'maintain-framerate'");
     expect(meetingClient).toContain('replaceMeetingSenderTrack(videoSender, videoTrack)');
@@ -317,6 +321,28 @@ describe('Supabase contract', () => {
     expect(schema).toContain("lower(account.email)='elkin56ty@gmail.com'");
     expect(schema).toContain("values('meeting-music','meeting-music',true,104857600");
     expect(meetingStyles).toContain('.meeting-music-upload');
+  });
+
+  it('provides member reports, owner-only follow-up and private direct messages', () => {
+    expect(app).toContain("['reports', 'Reportes', Flag]");
+    expect(app).toContain("page === 'reports'");
+    expect(reportsPage).toContain("REPORTS_CONTROLLER = 'elkin56ty@gmail.com'");
+    expect(reportsPage).toContain('Vaciar reportes');
+    expect(schema).toContain('create table if not exists public.platform_reports');
+    expect(schema).toContain('create table if not exists public.direct_messages');
+    expect(schema).toContain("p_topic like 'db:direct-messages:'||(select auth.uid())::text||':%'");
+    expect(schema).toContain('alter publication supabase_realtime add table public.direct_messages');
+    expect(directMessagesPage).toContain('onOnlineUsersChange');
+    expect(api).toContain("table: 'direct_messages'");
+  });
+
+  it('keeps music changes live, ducks it under voice and pins the shared screen', () => {
+    expect(meetingStudio).toContain("publishMeetingMusicControl(next, !['volume', 'seek'].includes(command.type))");
+    expect(meetingStudio).toContain("state.volume * (voiceActive ? .32 : 1)");
+    expect(meetingStudio).toContain('sharedSoundGain.gain.value = .34');
+    expect(meetingStudio).toContain("meeting-stage ${presentationStream ? 'presenting' : ''}");
+    expect(meetingStudio).toContain('onParticipantLeft: (participant)');
+    expect(meetingStyles).toContain('.meeting-stage.presenting .video-grid');
   });
 
   it('shows membership frames in meeting people and chat while guests remain unbadged', () => {

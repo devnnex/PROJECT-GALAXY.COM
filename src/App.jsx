@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity, ArrowRight, Bell, Bookmark, Boxes, CalendarDays, Check, ChevronDown, CircleDollarSign,
-  Clock3, Compass, Copy, CreditCard, Eye, EyeOff, Heart, Home, KeyRound, Languages, LayoutGrid, LockKeyhole,
+  Clock3, Compass, Copy, CreditCard, Eye, EyeOff, Flag, Heart, Home, KeyRound, Languages, LayoutGrid, LockKeyhole,
   ImagePlus, LogOut, Menu, MessageCircle, Mic2, MoreHorizontal, Orbit, Package, Plus, Radio,
   Search, Send, Settings, ShieldCheck, ShoppingBag, Sparkles, Star, TrendingUp, User,
   Users, Video, Volume2, WalletCards, X, Zap, Trash2,
@@ -18,6 +18,8 @@ import MeetingStudio from './components/MeetingStudio';
 import CalendarPage from './components/CalendarPage';
 import ConstellationAvatar from './components/ConstellationAvatar';
 import GalaxyStore from './components/GalaxyStore';
+import ReportsPage from './components/ReportsPage';
+import DirectMessagesPage from './components/DirectMessagesPage';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
 import { membershipForAvatar } from './membership-badges';
 import lotajesImage from '../LOTAJES.jpeg';
@@ -29,14 +31,14 @@ const isMeetingOwner = (user) => String(user?.email || '').trim().toLowerCase() 
 const catalogFor = () => products;
 
 const navigation = [
-  ['dashboard', 'Inicio', Home], ['discover', 'Descubrir', Compass], ['marketplace', 'Marketplace', ShoppingBag],
+  ['dashboard', 'Inicio', Home], ['reports', 'Reportes', Flag], ['marketplace', 'Marketplace', ShoppingBag],
   ['store', 'Galaxy Store', ShoppingBag], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['messages', 'Mensajes', MessageCircle],
   ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['users', 'Usuarios', Users], ['profile', 'Perfil', User],
 ];
-const memberNavigation = navigation.filter(([id]) => ['marketplace', 'store', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id));
+const memberNavigation = navigation.filter(([id]) => ['reports', 'marketplace', 'store', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id));
 
 const navigationEnglish = {
-  dashboard: 'Home', discover: 'Discover', marketplace: 'Marketplace', store: 'Galaxy Store', meetings: 'Meetings',
+  dashboard: 'Home', reports: 'Reports', marketplace: 'Marketplace', store: 'Galaxy Store', meetings: 'Meetings',
   calendar: 'Calendar', messages: 'Messages', wallet: 'Wallet', orders: 'Orders', users: 'Users', profile: 'Profile',
 };
 const languageFor = (user) => user?.language === 'en' ? 'en' : 'es';
@@ -87,7 +89,7 @@ function Dashboard({ user, navigate, openProduct }) {
   const catalog = catalogFor(user); const vip = catalog.find((product) => product.id === 'membership_vip');
   const dashboardProducts = [vip, ...catalog.filter((product) => product.id !== 'membership_vip' && product.id !== 'membership_sessions')].filter(Boolean).slice(0, 3);
   return <div className="page-stack">
-    <header className="page-header"><div><p className="eyebrow">XAUUSD COMMAND CENTER</p><h1>Bienvenido de vuelta, {user.name.split(' ')[0]}.</h1><p>Prepárate para las operativas en vivo y la próxima Kill Zone.</p></div><button className="primary-button compact" onClick={() => navigate('discover')}><Plus /> Analizar</button></header>
+    <header className="page-header"><div><p className="eyebrow">XAUUSD COMMAND CENTER</p><h1>Bienvenido de vuelta, {user.name.split(' ')[0]}.</h1><p>Prepárate para las operativas en vivo y la próxima Kill Zone.</p></div><button className="primary-button compact" onClick={() => navigate('reports')}><Plus /> Crear reporte</button></header>
     <div className="metrics"><Metric icon={WalletCards} label="Balance disponible" value={`${Number(wallet.availableBalance || 0).toFixed(2)} ${currency}`} note="Disponible en tu cuenta" /><Metric icon={Activity} label="Nivel actual" value={level} note="Progreso verificado" tone="blue" /><Metric icon={Sparkles} label="XP acumulados" value={xp} note="Sin estimaciones locales" tone="rose" /></div>
     <div className="dashboard-grid"><section className="surface activity-panel"><div className="section-title"><div><p className="eyebrow">MARKET CONTEXT</p><h2>Bitácora de sesión</h2></div></div><EmptyState icon={Activity} title="Sin análisis registrados" text="Aquí aparecerán tus lecturas de estructura, liquidez y operativas de XAUUSD." /></section><section className="surface next-meeting"><div className="section-title"><div><p className="eyebrow">KILL ZONE</p><h2>Sala de análisis</h2></div><Video /></div><div className="meeting-art"><span className="pulse-ring" /><Orbit /></div><h3>Operativas en vivo</h3><p>Acompañamiento de lunes a viernes para estudiar XAUUSD antes de London o New York.</p><button className="primary-button" onClick={() => navigate('meetings')}>Abrir sesiones <ArrowRight /></button></section></div>
     <section><div className="section-title"><div><p className="eyebrow">TRADING TOOLKIT</p><h2>Herramientas para XAUUSD</h2></div><button className="text-button" onClick={() => navigate('marketplace')}>Marketplace <ArrowRight /></button></div><ProductGrid items={dashboardProducts} onOpen={openProduct} /></section>
@@ -253,6 +255,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(!user.isGuest); const [vipPromoOpen, setVipPromoOpen] = useState(false);
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [notificationItems, setNotificationItems] = useState([]); const [notificationFilter, setNotificationFilter] = useState('UNREAD'); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
+  const [directUnread, setDirectUnread] = useState(0);
   const [membershipCenter, setMembershipCenter] = useState({ membership: user.membership || { isActive: false }, plans: [], orders: [] });
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
@@ -282,6 +285,18 @@ function AppShell({ user, onUserChange, onLogout }) {
     refresh(); const unsubscribe = api.onNotificationChange(user.id, refresh); const timer = setInterval(refresh, 15_000);
     return () => { active = false; unsubscribe(); clearInterval(timer); };
   }, [user.id]);
+  useEffect(() => {
+    if (user.isGuest) return undefined;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const contacts = await api.getDirectMessageContacts();
+        if (active) setDirectUnread(contacts.reduce((sum, contact) => sum + Number(contact.unreadCount || 0), 0));
+      } catch {}
+    };
+    refresh(); const unsubscribe = api.onDirectMessageChange(user.id, refresh); const timer = setInterval(refresh, 15_000);
+    return () => { active = false; unsubscribe(); clearInterval(timer); };
+  }, [user.id, user.isGuest]);
   useEffect(() => {
     if (activeNotice) return;
     const pending = notificationItems.find((notice) => !notice.readAt && actionableNotice(notice) && !dismissedNotices.has(notice.id));
@@ -334,18 +349,18 @@ function AppShell({ user, onUserChange, onLogout }) {
   const activeLabel = availableNavigation.find(([id]) => id === page)?.[1] || 'Reuniones';
   let content;
   if (page === 'dashboard') content = <Dashboard user={representedUser} navigate={navigate} openProduct={setSelectedProduct} />;
-  else if (page === 'discover') content = <FeedPage toast={toast} />;
+  else if (page === 'reports') content = <ReportsPage user={representedUser} toast={toast} />;
   else if (page === 'marketplace') content = <Marketplace onOpen={setSelectedProduct} user={representedUser} />;
   else if (page === 'store') content = <GalaxyStore isAdmin={isAdmin} toast={toast} />;
   else if (page === 'meetings') content = null;
   else if (page === 'calendar') content = <CalendarPage toast={toast} onJoin={(request) => { setJoinRequest(request); navigate('meetings'); }} />;
-  else if (page === 'messages') content = <MessagesPage toast={toast} />;
+  else if (page === 'messages') content = <DirectMessagesPage user={representedUser} toast={toast} onUnreadChange={setDirectUnread} />;
   else if (page === 'wallet') content = <WalletActivity user={representedUser} />;
   else if (page === 'orders') content = <MembershipOrdersPage orders={membershipCenter.orders} onRefresh={() => reloadMembership().catch((error) => toast(error.message, 'error'))} />;
   else if (page === 'users' && isAdmin) content = <AdminUsersPage toast={toast} />;
   else content = <ProfilePage user={representedUser} toast={toast} onUserChange={onUserChange} navigate={navigate} membership={membership} />;
   return <div className="app-shell">
-    <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{availableNavigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{id === 'messages' && <i>3</i>}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><div><strong>{representedUser.name}</strong><span>{isAdmin ? 'ADMIN' : english ? 'COMMUNITY' : 'COMUNIDAD'} · LVL {representedUser.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> {english ? 'Sign out' : 'Cerrar sesión'}</button></div></aside>
+    <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{availableNavigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{id === 'messages' && directUnread > 0 && <i>{Math.min(directUnread, 99)}</i>}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><div><strong>{representedUser.name}</strong><span>{isAdmin ? 'ADMIN' : english ? 'COMMUNITY' : 'COMUNIDAD'} · LVL {representedUser.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> {english ? 'Sign out' : 'Cerrar sesión'}</button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
     <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>{english ? 'Search Galaxy' : 'Buscar en Galaxy'}</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)} aria-label={english ? 'Notifications' : 'Notificaciones'}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>{english ? 'Notifications' : 'Notificaciones'}</h3><span>{unread} {english ? 'new' : 'nuevas'}</span></div><div className="notification-filters" role="group" aria-label={english ? 'Notification filter' : 'Filtro de notificaciones'}><button className={notificationFilter === 'ALL' ? 'active' : ''} onClick={() => setNotificationFilter('ALL')}>{english ? 'All' : 'Todas'}</button><button className={notificationFilter === 'UNREAD' ? 'active' : ''} onClick={() => setNotificationFilter('UNREAD')}>{english ? 'Unread' : 'No leídas'}{unread > 0 && <span>{unread}</span>}</button></div><div className="notification-list">{visibleNotifications.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}><Bell /></span><div><strong>{notice.title}</strong><small>{notice.body || notice.meetingTitle || (english ? 'Account activity' : 'Actividad de tu cuenta')}</small></div></button>)}</div>{!visibleNotifications.length && <p className="notifications-empty">{notificationFilter === 'UNREAD' ? (english ? 'You have no unread notifications.' : 'No tienes notificaciones sin leer.') : (english ? 'You have no notifications.' : 'No tienes notificaciones.')}</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>{english ? 'Mark all as read' : 'Marcar todas como leídas'}</button></div>}</header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={representedUser} joinRequest={joinRequest} onSessionChange={setMeetingSession} canCreate={isMeetingOwner(user)} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
     {meetingSession.active && page !== 'meetings' && <div className="background-meeting-bar glass"><button className="background-meeting-main" onClick={() => navigate('meetings')}><span className="meeting-live-dot" /><span><strong>{meetingSession.title || 'Reunión en curso'}</strong><small>{meetingSession.waiting ? 'Esperando admisión' : 'Audio y conexión activos en segundo plano'}</small></span></button>{meetingSession.audioBlocked && <button className="background-audio-button" title="Activar sonido" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /></button>}<button className="secondary-button" onClick={() => navigate('meetings')}>Volver</button></div>}

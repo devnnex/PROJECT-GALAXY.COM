@@ -109,6 +109,7 @@ function voiceCaptureConstraints() {
 let sharedMeetingAudioContext = null;
 let sharedMeetingOutputBus = null;
 let sharedMeetingAudioKeepAlive = null;
+let sharedMeetingMediaKeepAlive = null;
 const meetingReactionAudioBuffers = new Map();
 const meetingReactionPlaybacks = new Map();
 
@@ -131,6 +132,7 @@ function meetingOutputBus() {
 }
 
 function keepMeetingAudioAlive() {
+  keepMeetingMediaAlive();
   const context = meetingAudioContext(); if (!context) return null;
   if (context.state === 'suspended') context.resume?.().catch(() => {});
   if (sharedMeetingAudioKeepAlive?.context === context) return context;
@@ -140,10 +142,25 @@ function keepMeetingAudioAlive() {
   return context;
 }
 
+function keepMeetingMediaAlive() {
+  if (!sharedMeetingMediaKeepAlive) {
+    const sampleRate = 8000; const samples = sampleRate; const buffer = new ArrayBuffer(44 + samples * 2); const view = new DataView(buffer);
+    const text = (offset, value) => { for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index)); };
+    text(0, 'RIFF'); view.setUint32(4, 36 + samples * 2, true); text(8, 'WAVE'); text(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true); view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true); text(36, 'data'); view.setUint32(40, samples * 2, true);
+    for (let index = 0; index < samples; index += 1) view.setInt16(44 + index * 2, index % 2 ? 1 : -1, true);
+    const url = URL.createObjectURL(new Blob([buffer], { type: 'audio/wav' })); const audio = new Audio(url);
+    audio.loop = true; audio.preload = 'auto'; audio.volume = .01; audio.playsInline = true; audio.setAttribute('playsinline', '');
+    sharedMeetingMediaKeepAlive = { audio, url };
+  }
+  sharedMeetingMediaKeepAlive.audio.play().catch(() => {});
+}
+
 function stopMeetingAudioKeepAlive() {
-  if (!sharedMeetingAudioKeepAlive) return;
-  try { sharedMeetingAudioKeepAlive.source.stop(); } catch {}
-  sharedMeetingAudioKeepAlive.source.disconnect(); sharedMeetingAudioKeepAlive.gain.disconnect(); sharedMeetingAudioKeepAlive = null;
+  if (sharedMeetingAudioKeepAlive) {
+    try { sharedMeetingAudioKeepAlive.source.stop(); } catch {}
+    sharedMeetingAudioKeepAlive.source.disconnect(); sharedMeetingAudioKeepAlive.gain.disconnect(); sharedMeetingAudioKeepAlive = null;
+  }
+  if (sharedMeetingMediaKeepAlive) { sharedMeetingMediaKeepAlive.audio.pause(); URL.revokeObjectURL(sharedMeetingMediaKeepAlive.url); sharedMeetingMediaKeepAlive = null; }
 }
 
 async function meetingReactionBuffer(source) {
@@ -238,6 +255,7 @@ async function createLongRangeMicrophoneStream(capturedStream) {
 
 function primeMeetingAudio() {
   const context = keepMeetingAudioAlive();
+  keepMeetingMediaAlive();
   if (context?.state === 'suspended') context.resume().catch(() => {});
   meetingReactionBuffer(PHOENIX_LIGHTNING_ASSET); meetingReactionBuffer(GALAXY_DANCER_SOUND);
   window.dispatchEvent(new Event('galaxy:resume-meeting-audio'));
@@ -362,17 +380,9 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
   const ref = useRef(null);
   useEffect(() => {
     const audio = ref.current; if (!audio) return undefined;
-    let disposed = false; let mixedSource = null;
-    const disconnectMix = () => { mixedSource?.disconnect(); mixedSource = null; };
+    let disposed = false;
     const play = async () => {
       if (disposed || !audio.srcObject) return;
-      const output = meetingOutputBus();
-      if (output?.context.state === 'suspended') await output.context.resume?.().catch(() => {});
-      if (!document.hidden && output?.context.state === 'running') {
-        if (!mixedSource) try { mixedSource = output.context.createMediaStreamSource(audio.srcObject); mixedSource.connect(output.input); } catch { mixedSource = null; }
-        if (mixedSource) { audio.defaultMuted = true; audio.muted = true; await audio.play().catch(() => {}); onBlocked(peerId, false); return; }
-      }
-      disconnectMix();
       audio.defaultMuted = false; audio.muted = false; audio.volume = 1;
       try { await audio.play(); if (!disposed) onBlocked(peerId, false); }
       catch { if (!disposed) onBlocked(peerId, true); }
@@ -382,7 +392,7 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
       const tracks = (stream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
       const attached = audio.srcObject?.getAudioTracks?.() || [];
       const unchanged = tracks.length === attached.length && tracks.every((track) => attached.includes(track));
-      if (!unchanged) { disconnectMix(); audio.srcObject = tracks.length ? new MediaStream(tracks) : null; }
+      if (!unchanged) audio.srcObject = tracks.length ? new MediaStream(tracks) : null;
       if (!tracks.length) { onBlocked(peerId, false); return; }
       play();
     };
@@ -400,7 +410,7 @@ function RemoteAudioTrack({ stream, peerId, onBlocked }) {
       window.removeEventListener('pagehide', background); window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visibilityChanged);
       stream?.removeEventListener('addtrack', changed); stream?.removeEventListener('removetrack', changed);
       (stream?.getAudioTracks() || []).forEach((track) => { track.removeEventListener('unmute', resume); track.removeEventListener('ended', changed); });
-      disconnectMix(); audio.pause(); audio.srcObject = null;
+      audio.pause(); audio.srcObject = null;
     };
   }, [stream, peerId, onBlocked]);
   return <audio ref={ref} className="remote-audio" autoPlay playsInline preload="auto" />;
@@ -635,13 +645,14 @@ async function createSharedAudioMixer(displayStream, microphoneStream) {
 
   const context = meetingAudioContext();
   if (!context) return { track: fallbackTrack, fallbackTrack, close() {} };
-  const destination = context.createMediaStreamDestination(); const mixInput = context.createGain(); const sources = []; let stateHandler = null; let closed = false;
-  const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -10; compressor.knee.value = 8; compressor.ratio.value = 6; compressor.attack.value = .006; compressor.release.value = .16;
+  const destination = context.createMediaStreamDestination(); const mixInput = context.createGain(); const voiceGain = context.createGain(); const sharedSoundGain = context.createGain(); const sources = []; let stateHandler = null; let closed = false;
+  voiceGain.gain.value = 1; sharedSoundGain.gain.value = .34;
+  const compressor = context.createDynamicsCompressor(); compressor.threshold.value = -16; compressor.knee.value = 10; compressor.ratio.value = 4; compressor.attack.value = .004; compressor.release.value = .18;
   const limiter = context.createDynamicsCompressor(); limiter.threshold.value = -1; limiter.knee.value = 0; limiter.ratio.value = 20; limiter.attack.value = .001; limiter.release.value = .08;
+  voiceGain.connect(mixInput); sharedSoundGain.connect(mixInput);
   mixInput.connect(compressor).connect(limiter).connect(destination);
-  tracks.forEach((track) => {
-    const source = context.createMediaStreamSource(new MediaStream([track])); source.connect(mixInput); sources.push(source);
-  });
+  displayTracks.forEach((track) => { const source = context.createMediaStreamSource(new MediaStream([track])); source.connect(sharedSoundGain); sources.push(source); });
+  microphoneTracks.forEach((track) => { const source = context.createMediaStreamSource(new MediaStream([track])); source.connect(voiceGain); sources.push(source); });
   const mixedTrack = destination.stream.getAudioTracks()[0] || null;
   const notifyState = () => { if (!closed) stateHandler?.(context.state === 'running'); };
   const resume = async () => { if (closed) return; keepMeetingAudioAlive(); if (context.state !== 'running') await context.resume?.().catch(() => {}); notifyState(); };
@@ -659,7 +670,7 @@ async function createSharedAudioMixer(displayStream, microphoneStream) {
     close() {
       closed = true; stateHandler = null; clearInterval(keepAliveTimer); context.removeEventListener('statechange', stateChanged);
       window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume); window.removeEventListener('pagehide', resume); window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visibilityChanged);
-      sources.forEach((source) => source.disconnect()); mixInput.disconnect(); compressor.disconnect(); limiter.disconnect();
+      sources.forEach((source) => source.disconnect()); voiceGain.disconnect(); sharedSoundGain.disconnect(); mixInput.disconnect(); compressor.disconnect(); limiter.disconnect();
       destination.stream.getTracks().forEach((track) => track.stop());
     },
   };
@@ -848,7 +859,7 @@ function meetingMusicPosition(state) {
   return Math.max(0, state.position + (state.playing && state.startedAt ? (Date.now() - state.startedAt) / 1000 : 0));
 }
 
-function MeetingMusicPlayer({ tracks, state, canControl, open, onToggleOpen, onCommand, onUpload, uploading }) {
+function MeetingMusicPlayer({ tracks, state, canControl, voiceActive, open, onToggleOpen, onCommand, onUpload, uploading }) {
   const audioRef = useRef(null); const playbackStateRef = useRef(state); const appliedStateRef = useRef(null); const volumeFrameRef = useRef(0);
   const [duration, setDuration] = useState(0); const [clock, setClock] = useState(Date.now()); const [playbackBlocked, setPlaybackBlocked] = useState(false); const [loadError, setLoadError] = useState(false); const [buffering, setBuffering] = useState(false); const [dragging, setDragging] = useState(false);
   const track = tracks.find((item) => item.id === state.trackId) || null;
@@ -872,7 +883,7 @@ function MeetingMusicPlayer({ tracks, state, canControl, open, onToggleOpen, onC
 
   useEffect(() => {
     const audio = audioRef.current; if (!audio) return undefined;
-    setLoadError(false); setBuffering(false); setDuration(0); audio.preload = 'auto'; audio.volume = playbackStateRef.current.volume; audio.defaultPlaybackRate = 1; audio.playbackRate = 1; audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true;
+    setLoadError(false); setBuffering(false); setDuration(0); audio.preload = 'auto'; audio.volume = playbackStateRef.current.volume * (voiceActive ? .32 : 1); audio.defaultPlaybackRate = 1; audio.playbackRate = 1; audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true;
     if (!track) { audio.pause(); audio.removeAttribute('src'); audio.load(); return undefined; }
     if (audio.src !== new URL(track.src, location.href).href) { audio.src = track.src; audio.load(); }
     const ready = () => { setDuration(Number.isFinite(audio.duration) ? audio.duration : 0); synchronizePlayback(true); };
@@ -892,11 +903,11 @@ function MeetingMusicPlayer({ tracks, state, canControl, open, onToggleOpen, onC
   useEffect(() => {
     const audio = audioRef.current; if (!audio) return undefined;
     cancelAnimationFrame(volumeFrameRef.current);
-    const from = audio.volume; const to = Math.max(0, Math.min(1, state.volume)); const started = performance.now();
-    const ramp = (now) => { const progress = Math.min(1, (now - started) / 120); audio.volume = from + (to - from) * (1 - ((1 - progress) ** 3)); if (progress < 1) volumeFrameRef.current = requestAnimationFrame(ramp); };
+    const from = audio.volume; const to = Math.max(0, Math.min(1, state.volume * (voiceActive ? .32 : 1))); const started = performance.now(); const durationMs = voiceActive ? 110 : 420;
+    const ramp = (now) => { const progress = Math.min(1, (now - started) / durationMs); audio.volume = from + (to - from) * (1 - ((1 - progress) ** 3)); if (progress < 1) volumeFrameRef.current = requestAnimationFrame(ramp); };
     volumeFrameRef.current = requestAnimationFrame(ramp);
     return () => cancelAnimationFrame(volumeFrameRef.current);
-  }, [state.volume]);
+  }, [state.volume, voiceActive]);
   useEffect(() => {
     if (!state.playing || tracks.length < 2 || !track) return undefined;
     const index = tracks.findIndex((item) => item.id === track.id); const next = tracks[(index + 1) % tracks.length];
@@ -917,8 +928,8 @@ function MeetingMusicPlayer({ tracks, state, canControl, open, onToggleOpen, onC
     {audio}
     <button type="button" className="meeting-music-summary" aria-expanded={open} aria-label="Abrir lista de música" onClick={onToggleOpen}><span className="meeting-music-art"><Music2 /></span><span className="meeting-music-copy"><strong>{track?.title || 'Música de la reunión'}</strong><small>{loadError ? 'No se pudo cargar el audio' : track?.artist || (tracks.length ? 'Elige una canción' : 'Canciones pendientes')}</small></span><ListMusic /></button>
     <div className="meeting-music-transport" role="group" aria-label="Controles de música"><button type="button" disabled={!tracks.length} aria-label="Canción anterior" onClick={() => onCommand({ type: 'previous' })}><SkipBack /></button><button type="button" className="meeting-music-play" disabled={!tracks.length} aria-label={state.playing ? 'Pausar música' : 'Reproducir música'} onClick={() => onCommand({ type: 'toggle' })}>{state.playing ? <Pause /> : <Play />}</button><button type="button" disabled={!tracks.length} aria-label="Siguiente canción" onClick={() => onCommand({ type: 'next' })}><SkipForward /></button></div>
-    <div className="meeting-music-progress"><input type="range" min="0" max={duration || 1} step="0.1" value={Number.isFinite(position) ? position : 0} disabled={!track || !duration} aria-label="Posición de la canción" onChange={seek} /><time>{track ? `-${musicTime(remaining)}` : '--:--'}</time></div>
-    <label className="meeting-music-volume" title="Volumen para toda la reunión">{state.volume === 0 ? <VolumeX /> : <Volume2 />}<input type="range" min="0" max="1" step="0.02" value={state.volume} aria-label="Volumen de música para toda la reunión" onChange={(event) => onCommand({ type: 'volume', volume: Number(event.target.value) })} /></label>
+    <div className="meeting-music-progress"><input type="range" min="0" max={duration || 1} step="0.1" value={Number.isFinite(position) ? position : 0} disabled={!track || !duration} aria-label="Posición de la canción" onInput={seek} onChange={() => {}} /><time>{track ? `-${musicTime(remaining)}` : '--:--'}</time></div>
+    <label className="meeting-music-volume" title="Volumen para toda la reunión">{state.volume === 0 ? <VolumeX /> : <Volume2 />}<input type="range" min="0" max="1" step="0.02" value={state.volume} aria-label="Volumen de música para toda la reunión" onInput={(event) => onCommand({ type: 'volume', volume: Number(event.currentTarget.value) })} onChange={() => {}} /></label>
     {playbackBlocked && <button type="button" className="meeting-music-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar música</button>}
     {open && <div className="meeting-music-playlist"><header><span><ListMusic /><strong>Lista de reproducción</strong></span><small>{buffering ? 'Preparando audio de calidad original…' : 'Tú controlas la música para todos'}</small></header><label className={`meeting-music-upload ${dragging ? 'dragging' : ''} ${uploading ? 'uploading' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={dropped}><input type="file" accept=".mp3,.m4a,.aac,.ogg,.opus,.weba,.webm,.wav,.flac,audio/*" disabled={uploading} onChange={(event) => { addFile(event.target.files?.[0]); event.target.value = ''; }} /><UploadCloud /><span><strong>{uploading ? 'Subiendo canción…' : 'Agrega o arrastra tu canción'}</strong><small>Audio original hasta 100 MB</small></span></label><div>{tracks.map((item, index) => <button type="button" className={item.id === state.trackId ? 'active' : ''} key={item.id} onClick={() => choose(item.id)}><span>{item.cover ? <img src={item.cover} alt="" /> : <Music2 />}</span><span><strong>{item.title}</strong><small>{item.artist || `Canción ${index + 1}`}</small></span>{item.id === state.trackId && state.playing ? <i className="meeting-music-equalizer"><b /><b /><b /></i> : <Play />}</button>)}{!tracks.length && <p>Sube la primera canción para comenzar.</p>}</div></div>}
   </div></>;
@@ -932,7 +943,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const chatVisibleRef = useRef(false); const messagePulseTimer = useRef(null);
   const participantHandStates = useRef(new Map()); const participantSnapshotReady = useRef(false);
   const annotationStrokesRef = useRef([]);
-  const musicStateRef = useRef({ trackId: null, playing: false, position: 0, startedAt: null, revision: 0, volume: .28, syncMode: 'snapshot' }); const musicTracksRef = useRef(MEETING_MUSIC_TRACKS);
+  const musicStateRef = useRef({ trackId: null, playing: false, position: 0, startedAt: null, revision: 0, volume: .28, syncMode: 'snapshot' }); const musicTracksRef = useRef(MEETING_MUSIC_TRACKS); const musicBroadcastTimer = useRef(null); const pendingMusicBroadcast = useRef(null); const lastMusicBroadcastAt = useRef(0);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [privacySource, setPrivacySource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } }); const [savedMasks, setSavedMasks] = useState(() => { try { return JSON.parse(localStorage.getItem(maskKey) || 'null'); } catch { return null; } });
@@ -952,6 +963,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   }, []);
 
   useEffect(() => () => stopAllMeetingReactionSounds(), []);
+  useEffect(() => () => clearTimeout(musicBroadcastTimer.current), []);
   useEffect(() => { annotationStrokesRef.current = annotationStrokes; }, [annotationStrokes]);
   useEffect(() => {
     const query = window.matchMedia('(max-width: 1000px)');
@@ -1017,6 +1029,12 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     const now = Date.now();
     connection.current?.publishMeetingMusicState({ ...current, position: meetingMusicPosition(current), startedAt: current.playing ? now : null, revision: Math.max(now, current.revision + 1), syncMode: 'snapshot' }, target);
   };
+  const publishMeetingMusicControl = (next, immediate = false) => {
+    pendingMusicBroadcast.current = next;
+    const send = () => { musicBroadcastTimer.current = null; const value = pendingMusicBroadcast.current; pendingMusicBroadcast.current = null; if (!value) return; lastMusicBroadcastAt.current = Date.now(); connection.current?.publishMeetingMusicState(value); };
+    if (immediate) { clearTimeout(musicBroadcastTimer.current); send(); return; }
+    if (!musicBroadcastTimer.current) musicBroadcastTimer.current = setTimeout(send, Math.max(0, 60 - (Date.now() - lastMusicBroadcastAt.current)));
+  };
   const controlMeetingMusic = (command) => {
     if (meeting?.role !== 'HOST' || String(user.email || '').trim().toLowerCase() !== MEETING_MUSIC_CONTROLLER_EMAIL) return;
     const tracks = musicTracksRef.current; const current = musicStateRef.current;
@@ -1031,7 +1049,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (command.type === 'volume') volume = Math.max(0, Math.min(1, command.volume));
     const syncMode = ['select', 'seek', 'next', 'previous'].includes(command.type) ? 'transport' : command.type === 'volume' ? 'volume' : 'transport';
     const next = { trackId, position, playing, volume, startedAt: playing ? now : null, revision: Math.max(now, current.revision + 1), syncMode };
-    applyMeetingMusicState(next); connection.current?.publishMeetingMusicState(next);
+    applyMeetingMusicState(next); publishMeetingMusicControl(next, !['volume', 'seek'].includes(command.type));
   };
   const uploadMeetingMusic = async (file) => {
     setMusicUploading(true);
@@ -1149,6 +1167,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
         participantHandStates.current = new Map(value.map((peer) => [peer.peerId, Boolean(peer.handRaised)])); participantSnapshotReady.current = true; setParticipants(value);
       },
       onRemoteStream: (peerId, stream) => { if (isCurrent(client)) setRemoteStreams((current) => { const next = { ...current }; if (stream) next[peerId] = stream; else delete next[peerId]; return next; }); },
+      onParticipantLeft: (participant) => { if (isCurrent(client)) toast(`${participant.name || 'Un participante'} dejó la sala.`, 'info'); },
       onPeerState: (peerId, state) => { if (isCurrent(client)) setPeerStates((current) => ({ ...current, [peerId]: state })); }, onReaction: (value) => { if (isCurrent(client)) showReaction(value); }, onChat: (value, options) => { if (isCurrent(client)) { mergeMessage(value); if (options?.announce !== false) showFloatingMessage(value); } },
       onChatHistory: (history) => { if (isCurrent(client)) history.forEach(mergeMessage); }, onChatReaction: (value) => { if (isCurrent(client)) applyChatReaction(value); },
       onMeetingMusicState: (value) => { if (isCurrent(client)) receiveMeetingMusicState(value); },
@@ -1538,10 +1557,10 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   return <section className={`meeting-page ${mobilePanelOpen ? 'mobile-panel-open' : ''}`}>
     {mobilePanelOpen && <button className="meeting-mobile-scrim" type="button" aria-label="Cerrar chat" onClick={() => setMobilePanelOpen(false)} />}
     <button className={`mobile-chat-fab ${mobilePanelOpen ? 'active' : ''} ${messagePulse ? 'message-pulse' : ''}`} type="button" disabled={!joined} onClick={() => { setSideTab('chat'); setMobilePanelOpen((open) => !open); }}><MessageCircle /><span>{mobilePanelOpen ? 'Cerrar chat' : 'Abrir chat'}</span>{unreadMessages > 0 && <i aria-label={`${unreadMessages} mensajes sin leer`}>{unreadMessages}</i>}</button>
-    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-controls"><MeetingMusicPlayer tracks={musicTracks} state={musicState} canControl={canControlMusic} open={musicOpen} onToggleOpen={() => setMusicOpen((value) => !value)} onCommand={controlMeetingMusic} onUpload={uploadMeetingMusic} uploading={musicUploading} /><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Invitados sin cuenta' : meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar usuarios</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div></div>
+    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-controls"><MeetingMusicPlayer tracks={musicTracks} state={musicState} canControl={canControlMusic} voiceActive={localSpeaking || participants.some((participant) => participant.speaking)} open={musicOpen} onToggleOpen={() => setMusicOpen((value) => !value)} onCommand={controlMeetingMusic} onUpload={uploadMeetingMusic} uploading={musicUploading} /><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Invitados sin cuenta' : meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar usuarios</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div></div>
     <div className="meeting-grid">
       <div className={`meeting-stage-shell ${sharing ? 'has-analysis-tools' : ''}`}>
-      <div className="meeting-stage">
+      <div className={`meeting-stage ${presentationStream ? 'presenting' : ''}`}>
         {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} membership={sharing ? user.membership : presentationPeer?.membership} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span>{sharing && shareHasAudio && <button className={`presentation-audio-toggle ${shareAudioEnabled ? 'active' : ''}`} type="button" aria-pressed={shareAudioEnabled} title={shareAudioEnabled ? 'Silenciar sonido de la pantalla compartida' : 'Activar sonido de la pantalla compartida'} onClick={toggleSharedAudio}>{shareAudioEnabled ? <Volume2 /> : <VolumeX />}<span>{shareAudioEnabled ? 'Sonido compartido' : 'Sonido silenciado'}</span></button>}<CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} tool={sharing ? annotationTool : 'pen'} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} aspectRatio={presentationAspectRatio} onPoint={sendCollaborationPoint} onChange={updateAnnotation} onDelete={deleteAnnotation} onSelectionChange={setSelectedAnnotationId} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} membership={user.membership} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} membership={peer?.membership} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
         <RemoteAudioLayer streams={remoteStreams} onBlockedChange={setAudioBlocked} />
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
@@ -1556,7 +1575,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       <aside className="meeting-side"><div className="meeting-side-tabs"><button className={sideTab === 'people' ? 'active' : ''} onClick={() => setSideTab('people')}><Users /> Personas <span>{participants.length + 1}</span></button><button className={sideTab === 'chat' ? 'active' : ''} onClick={() => setSideTab('chat')}><MessageCircle /> Chat <span className={`chat-count ${messagePulse ? 'pulse' : ''}`}>{messages.length}</span></button></div>{sideTab === 'people' ? <><div className="people-list"><div className={`person ${mic ? 'mic-on' : 'mic-off'} ${localSpeaking ? 'speaking' : ''}`}><ConstellationAvatar className="avatar avatar-sm" seed={user.id} name={user.name} src={user.avatar} membership={user.membership} /><span>{user.name} · Tú {isHost && <small>Anfitrión</small>}</span>{handRaised && <Hand className="participant-hand-indicator" aria-label="Mano alzada" />}<AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} />{mic ? <Mic className="participant-mic-indicator" /> : <MicOff className="participant-mic-indicator" />}</div>{participants.map((peer) => <div className={`person ${peer.mic ? 'mic-on' : 'mic-off'} ${peer.speaking ? 'speaking' : ''}`} key={peer.peerId}><ConstellationAvatar className="avatar avatar-sm" seed={peer.userId || peer.peerId} name={peer.name} src={peer.avatar} membership={membershipForAvatar(peer)} /><span>{peer.name}<small>{peer.role === 'HOST' ? 'Anfitrión' : peerStates[peer.peerId] === 'connected' ? 'Audio P2P conectado' : 'Enlazando medios'}</small></span>{peer.handRaised && <Hand className="participant-hand-indicator" aria-label="Mano alzada" />}<AudioMeter stream={remoteStreams[peer.peerId]} enabled={peer.mic} />{isHost && peer.role !== 'HOST' && peer.mic ? <button className="host-mute participant-mic-indicator" title="Silenciar participante" onClick={() => connection.current?.mutePeer(peer.peerId)}><Mic /></button> : peer.mic ? <Mic className="participant-mic-indicator" /> : <MicOff className="participant-mic-indicator" />}</div>)}</div>{isHost && waitingParticipants.length > 0 && <div className="waiting-list"><p className="eyebrow">ESPERANDO ({waitingParticipants.length})</p>{waitingParticipants.map((item) => <div className="person" key={item.id}><ConstellationAvatar className="avatar avatar-sm" seed={item.userId} name={item.name} src={item.avatar} membership={membershipForAvatar(item)} /><span>{item.name}<small>@{item.username}</small></span><button title="Admitir" onClick={() => admission(item, true)}><Check /></button><button title="Rechazar" onClick={() => admission(item, false)}><X /></button></div>)}</div>}<div className="meeting-side-footer"><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Enlace para invitados' : 'Copiar código'}</button>{isHost && <button className="secondary-button" onClick={toggleLock}>{meeting.locked ? <Unlock /> : <Lock />} {meeting.locked ? 'Desbloquear' : 'Bloquear sala'}</button>}</div></> : <ChatPanel messages={messages} user={user} participants={participants} replyTo={replyTo} setReplyTo={setReplyTo} onSend={sendChat} onReact={reactToMessage} />}</aside>
     </div>
     <div className="control-dock glass">
-      <button type="button" className={mic ? 'active' : ''} disabled={!joined || (meeting.role !== 'HOST' && participantMicsLocked)} title={meeting.role !== 'HOST' && participantMicsLocked ? 'Micrófono bloqueado por el anfitrión' : ''} onClick={() => toggleTrack('audio')}>{mic ? <Mic /> : <MicOff />}<AudioMeter stream={media} enabled={mic} /><span>{meeting.role !== 'HOST' && participantMicsLocked ? 'Bloqueado' : mic ? 'Silenciar' : 'Activar audio'}</span></button>
+      <button type="button" className={mic ? 'active' : ''} disabled={!joined || (meeting.role !== 'HOST' && participantMicsLocked)} title={meeting.role !== 'HOST' && participantMicsLocked ? 'Micrófono bloqueado por el anfitrión' : ''} onClick={() => toggleTrack('audio')}>{mic ? <Mic /> : <MicOff />}<AudioMeter stream={media} enabled={mic} onSpeakingChange={speakingChanged} /><span>{meeting.role !== 'HOST' && participantMicsLocked ? 'Bloqueado' : mic ? 'Silenciar' : 'Activar audio'}</span></button>
       <button type="button" className={camera ? 'active' : ''} disabled={!joined} onClick={() => toggleTrack('video')}>{camera ? <Camera /> : <CameraOff />}<span>{camera ? 'Apagar cámara' : 'Iniciar video'}</span></button>
       <div className="share-wrap">
         <button type="button" className={sharing ? 'active' : ''} disabled={!joined} onClick={handleShareClick}><MonitorUp /><span>{sharing ? 'Detener' : 'Compartir'}</span></button>

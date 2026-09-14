@@ -24,7 +24,11 @@ async function replaceMeetingSenderTrack(sender, track) {
   if (!track || typeof sender.getParameters !== 'function' || typeof sender.setParameters !== 'function') return;
   const parameters = sender.getParameters(); const encoding = parameters.encodings?.[0];
   if (!encoding) return;
-  if (track.kind === 'audio') encoding.maxBitrate = 96_000;
+  if (track.kind === 'audio') {
+    encoding.maxBitrate = 128_000;
+    if ('priority' in encoding) encoding.priority = 'high';
+    if ('networkPriority' in encoding) encoding.networkPriority = 'high';
+  }
   else {
     const detailed = ['detail', 'text'].includes(track.contentHint);
     const mobile = typeof navigator.userAgentData?.mobile === 'boolean' ? navigator.userAgentData.mobile : /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
@@ -73,7 +77,7 @@ export class MeetingConnection {
   async acceptOffer(message) { const pc = await this.createPeer(message.source, false); await pc.setRemoteDescription(message.data); await this.attachLocalTracks(pc); await this.flushIce(message.source); await pc.setLocalDescription(await pc.createAnswer()); this.send({ type: 'answer', target: message.source, data: pc.localDescription }); }
   async acceptAnswer(message) { const pc = this.peers.get(message.source)?.pc; if (pc?.signalingState === 'have-local-offer') { await pc.setRemoteDescription(message.data); await this.flushIce(message.source); } }
   async acceptIce(message) { if (!message.data) return; const peer = this.peers.get(message.source); if (!peer) { const pending = this.orphanIce.get(message.source) || []; pending.push(message.data); this.orphanIce.set(message.source, pending.slice(-50)); return; } if (peer.pc.remoteDescription) await peer.pc.addIceCandidate(message.data).catch(() => {}); else peer.pendingIce.push(message.data); }
-  removePeer(peerId) { const peer = this.peers.get(peerId); if (peer?.reconnectTimer) clearTimeout(peer.reconnectTimer); peer?.pc.close(); this.peers.delete(peerId); this.participants.delete(peerId); this.callbacks.onRemoteStream?.(peerId, null); this.emitParticipants(); }
+  removePeer(peerId, announce = true) { const participant = this.participants.get(peerId); const peer = this.peers.get(peerId); if (peer?.reconnectTimer) clearTimeout(peer.reconnectTimer); peer?.pc.close(); this.peers.delete(peerId); this.participants.delete(peerId); this.callbacks.onRemoteStream?.(peerId, null); this.emitParticipants(); if (announce && participant) this.callbacks.onParticipantLeft?.(participant); }
 
   async createPeer(peerId, initiator) {
     if (this.peers.has(peerId)) return this.peers.get(peerId).pc;
@@ -210,10 +214,10 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     this.pendingRemovals.set(peerId, timer);
   }
 
-  removePeer(peerId) {
+  removePeer(peerId, announce = true) {
     this.cancelPeerRemoval(peerId);
     this.pendingSignals.delete(peerId);
-    super.removePeer(peerId);
+    super.removePeer(peerId, announce);
   }
 
   queueSignal(message) {
@@ -240,7 +244,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     }
     for (const [peerId, peer] of [...this.participants.entries()]) if (!online.has(peerId)) {
       const replacement = peer.userId && canonicalUsers.get(peer.userId);
-      if (replacement) this.removePeer(peerId); else this.schedulePeerRemoval(peerId);
+      if (replacement) this.removePeer(peerId, false); else this.schedulePeerRemoval(peerId);
     }
     this.emitParticipants();
   }

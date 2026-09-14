@@ -12,7 +12,9 @@ const parameterNames = Object.freeze({
   description: 'p_description', kind: 'p_kind', startsAt: 'p_starts_at', endsAt: 'p_ends_at',
   recurrence: 'p_recurrence', repeatUntil: 'p_repeat_until', avatar: 'p_avatar',
   priceUsdt: 'p_price_usdt', imagePath: 'p_image_path', soldOut: 'p_sold_out',
-  guestLimit: 'p_guest_limit',
+  guestLimit: 'p_guest_limit', reportId: 'p_report_id', category: 'p_category', subject: 'p_subject',
+  details: 'p_details', priority: 'p_priority', adminNotes: 'p_admin_notes', recipientId: 'p_recipient_id',
+  senderId: 'p_sender_id',
 });
 
 const PROFILE_AVATAR_BUCKET = 'profile-avatars';
@@ -342,6 +344,15 @@ export const api = {
   getAdminUsers: () => rpc('get_admin_users'),
   setUserAccess: (payload) => rpc('set_user_access', payload),
   getCommunityMembers: (query = '') => rpc('get_community_members', { query }),
+  getPlatformReports: () => rpc('get_platform_reports'),
+  createPlatformReport: (payload) => rpc('create_platform_report', payload),
+  updatePlatformReport: (payload) => rpc('update_platform_report', payload),
+  deletePlatformReport: (reportId) => rpc('delete_platform_report', { reportId }),
+  clearPlatformReports: () => rpc('clear_platform_reports'),
+  getDirectMessageContacts: () => rpc('get_direct_message_contacts'),
+  getDirectMessages: (userId, limit = 200) => rpc('get_direct_messages', { userId, limit }),
+  sendDirectMessage: (recipientId, body) => rpc('send_direct_message', { recipientId, body }),
+  markDirectMessagesRead: (senderId) => rpc('mark_direct_messages_read', { senderId }),
   getMeetingInviteCandidates: (meetingId, query = '') => rpc('get_meeting_invite_candidates', { meetingId, query }),
   markMeetingInvitationSeen: (invitationId) => rpc('mark_meeting_invitation_seen', { invitationId }),
   inviteToMeeting: (payload) => rpc('invite_to_meeting', payload),
@@ -371,6 +382,16 @@ export const api = {
       if (!active) return;
       channel = supabase.channel(`db:notifications:${userId}:${crypto.randomUUID()}`, { config: { private: true } })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` }, callback)
+        .subscribe();
+    }).catch(() => {});
+    return () => { active = false; if (channel) supabase.removeChannel(channel); };
+  },
+  onDirectMessageChange(userId, callback) {
+    let active = true; let channel = null;
+    authorizeRealtime().then(() => {
+      if (!active) return;
+      channel = supabase.channel(`db:direct-messages:${userId}:${crypto.randomUUID()}`, { config: { private: true } })
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'direct_messages', filter: `recipient_id=eq.${userId}` }, callback)
         .subscribe();
     }).catch(() => {});
     return () => { active = false; if (channel) supabase.removeChannel(channel); };
