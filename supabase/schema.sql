@@ -8,6 +8,10 @@ begin;
 create extension if not exists pgcrypto;
 create extension if not exists citext;
 create extension if not exists supabase_vault with schema vault;
+do $$ begin
+  create extension if not exists pg_cron;
+exception when insufficient_privilege or feature_not_supported or undefined_file then null;
+end $$;
 
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
@@ -730,10 +734,20 @@ language sql immutable set search_path=public as $$
     'body',p_message.body,'createdAt',p_message.created_at,'deliveredAt',p_message.delivered_at,'readAt',p_message.read_at);
 $$;
 
+create or replace function public.cleanup_expired_direct_messages() returns integer
+language plpgsql security definer set search_path=public as $$
+declare v_count integer;
+begin
+  delete from public.direct_messages where created_at<=now()-interval '24 hours';
+  get diagnostics v_count=row_count;
+  return v_count;
+end; $$;
+
 create or replace function public.get_direct_message_contacts() returns jsonb
 language plpgsql security definer set search_path=public,auth as $$
 declare v_user uuid:=public.require_registered_member(); v_controller uuid:=public.direct_messages_controller_id(); v_result jsonb;
 begin
+  perform public.cleanup_expired_direct_messages();
   if v_controller is null then raise exception 'La cuenta de mensajería no está disponible.' using errcode='P0001'; end if;
   update public.direct_messages set delivered_at=coalesce(delivered_at,now()) where recipient_id=v_user and delivered_at is null;
   select coalesce(jsonb_agg(jsonb_build_object('id',contact.id,'name',contact.name,'username',contact.username,'avatar',contact.avatar,
@@ -741,7 +755,8 @@ begin
     'unreadCount',(select count(*) from public.direct_messages unread where unread.sender_id=contact.id and unread.recipient_id=v_user and unread.read_at is null))
     order by latest.created_at desc nulls last,contact.name),'[]'::jsonb) into v_result
   from public.profiles contact left join lateral (select message.* from public.direct_messages message
-    where (message.sender_id=v_user and message.recipient_id=contact.id) or (message.sender_id=contact.id and message.recipient_id=v_user)
+    where ((message.sender_id=v_user and message.recipient_id=contact.id) or (message.sender_id=contact.id and message.recipient_id=v_user))
+      and message.created_at>now()-interval '24 hours'
     order by message.created_at desc limit 1) latest on true
   where contact.id<>v_user and contact.status='ACTIVE' and not contact.is_guest and public.has_active_membership(contact.id)
     and (v_user=v_controller or contact.id=v_controller);
@@ -752,11 +767,13 @@ create or replace function public.get_direct_messages(p_user_id uuid,p_limit int
 language plpgsql security definer set search_path=public,auth as $$
 declare v_user uuid:=public.require_registered_member(); v_result jsonb;
 begin
+  perform public.cleanup_expired_direct_messages();
   if not public.can_direct_message(v_user,p_user_id) then raise exception 'La conversación no está disponible.' using errcode='P0001'; end if;
   update public.direct_messages set delivered_at=coalesce(delivered_at,now()),read_at=coalesce(read_at,now())
-  where sender_id=p_user_id and recipient_id=v_user and read_at is null;
+  where sender_id=p_user_id and recipient_id=v_user and read_at is null and created_at>now()-interval '24 hours';
   select coalesce(jsonb_agg(public.direct_message_view(message) order by message.created_at),'[]'::jsonb) into v_result from (
-    select * from public.direct_messages where (sender_id=v_user and recipient_id=p_user_id) or (sender_id=p_user_id and recipient_id=v_user)
+    select * from public.direct_messages where ((sender_id=v_user and recipient_id=p_user_id) or (sender_id=p_user_id and recipient_id=v_user))
+      and created_at>now()-interval '24 hours'
     order by created_at desc limit least(greatest(coalesce(p_limit,200),1),500)) message;
   return v_result;
 end; $$;
@@ -785,6 +802,19 @@ create or replace function public.mark_direct_messages_delivered() returns integ
 language plpgsql security definer set search_path=public,auth as $$
 declare v_user uuid:=public.require_registered_member(); v_count integer;
 begin update public.direct_messages set delivered_at=now() where recipient_id=v_user and delivered_at is null; get diagnostics v_count=row_count; return v_count; end; $$;
+
+do $$
+declare v_job record;
+begin
+  if exists(select 1 from pg_extension where extname='pg_cron') then
+    for v_job in execute 'select jobid from cron.job where jobname=''galaxy-direct-messages-retention''' loop
+      execute format('select cron.unschedule(%s)',v_job.jobid);
+    end loop;
+    execute 'select cron.schedule(''galaxy-direct-messages-retention'',''*/15 * * * *'',''select public.cleanup_expired_direct_messages();'')';
+  end if;
+exception when others then
+  raise notice 'pg_cron no está disponible; la limpieza se ejecutará al abrir Mensajes.';
+end $$;
 
 create or replace function public.get_galaxy_store() returns jsonb
 language plpgsql stable security definer set search_path=public,auth as $$
@@ -1760,7 +1790,7 @@ create policy platform_reports_member_read on public.platform_reports for select
 drop policy if exists direct_messages_participant_read on public.direct_messages;
 create policy direct_messages_participant_read on public.direct_messages for select to authenticated using (
   public.is_current_session_valid() and auth.uid() in (sender_id,recipient_id)
-    and public.can_direct_message(sender_id,recipient_id)
+    and public.can_direct_message(sender_id,recipient_id) and created_at>now()-interval '24 hours'
 );
 drop policy if exists crypto_orders_owner_read on public.crypto_payment_orders;
 create policy crypto_orders_owner_read on public.crypto_payment_orders for select to authenticated using (user_id=auth.uid());
@@ -1891,7 +1921,7 @@ revoke all on function public.is_platform_reports_controller(),public.require_re
   public.delete_platform_report(uuid),public.clear_platform_reports(),public.direct_message_view(public.direct_messages),
   public.get_direct_message_contacts(),public.get_direct_messages(uuid,integer),public.send_direct_message(uuid,text),
   public.mark_direct_messages_read(uuid),public.mark_direct_messages_delivered(),public.direct_messages_controller_id(),
-  public.can_direct_message(uuid,uuid),public.can_access_direct_message_topic(text) from public,anon,authenticated;
+  public.can_direct_message(uuid,uuid),public.can_access_direct_message_topic(text),public.cleanup_expired_direct_messages() from public,anon,authenticated;
 grant execute on function public.is_platform_reports_controller(),public.create_platform_report(text,text,text),public.get_platform_reports(),
   public.update_platform_report(uuid,text,text,text),public.delete_platform_report(uuid),public.clear_platform_reports(),
   public.get_direct_message_contacts(),public.get_direct_messages(uuid,integer),public.send_direct_message(uuid,text),

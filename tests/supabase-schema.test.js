@@ -12,6 +12,7 @@ const avatar = readFileSync(new URL('../src/components/ConstellationAvatar.jsx',
 const appHtml = readFileSync(new URL('../app.html', import.meta.url), 'utf8');
 const reportsPage = readFileSync(new URL('../src/components/ReportsPage.jsx', import.meta.url), 'utf8');
 const directMessagesPage = readFileSync(new URL('../src/components/DirectMessagesPage.jsx', import.meta.url), 'utf8');
+const communityToolsStyles = readFileSync(new URL('../src/community-tools.css', import.meta.url), 'utf8');
 const profilePhotoCropper = readFileSync(new URL('../src/components/ProfilePhotoCropper.jsx', import.meta.url), 'utf8');
 
 const publicRpc = [
@@ -259,20 +260,21 @@ describe('Supabase contract', () => {
   it('keeps custom-area screen sharing sharp with adaptive real-time rendering', () => {
     expect(meetingStudio).toContain('function meetingVideoProfile()');
     expect(meetingStudio).toContain("return { width: 2560, height: 1440, frameRate: 30, smoothing: 'high' }");
-    expect(meetingStudio).toContain("displayTrack.contentHint = 'detail'");
+    expect(meetingStudio).toContain("displayTrack.contentHint = isDesktopMeetingDevice() ? 'detail' : 'motion'");
     expect(meetingStudio).toContain('Math.min(1, profile.width / sw, profile.height / sh)');
     expect(meetingStudio).toContain('startMeetingVideoRender(video, profile.frameRate, draw)');
     expect(meetingStudio).toContain("typeof video.requestVideoFrameCallback === 'function'");
     expect(meetingStudio).toContain('time - lastFrame >= interval - 1');
     expect(meetingStudio).toContain('canvas.captureStream(profile.frameRate)');
-    expect(meetingStudio).toContain("detailTrack.contentHint = 'detail'");
+    expect(meetingStudio).toContain("detailTrack.contentHint = isDesktopMeetingDevice() ? 'detail' : 'motion'");
   });
 
   it('uses adaptive WebRTC sender limits for low-latency meeting media', () => {
     expect(meetingClient).toContain('async function replaceMeetingSenderTrack(sender, track)');
     expect(meetingClient).toContain('encoding.maxBitrate = 128_000');
-    expect(meetingClient).toContain('mobile ? 2_200_000 : 4_500_000');
-    expect(meetingClient).toContain("parameters.degradationPreference = detailed ? 'balanced' : 'maintain-framerate'");
+    expect(meetingClient).toContain('mobile ? 2_400_000 : 4_500_000');
+    expect(meetingClient).toContain("presentation && mobile ? 'maintain-framerate'");
+    expect(meetingClient).toContain('event.receiver.playoutDelayHint = 0');
     expect(meetingClient).toContain('replaceMeetingSenderTrack(videoSender, videoTrack)');
   });
 
@@ -304,6 +306,9 @@ describe('Supabase contract', () => {
     expect(meetingClient).toContain("type === 'meeting-music-state'");
     expect(meetingClient).toContain("sender?.role === 'HOST' && sender.userId === this.hostId");
     expect(meetingClient).toContain('publishMeetingMusicState(state, target = null)');
+    expect(meetingClient).toContain('publishMeetingMusicVolume(volume, revision)');
+    expect(meetingStudio).toContain("value.syncMode === 'volume'");
+    expect(meetingStudio).toContain('publishMeetingMusicVolume(value.volume, value.revision)');
     expect(meetingStyles).toContain('.meeting-music-player');
     expect(meetingStyles).toContain('.meeting-music-playlist');
     expect(musicCatalog).toContain("file: 'pump-it-up.weba'");
@@ -340,6 +345,10 @@ describe('Supabase contract', () => {
     expect(schema).toContain("public.direct_messages_controller_id() in (p_user_id,p_peer_id)");
     expect(schema).toContain("'deliveredAt',p_message.delivered_at");
     expect(api).toContain("table: 'direct_messages'");
+    expect(directMessagesPage).toContain("toLocaleTimeString('en-US'");
+    expect(schema).toContain("created_at<=now()-interval '24 hours'");
+    expect(schema).toContain("'galaxy-direct-messages-retention'");
+    expect(communityToolsStyles).toContain('svg.read{color:#ed2bff');
   });
 
   it('keeps music changes live, ducks it under voice and pins the shared screen', () => {

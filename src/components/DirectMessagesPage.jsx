@@ -4,7 +4,7 @@ import { api } from '../services/api';
 import { onOnlineUsersChange } from '../services/supabase';
 import ConstellationAvatar from './ConstellationAvatar';
 
-const shortTime = (value) => value ? new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+const shortTime = (value) => value ? new Date(value).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }) : '';
 
 function MessageReceipt({ message }) {
   if (message.readAt) return <CheckCheck className="read" aria-label="Leído" />;

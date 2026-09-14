@@ -583,7 +583,8 @@ function meetingVideoProfile() {
   const mobile = !isDesktopMeetingDevice();
   const memory = Number(navigator.deviceMemory) || (mobile ? 4 : 8);
   const cores = Number(navigator.hardwareConcurrency) || (mobile ? 4 : 8);
-  if (mobile || memory <= 4 || cores <= 4) return { width: 1280, height: 720, frameRate: 24, smoothing: 'medium' };
+  if (mobile) return { width: 960, height: 540, frameRate: 30, smoothing: 'medium' };
+  if (memory <= 4 || cores <= 4) return { width: 1280, height: 720, frameRate: 24, smoothing: 'medium' };
   if (memory < 8 || cores < 8) return { width: 1920, height: 1080, frameRate: 30, smoothing: 'high' };
   return { width: 2560, height: 1440, frameRate: 30, smoothing: 'high' };
 }
@@ -1026,6 +1027,11 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (!tracks.some((track) => track.id === next.trackId) || next.revision <= musicStateRef.current.revision) return;
     applyMeetingMusicState({ ...next, startedAt: next.playing ? Date.now() : null });
   };
+  const receiveMeetingMusicVolume = ({ volume, revision }) => {
+    const current = musicStateRef.current;
+    if (!current.trackId || !Number.isFinite(volume) || revision < current.revision) return;
+    applyMeetingMusicState({ ...current, volume: Math.max(0, Math.min(1, volume)), revision: Math.max(current.revision, revision), syncMode: 'volume' });
+  };
   const sendCurrentMeetingMusicState = (target = null) => {
     const current = musicStateRef.current; if (!current.trackId) return;
     const now = Date.now();
@@ -1033,7 +1039,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
   const publishMeetingMusicControl = (next, immediate = false) => {
     pendingMusicBroadcast.current = next;
-    const send = () => { musicBroadcastTimer.current = null; const value = pendingMusicBroadcast.current; pendingMusicBroadcast.current = null; if (!value) return; lastMusicBroadcastAt.current = Date.now(); connection.current?.publishMeetingMusicState(value); };
+    const send = () => { musicBroadcastTimer.current = null; const value = pendingMusicBroadcast.current; pendingMusicBroadcast.current = null; if (!value) return; lastMusicBroadcastAt.current = Date.now(); connection.current?.publishMeetingMusicState(value); if (value.syncMode === 'volume') connection.current?.publishMeetingMusicVolume(value.volume, value.revision); };
     if (immediate) { clearTimeout(musicBroadcastTimer.current); send(); return; }
     if (!musicBroadcastTimer.current) musicBroadcastTimer.current = setTimeout(send, Math.max(0, 60 - (Date.now() - lastMusicBroadcastAt.current)));
   };
@@ -1051,7 +1057,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (command.type === 'volume') volume = Math.max(0, Math.min(1, command.volume));
     const syncMode = ['select', 'seek', 'next', 'previous'].includes(command.type) ? 'transport' : command.type === 'volume' ? 'volume' : 'transport';
     const next = { trackId, position, playing, volume, startedAt: playing ? now : null, revision: Math.max(now, current.revision + 1), syncMode };
-    applyMeetingMusicState(next); publishMeetingMusicControl(next, !['volume', 'seek'].includes(command.type));
+    applyMeetingMusicState(next);
+    publishMeetingMusicControl(next, !['volume', 'seek'].includes(command.type));
   };
   const uploadMeetingMusic = async (file) => {
     setMusicUploading(true);
@@ -1173,6 +1180,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       onPeerState: (peerId, state) => { if (isCurrent(client)) setPeerStates((current) => ({ ...current, [peerId]: state })); }, onReaction: (value) => { if (isCurrent(client)) showReaction(value); }, onChat: (value, options) => { if (isCurrent(client)) { mergeMessage(value); if (options?.announce !== false) showFloatingMessage(value); } },
       onChatHistory: (history) => { if (isCurrent(client)) history.forEach(mergeMessage); }, onChatReaction: (value) => { if (isCurrent(client)) applyChatReaction(value); },
       onMeetingMusicState: (value) => { if (isCurrent(client)) receiveMeetingMusicState(value); },
+      onMeetingMusicVolume: (value) => { if (isCurrent(client)) receiveMeetingMusicVolume(value); },
       onMeetingMusicRequest: (peerId) => { if (isCurrent(client)) sendCurrentMeetingMusicState(peerId); },
       onCollaboration: (value) => { if (isCurrent(client)) handleCollaboration(value); },
       onCollaborationAccess: ({ enabled, by }) => { if (isCurrent(client)) enforceCollaborationAccess(enabled, by, true); },
@@ -1274,8 +1282,8 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       const qualityVideo = custom ? { frameRate: { ideal: profile.frameRate, max: profile.frameRate } } : true;
       const stream = await requestDisplayCapture({ video: qualityVideo, audio: { suppressLocalAudioPlayback: false }, selfBrowserSurface: 'exclude', preferCurrentTab: false, surfaceSwitching: 'include', systemAudio: 'include' });
       const displayTrack = stream.getVideoTracks()[0];
-      if (displayTrack) try { displayTrack.contentHint = 'detail'; } catch {}
-      displayTrack?.applyConstraints({ frameRate: { ideal: profile.frameRate, max: profile.frameRate } }).catch(() => {});
+      if (displayTrack) try { displayTrack.contentHint = isDesktopMeetingDevice() ? 'detail' : 'motion'; } catch {}
+      displayTrack?.applyConstraints({ width: { ideal: profile.width }, height: { ideal: profile.height }, frameRate: { ideal: profile.frameRate, max: profile.frameRate } }).catch(() => {});
       stream.getAudioTracks().forEach((track) => track.applyConstraints?.({ suppressLocalAudioPlayback: false }).catch(() => {}));
       sourceStream.current = stream; setShareHasAudio(stream.getAudioTracks().length > 0); setShareAudioEnabled(true); displayTrack?.addEventListener('ended', stopShare, { once: true });
       if (protectedMode && user.role === 'ADMIN') setPrivacySource(stream);
@@ -1307,7 +1315,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
         ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = profile.smoothing;
         ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
       };
-      stopMeetingVideoRender(renderLoop); renderLoop.current = startMeetingVideoRender(video, profile.frameRate, draw); const processed = canvas.captureStream(profile.frameRate); const detailTrack = processed.getVideoTracks()[0]; if (detailTrack) try { detailTrack.contentHint = 'detail'; } catch {} setCropSource(null); await publishShare(processed); toast(sourceStream.current?.getAudioTracks().length ? 'Área y sonido compartidos por WebRTC.' : 'Área compartida sin sonido. El navegador no entregó audio de la fuente seleccionada.', 'info');
+      stopMeetingVideoRender(renderLoop); renderLoop.current = startMeetingVideoRender(video, profile.frameRate, draw); const processed = canvas.captureStream(profile.frameRate); const detailTrack = processed.getVideoTracks()[0]; if (detailTrack) try { detailTrack.contentHint = isDesktopMeetingDevice() ? 'detail' : 'motion'; } catch {} setCropSource(null); await publishShare(processed); toast(sourceStream.current?.getAudioTracks().length ? 'Área y sonido compartidos por WebRTC.' : 'Área compartida sin sonido. El navegador no entregó audio de la fuente seleccionada.', 'info');
     } catch (error) { await stopShare(); toast(error.message || 'No fue posible compartir el área seleccionada.', 'error'); }
   };
   const confirmPrivacyMasks = async (masks) => {

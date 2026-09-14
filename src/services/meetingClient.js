@@ -7,6 +7,7 @@ export async function getMeetingAccess({ roomCode, password }) {
 }
 
 function defaultIceServers() { return [{ urls: 'stun:stun.l.google.com:19302' }]; }
+function isMobileMeetingClient() { return typeof navigator.userAgentData?.mobile === 'boolean' ? navigator.userAgentData.mobile : /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || ''); }
 const LIVE_REACTIONS = new Set(['👍', '👏', '❤️', '😂', '🎉', '🔥', 'MONEY_ROCKET', 'MONEY_CHARACTER', 'MONEY_ALIEN', 'GALACTIC_TAKE_PROFIT', 'PHOENIX_TRANSFORM', 'UFO', 'ALIEN', 'ALIEN_BIRTHDAY']);
 function isLiveReaction(value) { return typeof value === 'string' && LIVE_REACTIONS.has(value); }
 function safeMeetingMusicState(value) {
@@ -16,6 +17,12 @@ function safeMeetingMusicState(value) {
   if (!trackId || !Number.isFinite(position) || position < 0 || position > 86_400 || !Number.isFinite(revision) || revision < 0 || !Number.isFinite(volume) || volume < 0 || volume > 1) return null;
   const syncMode = ['transport', 'volume', 'snapshot'].includes(value.syncMode) ? value.syncMode : 'snapshot';
   return { trackId, playing: value.playing === true, position, startedAt: Number.isFinite(startedAt) ? startedAt : null, revision, volume, syncMode };
+}
+
+function safeMeetingMusicVolume(value) {
+  const volume = Number(value?.volume); const revision = Number(value?.revision);
+  if (!Number.isFinite(volume) || volume < 0 || volume > 1 || !Number.isFinite(revision) || revision < 0) return null;
+  return { volume, revision };
 }
 
 async function replaceMeetingSenderTrack(sender, track) {
@@ -31,10 +38,10 @@ async function replaceMeetingSenderTrack(sender, track) {
   }
   else {
     const detailed = ['detail', 'text'].includes(track.contentHint);
-    const mobile = typeof navigator.userAgentData?.mobile === 'boolean' ? navigator.userAgentData.mobile : /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-    encoding.maxBitrate = detailed ? mobile ? 2_200_000 : 4_500_000 : mobile ? 1_200_000 : 2_000_000;
-    encoding.maxFramerate = detailed ? mobile ? 24 : 30 : 24;
-    parameters.degradationPreference = detailed ? 'balanced' : 'maintain-framerate';
+    const presentation = detailed || track.contentHint === 'motion'; const mobile = isMobileMeetingClient();
+    encoding.maxBitrate = presentation ? mobile ? 2_400_000 : 4_500_000 : mobile ? 1_200_000 : 2_000_000;
+    encoding.maxFramerate = presentation ? 30 : 24;
+    parameters.degradationPreference = presentation && mobile ? 'maintain-framerate' : detailed ? 'balanced' : 'maintain-framerate';
   }
   await sender.setParameters(parameters).catch(() => {});
 }
@@ -87,7 +94,14 @@ export class MeetingConnection {
       await replaceMeetingSenderTrack(audio.sender, this.localStream.getAudioTracks()[0]); await replaceMeetingSenderTrack(video.sender, this.localStream.getVideoTracks()[0]);
     }
     pc.onicecandidate = (event) => { if (event.candidate) this.send({ type: 'ice', target: peerId, data: event.candidate }); };
-    pc.ontrack = (event) => { if (!remoteStream.getTracks().some((track) => track.id === event.track.id)) remoteStream.addTrack(event.track); this.callbacks.onRemoteStream?.(peerId, remoteStream); };
+    pc.ontrack = (event) => {
+      if (isMobileMeetingClient() && event.track.kind === 'video') {
+        try { if ('playoutDelayHint' in event.receiver) event.receiver.playoutDelayHint = 0; } catch {}
+        try { if ('jitterBufferTarget' in event.receiver) event.receiver.jitterBufferTarget = 0; } catch {}
+      }
+      if (!remoteStream.getTracks().some((track) => track.id === event.track.id)) remoteStream.addTrack(event.track);
+      this.callbacks.onRemoteStream?.(peerId, remoteStream);
+    };
     pc.onconnectionstatechange = () => {
       this.callbacks.onPeerState?.(peerId, pc.connectionState);
       const peer = this.peers.get(peerId); if (!peer) return;
@@ -274,6 +288,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (message.type === 'ice') return this.acceptIce(message);
     if (message.type === 'reaction') { if (isLiveReaction(message.emoji)) this.callbacks.onReaction?.({ peerId: message.source, senderName: this.participants.get(message.source)?.name, emoji: message.emoji }); return; }
     if (message.type === 'meeting-music-state') { await this.handleMeetingMusicState(message); return; }
+    if (message.type === 'meeting-music-volume') { await this.handleMeetingMusicVolume(message); return; }
     if (message.type === 'meeting-music-request') { await this.handleMeetingMusicRequest(message); return; }
     if (message.type === 'participant-mics-lock') { await this.handleParticipantMicsLock(message); return; }
     if (message.type === 'collab-access') { await this.handleCollaborationAccess(message); return; }
@@ -301,6 +316,13 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (!this.participants.has(message.source)) await this.syncPresence();
     const sender = this.participants.get(message.source); const state = safeMeetingMusicState(message.data);
     if (sender?.role === 'HOST' && sender.userId === this.hostId && state) this.callbacks.onMeetingMusicState?.(state);
+  }
+
+  async handleMeetingMusicVolume(message) {
+    if (!message?.source) return;
+    if (!this.participants.has(message.source)) await this.syncPresence();
+    const sender = this.participants.get(message.source); const value = safeMeetingMusicVolume(message.data);
+    if (sender?.role === 'HOST' && sender.userId === this.hostId && value) this.callbacks.onMeetingMusicVolume?.(value);
   }
 
   async handleMeetingMusicRequest(message) {
@@ -366,6 +388,11 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     if (this.role !== 'HOST') return;
     const safe = safeMeetingMusicState(state); if (!safe) return;
     await this.broadcast('signal', { type: 'meeting-music-state', source: this.selfId, target, data: safe });
+  }
+  async publishMeetingMusicVolume(volume, revision) {
+    if (this.role !== 'HOST') return;
+    const safe = safeMeetingMusicVolume({ volume, revision }); if (!safe) return;
+    await this.broadcast('signal', { type: 'meeting-music-volume', source: this.selfId, data: safe });
   }
   requestMeetingMusicState() { return this.broadcast('signal', { type: 'meeting-music-request', source: this.selfId }); }
   chat(message) { return this.broadcast('chat', { messageId: message.id }); }
