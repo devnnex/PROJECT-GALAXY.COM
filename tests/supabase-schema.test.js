@@ -305,6 +305,20 @@ describe('Supabase contract', () => {
     expect(musicCatalog).toContain("file: 'dont-you-cry.weba'");
   });
 
+  it('keeps the music controls exclusive to Elkin and supports original-quality Supabase uploads', () => {
+    expect(meetingStudio).toContain("MEETING_MUSIC_CONTROLLER_EMAIL = 'elkin56ty@gmail.com'");
+    expect(meetingStudio).toContain('if (!canControl) return audio');
+    expect(meetingStudio).toContain('Agrega o arrastra tu canción');
+    expect(meetingStudio).toContain("audio.defaultPlaybackRate = 1; audio.playbackRate = 1");
+    expect(meetingStudio).toContain("syncMode === 'transport'");
+    expect(api).toContain("MEETING_MUSIC_BUCKET = 'meeting-music'");
+    expect(api).toContain('uploadMeetingMusic(file)');
+    expect(schema).toContain('create table if not exists public.meeting_music_tracks');
+    expect(schema).toContain("lower(account.email)='elkin56ty@gmail.com'");
+    expect(schema).toContain("values('meeting-music','meeting-music',true,104857600");
+    expect(meetingStyles).toContain('.meeting-music-upload');
+  });
+
   it('shows membership frames in meeting people and chat while guests remain unbadged', () => {
     expect(schema).toContain("'senderAvatar',p.avatar,'senderMembership',public.membership_view(p.id)");
     expect(schema).toContain("'planCode','ADMIN'");

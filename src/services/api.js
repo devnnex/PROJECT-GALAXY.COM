@@ -23,12 +23,41 @@ const GALAXY_STORE_IMAGE_TYPES = new Map([
   ['image/jpeg', 'jpg'], ['image/png', 'png'], ['image/webp', 'webp'],
 ]);
 const GALAXY_STORE_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+const MEETING_MUSIC_BUCKET = 'meeting-music';
+const MEETING_MUSIC_MAX_BYTES = 100 * 1024 * 1024;
+const MEETING_MUSIC_TYPES = new Map([
+  ['audio/mpeg', 'mp3'], ['audio/mp3', 'mp3'], ['audio/mp4', 'm4a'], ['audio/x-m4a', 'm4a'],
+  ['audio/aac', 'aac'], ['audio/ogg', 'ogg'], ['audio/webm', 'weba'], ['audio/wav', 'wav'],
+  ['audio/x-wav', 'wav'], ['audio/flac', 'flac'], ['audio/x-flac', 'flac'],
+]);
+const MEETING_MUSIC_EXTENSIONS = new Map([
+  ['mp3', ['mp3', 'audio/mpeg']], ['m4a', ['m4a', 'audio/mp4']], ['aac', ['aac', 'audio/aac']],
+  ['ogg', ['ogg', 'audio/ogg']], ['opus', ['ogg', 'audio/ogg']], ['weba', ['weba', 'audio/webm']],
+  ['webm', ['weba', 'audio/webm']], ['wav', ['wav', 'audio/wav']], ['flac', ['flac', 'audio/flac']],
+]);
 
 function storeProductView(product) {
   if (!product) return product;
   const imagePath = product.imagePath || '';
   const imageUrl = imagePath ? supabase.storage.from(GALAXY_STORE_BUCKET).getPublicUrl(imagePath).data.publicUrl : '';
   return { ...product, priceUsdt: Number(product.priceUsdt || 0), imagePath, imageUrl };
+}
+
+function meetingMusicView(track) {
+  if (!track) return track;
+  const storagePath = String(track.storagePath || '');
+  const src = storagePath ? supabase.storage.from(MEETING_MUSIC_BUCKET).getPublicUrl(storagePath).data.publicUrl : '';
+  return { ...track, storagePath, src, uploaded: true };
+}
+
+function meetingMusicFileDetails(file) {
+  const name = String(file?.name || '');
+  const extension = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  const byType = MEETING_MUSIC_TYPES.get(String(file?.type || '').toLowerCase());
+  const fallback = MEETING_MUSIC_EXTENSIONS.get(extension);
+  if (!byType && !fallback) return null;
+  const [safeExtension, fallbackType] = fallback || [byType, file.type];
+  return { extension: byType || safeExtension, contentType: byType ? String(file.type).toLowerCase() : fallbackType };
 }
 
 function friendlyError(error) {
@@ -214,6 +243,34 @@ export const api = {
     const { error } = await supabase.storage.from(PROFILE_AVATAR_BUCKET).remove([objectPath]);
     if (error) throw new Error('No fue posible eliminar la foto de perfil. Intenta nuevamente.');
     return rpc('update_profile_avatar', { avatar: '' });
+  },
+  async getMeetingMusicTracks() {
+    const tracks = await rpc('get_meeting_music_tracks');
+    return (tracks || []).map(meetingMusicView).filter((track) => track.src);
+  },
+  async uploadMeetingMusic(file) {
+    if (!globalThis.File || !(file instanceof globalThis.File)) throw new Error('Selecciona un archivo de audio.');
+    const details = meetingMusicFileDetails(file);
+    if (!details) throw new Error('Usa audio MP3, M4A, AAC, OGG, WebM, WAV o FLAC.');
+    if (!file.size || file.size > MEETING_MUSIC_MAX_BYTES) throw new Error('La canción debe pesar como máximo 100 MB.');
+    const { data, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError || !data.session?.user?.id) throw new Error('Tu sesión expiró. Inicia sesión nuevamente.');
+    if (String(data.session.user.email || '').trim().toLowerCase() !== 'elkin56ty@gmail.com') throw new Error('Solo Elkin puede administrar la música de las reuniones.');
+    const id = crypto.randomUUID();
+    const storagePath = `${id}/${crypto.randomUUID()}.${details.extension}`;
+    const title = String(file.name || 'Canción').replace(/\.[^.]+$/, '').trim().slice(0, 120) || 'Canción';
+    const { error } = await supabase.storage.from(MEETING_MUSIC_BUCKET).upload(storagePath, file, {
+      upsert: false, contentType: details.contentType, cacheControl: '31536000',
+    });
+    if (error) throw new Error('No fue posible subir la canción. Verifica el formato, el tamaño y la configuración de Supabase.');
+    try {
+      return meetingMusicView(await rpc('save_meeting_music_track', {
+        id, title, artist: '', storagePath, mimeType: details.contentType, sizeBytes: file.size,
+      }));
+    } catch (cause) {
+      await supabase.storage.from(MEETING_MUSIC_BUCKET).remove([storagePath]).catch(() => {});
+      throw cause;
+    }
   },
   async getMembershipCenter() {
     const [membership, commerce] = await Promise.all([rpc('get_membership_center'), rpc('get_crypto_store')]);

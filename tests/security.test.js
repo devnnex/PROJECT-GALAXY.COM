@@ -16,6 +16,7 @@ describe('Production security guardrails', () => {
     expect(html).toContain("script-src 'self'");
     expect(html).toContain("object-src 'none'");
     expect(html).toContain('https://xdsqtuubsptpzwadecha.supabase.co');
+    expect(html).toContain("media-src 'self' blob: https://xdsqtuubsptpzwadecha.supabase.co");
     expect(html).not.toContain("'unsafe-eval'");
   });
 

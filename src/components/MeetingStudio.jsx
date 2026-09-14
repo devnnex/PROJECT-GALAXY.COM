@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, CameraOff, Check, Clock3, Copy, Eraser, Hand, ListMusic, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Music2, Pause, Pencil, PhoneOff, PictureInPicture2, Play, Plus, Reply, RotateCcw, Send, ShieldCheck, SkipBack, SkipForward, SmilePlus, Trash2, Unlock, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { Camera, CameraOff, Check, Clock3, Copy, Eraser, Hand, ListMusic, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Music2, Pause, Pencil, PhoneOff, PictureInPicture2, Play, Plus, Reply, RotateCcw, Send, ShieldCheck, SkipBack, SkipForward, SmilePlus, Trash2, Unlock, UploadCloud, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
 import { onOnlineUsersChange, primeRealtime, releaseRealtimePrime } from '../services/supabase';
@@ -27,6 +27,7 @@ const MCLAREN_PROFIT_ASSET = `${import.meta.env.BASE_URL}assets/mclaren-profit-r
 const GALAXY_DANCER_ASSET = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction.webp`;
 const GALAXY_DANCER_ICON = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction-icon.png`;
 const GALAXY_DANCER_SOUND = `${import.meta.env.BASE_URL}assets/galaxy-dancer-reaction.mp3`;
+const MEETING_MUSIC_CONTROLLER_EMAIL = 'elkin56ty@gmail.com';
 const COSMIC_REACTIONS = [
   { id: MONEY_ROCKET_REACTION, label: 'Cohete de dinero', asset: MONEY_ROCKET_ASSET },
   { id: 'MONEY_CHARACTER', label: 'Personaje millonario', asset: MONEY_CHARACTER_ASSET },
@@ -847,9 +848,9 @@ function meetingMusicPosition(state) {
   return Math.max(0, state.position + (state.playing && state.startedAt ? (Date.now() - state.startedAt) / 1000 : 0));
 }
 
-function MeetingMusicPlayer({ tracks, state, isHost, open, onToggleOpen, onCommand }) {
+function MeetingMusicPlayer({ tracks, state, canControl, open, onToggleOpen, onCommand, onUpload, uploading }) {
   const audioRef = useRef(null); const playbackStateRef = useRef(state); const appliedStateRef = useRef(null); const volumeFrameRef = useRef(0);
-  const [duration, setDuration] = useState(0); const [clock, setClock] = useState(Date.now()); const [playbackBlocked, setPlaybackBlocked] = useState(false); const [loadError, setLoadError] = useState(false);
+  const [duration, setDuration] = useState(0); const [clock, setClock] = useState(Date.now()); const [playbackBlocked, setPlaybackBlocked] = useState(false); const [loadError, setLoadError] = useState(false); const [buffering, setBuffering] = useState(false); const [dragging, setDragging] = useState(false);
   const track = tracks.find((item) => item.id === state.trackId) || null;
   const position = Math.min(duration || Infinity, meetingMusicPosition(state)); const remaining = duration ? Math.max(0, duration - position) : 0;
   playbackStateRef.current = state;
@@ -857,12 +858,13 @@ function MeetingMusicPlayer({ tracks, state, isHost, open, onToggleOpen, onComma
   const synchronizePlayback = async (forceSeek = false) => {
     const audio = audioRef.current; const current = playbackStateRef.current;
     if (!audio || !current?.trackId || audio.readyState < HTMLMediaElement.HAVE_METADATA) return;
+    if (!forceSeek && current.playing && audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return;
     const expected = Math.min(Number.isFinite(audio.duration) ? Math.max(0, audio.duration - .05) : Infinity, meetingMusicPosition(current));
     const plan = getMeetingMusicPlaybackPlan(audio.currentTime, expected, forceSeek);
     if (plan.seekTo !== null) {
       try { audio.currentTime = plan.seekTo; } catch {}
     }
-    audio.playbackRate = current.playing ? plan.playbackRate : 1;
+    audio.defaultPlaybackRate = 1; audio.playbackRate = 1;
     if (!current.playing) { audio.pause(); setPlaybackBlocked(false); return; }
     if (!audio.paused) return;
     try { await audio.play(); setPlaybackBlocked(false); } catch { setPlaybackBlocked(true); }
@@ -870,7 +872,7 @@ function MeetingMusicPlayer({ tracks, state, isHost, open, onToggleOpen, onComma
 
   useEffect(() => {
     const audio = audioRef.current; if (!audio) return undefined;
-    setLoadError(false); setDuration(0); audio.volume = playbackStateRef.current.volume; audio.defaultPlaybackRate = 1; audio.playbackRate = 1; audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true;
+    setLoadError(false); setBuffering(false); setDuration(0); audio.preload = 'auto'; audio.volume = playbackStateRef.current.volume; audio.defaultPlaybackRate = 1; audio.playbackRate = 1; audio.preservesPitch = true; audio.mozPreservesPitch = true; audio.webkitPreservesPitch = true;
     if (!track) { audio.pause(); audio.removeAttribute('src'); audio.load(); return undefined; }
     if (audio.src !== new URL(track.src, location.href).href) { audio.src = track.src; audio.load(); }
     const ready = () => { setDuration(Number.isFinite(audio.duration) ? audio.duration : 0); synchronizePlayback(true); };
@@ -879,14 +881,14 @@ function MeetingMusicPlayer({ tracks, state, isHost, open, onToggleOpen, onComma
   }, [track?.id]);
   useEffect(() => {
     const previous = appliedStateRef.current; const continuous = isMeetingMusicStateContinuous(previous, state, meetingMusicPosition);
-    appliedStateRef.current = state; synchronizePlayback(!continuous);
-  }, [track?.id, state.playing, state.position, state.startedAt, state.revision]);
+    appliedStateRef.current = state; synchronizePlayback(state.syncMode === 'transport' || !continuous);
+  }, [track?.id, state.playing, state.position, state.startedAt, state.revision, state.syncMode]);
   useEffect(() => {
-    const timer = setInterval(() => { setClock(Date.now()); if (playbackStateRef.current.playing) synchronizePlayback(false); }, 500);
+    const timer = setInterval(() => { if (canControl) setClock(Date.now()); if (playbackStateRef.current.playing) synchronizePlayback(false); }, 1000);
     const unlock = () => { if (playbackStateRef.current.playing) synchronizePlayback(true); };
     window.addEventListener('galaxy:resume-meeting-audio', unlock); window.addEventListener('pointerdown', unlock, true);
     return () => { clearInterval(timer); window.removeEventListener('galaxy:resume-meeting-audio', unlock); window.removeEventListener('pointerdown', unlock, true); };
-  }, []);
+  }, [canControl]);
   useEffect(() => {
     const audio = audioRef.current; if (!audio) return undefined;
     cancelAnimationFrame(volumeFrameRef.current);
@@ -895,20 +897,31 @@ function MeetingMusicPlayer({ tracks, state, isHost, open, onToggleOpen, onComma
     volumeFrameRef.current = requestAnimationFrame(ramp);
     return () => cancelAnimationFrame(volumeFrameRef.current);
   }, [state.volume]);
+  useEffect(() => {
+    if (!state.playing || tracks.length < 2 || !track) return undefined;
+    const index = tracks.findIndex((item) => item.id === track.id); const next = tracks[(index + 1) % tracks.length];
+    if (!next?.src || next.id === track.id) return undefined;
+    const preload = new Audio(); preload.preload = 'auto'; preload.src = next.src; preload.load();
+    return () => { preload.pause(); preload.removeAttribute('src'); preload.load(); };
+  }, [state.playing, track?.id, tracks]);
   useEffect(() => () => { cancelAnimationFrame(volumeFrameRef.current); const audio = audioRef.current; if (audio) { audio.pause(); audio.playbackRate = 1; } }, []);
   void clock;
 
-  const choose = (trackId) => { if (isHost) onCommand({ type: 'select', trackId }); };
-  const seek = (event) => { if (isHost) onCommand({ type: 'seek', position: Number(event.target.value) }); };
-  return <div className={`meeting-music-player ${open ? 'open' : ''} ${state.playing ? 'playing' : ''}`}>
-    <audio ref={audioRef} preload="auto" onEnded={() => isHost && onCommand({ type: 'next' })} onError={() => setLoadError(true)} />
+  const choose = (trackId) => { if (canControl) onCommand({ type: 'select', trackId }); };
+  const seek = (event) => { if (canControl) onCommand({ type: 'seek', position: Number(event.target.value) }); };
+  const addFile = (file) => { if (canControl && !uploading && file) onUpload(file); };
+  const dropped = (event) => { event.preventDefault(); setDragging(false); addFile(event.dataTransfer.files?.[0]); };
+  const audio = <audio ref={audioRef} preload="auto" crossOrigin="anonymous" onEnded={() => canControl && onCommand({ type: 'next' })} onWaiting={() => setBuffering(true)} onCanPlay={() => { setBuffering(false); synchronizePlayback(false); }} onPlaying={() => setBuffering(false)} onError={() => { setBuffering(false); setLoadError(true); }} />;
+  if (!canControl) return audio;
+  return <><div className={`meeting-music-player ${open ? 'open' : ''} ${state.playing ? 'playing' : ''}`}>
+    {audio}
     <button type="button" className="meeting-music-summary" aria-expanded={open} aria-label="Abrir lista de música" onClick={onToggleOpen}><span className="meeting-music-art"><Music2 /></span><span className="meeting-music-copy"><strong>{track?.title || 'Música de la reunión'}</strong><small>{loadError ? 'No se pudo cargar el audio' : track?.artist || (tracks.length ? 'Elige una canción' : 'Canciones pendientes')}</small></span><ListMusic /></button>
-    <div className="meeting-music-transport" role="group" aria-label="Controles de música"><button type="button" disabled={!isHost || !tracks.length} aria-label="Canción anterior" onClick={() => onCommand({ type: 'previous' })}><SkipBack /></button><button type="button" className="meeting-music-play" disabled={!isHost || !tracks.length} aria-label={state.playing ? 'Pausar música' : 'Reproducir música'} onClick={() => onCommand({ type: 'toggle' })}>{state.playing ? <Pause /> : <Play />}</button><button type="button" disabled={!isHost || !tracks.length} aria-label="Siguiente canción" onClick={() => onCommand({ type: 'next' })}><SkipForward /></button></div>
-    <div className="meeting-music-progress"><input type="range" min="0" max={duration || 1} step="0.1" value={Number.isFinite(position) ? position : 0} disabled={!isHost || !track || !duration} aria-label="Posición de la canción" onChange={seek} /><time>{track ? `-${musicTime(remaining)}` : '--:--'}</time></div>
-    <label className="meeting-music-volume" title={isHost ? 'Volumen para toda la reunión' : 'El anfitrión controla el volumen'}>{state.volume === 0 ? <VolumeX /> : <Volume2 />}<input type="range" min="0" max="1" step="0.02" value={state.volume} disabled={!isHost} aria-label="Volumen de música para toda la reunión" onChange={(event) => onCommand({ type: 'volume', volume: Number(event.target.value) })} /></label>
+    <div className="meeting-music-transport" role="group" aria-label="Controles de música"><button type="button" disabled={!tracks.length} aria-label="Canción anterior" onClick={() => onCommand({ type: 'previous' })}><SkipBack /></button><button type="button" className="meeting-music-play" disabled={!tracks.length} aria-label={state.playing ? 'Pausar música' : 'Reproducir música'} onClick={() => onCommand({ type: 'toggle' })}>{state.playing ? <Pause /> : <Play />}</button><button type="button" disabled={!tracks.length} aria-label="Siguiente canción" onClick={() => onCommand({ type: 'next' })}><SkipForward /></button></div>
+    <div className="meeting-music-progress"><input type="range" min="0" max={duration || 1} step="0.1" value={Number.isFinite(position) ? position : 0} disabled={!track || !duration} aria-label="Posición de la canción" onChange={seek} /><time>{track ? `-${musicTime(remaining)}` : '--:--'}</time></div>
+    <label className="meeting-music-volume" title="Volumen para toda la reunión">{state.volume === 0 ? <VolumeX /> : <Volume2 />}<input type="range" min="0" max="1" step="0.02" value={state.volume} aria-label="Volumen de música para toda la reunión" onChange={(event) => onCommand({ type: 'volume', volume: Number(event.target.value) })} /></label>
     {playbackBlocked && <button type="button" className="meeting-music-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar música</button>}
-    {open && <div className="meeting-music-playlist"><header><span><ListMusic /><strong>Lista de reproducción</strong></span><small>{isHost ? 'Tú controlas la música para todos' : 'Sincronizada por el anfitrión'}</small></header><div>{tracks.map((item, index) => <button type="button" className={item.id === state.trackId ? 'active' : ''} disabled={!isHost} key={item.id} onClick={() => choose(item.id)}><span>{item.cover ? <img src={item.cover} alt="" /> : <Music2 />}</span><span><strong>{item.title}</strong><small>{item.artist || `Canción ${index + 1}`}</small></span>{item.id === state.trackId && state.playing ? <i className="meeting-music-equalizer"><b /><b /><b /></i> : <Play />}</button>)}{!tracks.length && <p>Agrega tus audios en <code>public/audio/meeting</code> para verlos aquí.</p>}</div></div>}
-  </div>;
+    {open && <div className="meeting-music-playlist"><header><span><ListMusic /><strong>Lista de reproducción</strong></span><small>{buffering ? 'Preparando audio de calidad original…' : 'Tú controlas la música para todos'}</small></header><label className={`meeting-music-upload ${dragging ? 'dragging' : ''} ${uploading ? 'uploading' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragging(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragging(false)} onDrop={dropped}><input type="file" accept=".mp3,.m4a,.aac,.ogg,.opus,.weba,.webm,.wav,.flac,audio/*" disabled={uploading} onChange={(event) => { addFile(event.target.files?.[0]); event.target.value = ''; }} /><UploadCloud /><span><strong>{uploading ? 'Subiendo canción…' : 'Agrega o arrastra tu canción'}</strong><small>Audio original hasta 100 MB</small></span></label><div>{tracks.map((item, index) => <button type="button" className={item.id === state.trackId ? 'active' : ''} key={item.id} onClick={() => choose(item.id)}><span>{item.cover ? <img src={item.cover} alt="" /> : <Music2 />}</span><span><strong>{item.title}</strong><small>{item.artist || `Canción ${index + 1}`}</small></span>{item.id === state.trackId && state.playing ? <i className="meeting-music-equalizer"><b /><b /><b /></i> : <Play />}</button>)}{!tracks.length && <p>Sube la primera canción para comenzar.</p>}</div></div>}
+  </div></>;
 }
 
 export default function MeetingStudio({ toast, user, joinRequest, onSessionChange, canCreate = false }) {
@@ -919,7 +932,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const chatVisibleRef = useRef(false); const messagePulseTimer = useRef(null);
   const participantHandStates = useRef(new Map()); const participantSnapshotReady = useRef(false);
   const annotationStrokesRef = useRef([]);
-  const musicStateRef = useRef({ trackId: null, playing: false, position: 0, startedAt: null, revision: 0, volume: .28 });
+  const musicStateRef = useRef({ trackId: null, playing: false, position: 0, startedAt: null, revision: 0, volume: .28, syncMode: 'snapshot' }); const musicTracksRef = useRef(MEETING_MUSIC_TRACKS);
   const queryCode = new URLSearchParams(location.search).get('meeting')?.toUpperCase() || '';
   const [meetings, setMeetings] = useState([]); const [meeting, setMeeting] = useState(null); const [waiting, setWaiting] = useState(false); const [waitingParticipants, setWaitingParticipants] = useState([]); const [busy, setBusy] = useState(false);
   const [media, setMedia] = useState(null); const [sharing, setSharing] = useState(null); const [cropSource, setCropSource] = useState(null); const [privacySource, setPrivacySource] = useState(null); const [savedCrop, setSavedCrop] = useState(() => { try { return JSON.parse(localStorage.getItem(cropKey) || 'null'); } catch { return null; } }); const [savedMasks, setSavedMasks] = useState(() => { try { return JSON.parse(localStorage.getItem(maskKey) || 'null'); } catch { return null; } });
@@ -928,10 +941,15 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   const [handRaised, setHandRaised] = useState(false); const [reactionMenu, setReactionMenu] = useState(false); const [reactions, setReactions] = useState([]); const [shareMenu, setShareMenu] = useState(false); const [localSpeaking, setLocalSpeaking] = useState(false);
   const [sideTab, setSideTab] = useState('people'); const [mobilePanelOpen, setMobilePanelOpen] = useState(false); const [messages, setMessages] = useState([]); const [floatingMessages, setFloatingMessages] = useState([]); const [unreadMessages, setUnreadMessages] = useState(0); const [messagePulse, setMessagePulse] = useState(false); const [replyTo, setReplyTo] = useState(null); const [inviteOpen, setInviteOpen] = useState(false); const [guestLinkOpen, setGuestLinkOpen] = useState(false); const [guestLink, setGuestLink] = useState(null); const [members, setMembers] = useState([]); const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
   const [pipActive, setPipActive] = useState(false);
-  const [musicOpen, setMusicOpen] = useState(false); const [musicState, setMusicState] = useState(musicStateRef.current);
+  const [musicOpen, setMusicOpen] = useState(false); const [musicState, setMusicState] = useState(musicStateRef.current); const [musicTracks, setMusicTracks] = useState(MEETING_MUSIC_TRACKS); const [musicUploading, setMusicUploading] = useState(false);
   const [audioBlocked, setAudioBlocked] = useState(false); const [shareHasAudio, setShareHasAudio] = useState(false); const [shareAudioEnabled, setShareAudioEnabled] = useState(true); const [participantMicsLocked, setParticipantMicsLocked] = useState(false); const [collaborationEnabled, setCollaborationEnabled] = useState(true); const [collaborationMode, setCollaborationMode] = useState(null); const [collaborationColor, setCollaborationColor] = useState('#ffcf5a'); const [annotationTool, setAnnotationTool] = useState('pen'); const [analysisToolsOpen, setAnalysisToolsOpen] = useState(false);
   const [collaborationRequest, setCollaborationRequest] = useState(null); const [requestedCollaboration, setRequestedCollaboration] = useState(null); const [collaborationPermission, setCollaborationPermission] = useState(null);
   const [annotationStrokes, setAnnotationStrokes] = useState([]); const [selectedAnnotationId, setSelectedAnnotationId] = useState(null); const [remoteCursors, setRemoteCursors] = useState({}); const [confirmation, setConfirmation] = useState(null);
+
+  const loadMeetingMusicTracks = useCallback(async () => {
+    const uploaded = await api.getMeetingMusicTracks(); const next = [...MEETING_MUSIC_TRACKS, ...uploaded.filter((track) => !MEETING_MUSIC_TRACKS.some((item) => item.id === track.id))];
+    musicTracksRef.current = next; setMusicTracks(next); return next;
+  }, []);
 
   useEffect(() => () => stopAllMeetingReactionSounds(), []);
   useEffect(() => { annotationStrokesRef.current = annotationStrokes; }, [annotationStrokes]);
@@ -988,18 +1006,20 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
   const showReaction = ({ emoji, peerId, senderName }) => { if (![...EMOJIS, ...COSMIC_REACTIONS.map((item) => item.id)].includes(emoji)) return; const id = crypto.randomUUID(); const name = String(senderName || connection.current?.participants.get(peerId)?.name || 'Participante').slice(0, 100); const soundManaged = emoji === PHOENIX_TRANSFORM_REACTION || emoji === 'ALIEN_BIRTHDAY'; setReactions((items) => [...items, { id, emoji, senderName: name, soundManaged }]); if (soundManaged) playMeetingReactionSound(emoji, id).then((played) => { if (!played) { stopMeetingReactionSound(id); setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); } }).catch(() => { stopMeetingReactionSound(id); setReactions((items) => items.map((item) => item.id === id ? { ...item, soundManaged: false } : item)); }); const cosmic = COSMIC_REACTIONS.some((item) => item.id === emoji); const lifetime = emoji === PHOENIX_TRANSFORM_REACTION ? 11_300 : emoji === GALACTIC_TAKE_PROFIT_REACTION ? 7_400 : emoji === 'UFO' ? 8_300 : emoji === 'ALIEN_BIRTHDAY' ? 6_300 : cosmic ? 4200 : 2400; setTimeout(() => { stopMeetingReactionSound(id); setReactions((items) => items.filter((item) => item.id !== id)); }, lifetime); };
   const applyMeetingMusicState = (next) => { musicStateRef.current = next; setMusicState(next); };
-  const receiveMeetingMusicState = (next) => {
-    if (!MEETING_MUSIC_TRACKS.some((track) => track.id === next.trackId) || next.revision <= musicStateRef.current.revision) return;
+  const receiveMeetingMusicState = async (next) => {
+    let tracks = musicTracksRef.current;
+    if (!tracks.some((track) => track.id === next.trackId)) tracks = await loadMeetingMusicTracks().catch(() => tracks);
+    if (!tracks.some((track) => track.id === next.trackId) || next.revision <= musicStateRef.current.revision) return;
     applyMeetingMusicState({ ...next, startedAt: next.playing ? Date.now() : null });
   };
   const sendCurrentMeetingMusicState = (target = null) => {
     const current = musicStateRef.current; if (!current.trackId) return;
     const now = Date.now();
-    connection.current?.publishMeetingMusicState({ ...current, position: meetingMusicPosition(current), startedAt: current.playing ? now : null, revision: Math.max(now, current.revision + 1) }, target);
+    connection.current?.publishMeetingMusicState({ ...current, position: meetingMusicPosition(current), startedAt: current.playing ? now : null, revision: Math.max(now, current.revision + 1), syncMode: 'snapshot' }, target);
   };
   const controlMeetingMusic = (command) => {
-    if (meeting?.role !== 'HOST') return;
-    const tracks = MEETING_MUSIC_TRACKS; const current = musicStateRef.current;
+    if (meeting?.role !== 'HOST' || String(user.email || '').trim().toLowerCase() !== MEETING_MUSIC_CONTROLLER_EMAIL) return;
+    const tracks = musicTracksRef.current; const current = musicStateRef.current;
     if (!tracks.length) { if (command.type !== 'volume') toast('La lista estará disponible cuando agregues las canciones.', 'info'); return; }
     const activeIndex = Math.max(0, tracks.findIndex((track) => track.id === current.trackId)); const now = Date.now();
     let trackId = current.trackId || tracks[0].id; let position = meetingMusicPosition(current); let playing = current.playing; let volume = current.volume;
@@ -1009,8 +1029,16 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     if (command.type === 'previous') { if (position > 3) position = 0; else { trackId = tracks[(activeIndex - 1 + tracks.length) % tracks.length].id; position = 0; } playing = true; }
     if (command.type === 'seek') position = Math.max(0, command.position || 0);
     if (command.type === 'volume') volume = Math.max(0, Math.min(1, command.volume));
-    const next = { trackId, position, playing, volume, startedAt: playing ? now : null, revision: Math.max(now, current.revision + 1) };
+    const syncMode = ['select', 'seek', 'next', 'previous'].includes(command.type) ? 'transport' : command.type === 'volume' ? 'volume' : 'transport';
+    const next = { trackId, position, playing, volume, startedAt: playing ? now : null, revision: Math.max(now, current.revision + 1), syncMode };
     applyMeetingMusicState(next); connection.current?.publishMeetingMusicState(next);
+  };
+  const uploadMeetingMusic = async (file) => {
+    setMusicUploading(true);
+    try {
+      const track = await api.uploadMeetingMusic(file); const next = [...musicTracksRef.current.filter((item) => item.id !== track.id), track];
+      musicTracksRef.current = next; setMusicTracks(next); toast(`“${track.title}” quedó lista para reproducir.`);
+    } catch (error) { toast(error.message, 'error'); } finally { setMusicUploading(false); }
   };
   const enforceParticipantMicLock = (locked, role, by = '', notify = false) => {
     const active = Boolean(locked); setParticipantMicsLocked(active);
@@ -1085,7 +1113,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   };
 
   const stopMedia = () => { stopMeetingStream(mediaRef.current); mediaRef.current = new MediaStream(); setMedia(null); setMic(false); setCamera(false); };
-  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); setMusicOpen(false); applyMeetingMusicState({ trackId: null, playing: false, position: 0, startedAt: null, revision: 0, volume: .28 }); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
+  const disconnect = useCallback((clearMeeting = false) => { entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); if (pipVideoRef.current?.webkitPresentationMode === 'picture-in-picture') pipVideoRef.current.webkitSetPresentationMode('inline'); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; setPipActive(false); participantHandStates.current.clear(); participantSnapshotReady.current = false; setJoined(false); setWaiting(false); setParticipants([]); setRemoteStreams({}); setPeerStates({}); setStatus('offline'); setRelayReady(null); setHandRaised(false); setParticipantMicsLocked(false); setFloatingMessages([]); setUnreadMessages(0); setMobilePanelOpen(false); setConfirmation(null); setMusicOpen(false); applyMeetingMusicState({ trackId: null, playing: false, position: 0, startedAt: null, revision: 0, volume: .28, syncMode: 'snapshot' }); resetCollaboration(); if (clearMeeting) { setMeeting(null); setMessages([]); forgetMeeting(); } }, []);
   useEffect(() => {
     const epoch = ++lifecycleEpoch.current;
     return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); stopMeetingStream(mediaRef.current); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
@@ -1144,6 +1172,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       await client.connect({ roomId: normalized.meetingId, role: normalized.role, hostId: normalized.hostId, stream: mediaRef.current, iceServers, user });
       if (!isCurrent(client)) { client.disconnect(); return false; }
       if (usingTurn) client.scheduleIceRefresh(relayInfo?.expiresIn);
+      await loadMeetingMusicTracks().catch(() => musicTracksRef.current);
       if (normalized.role !== 'HOST') client.requestMeetingMusicState();
       toast(`Conectado a ${normalized.title}${usingTurn ? ' con relay TURN.' : '; TURN aún no está configurado.'}`, usingTurn ? undefined : 'info');
       return true;
@@ -1500,7 +1529,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   if (!meeting) return <><MeetingLobby busy={busy} meetings={meetings} initialCode={queryCode} onCreate={createMeeting} onJoin={enterMeeting} onResume={(item) => enterMeeting({ roomCode: item.roomCode })} onRestart={restartMeeting} onRemove={removeEndedMeeting} canCreate={canCreate} /><MeetingConfirmationModal confirmation={confirmation} busy={busy} onCancel={() => setConfirmation(null)} onConfirm={confirmAction} /></>;
   if (waiting) return <div className="meeting-waiting surface"><span className="waiting-orbit" /><p className="eyebrow">SALA DE ESPERA</p><h1>{meeting.title}</h1><p>El anfitrión recibió tu solicitud. Esta pantalla entrará automáticamente cuando te admita.</p><strong>{meeting.roomCode}</strong><button className="secondary-button" onClick={() => disconnect(true)}>Cancelar</button></div>;
 
-  const remoteEntries = Object.entries(remoteStreams); const isHost = meeting.role === 'HOST';
+  const remoteEntries = Object.entries(remoteStreams); const isHost = meeting.role === 'HOST'; const canControlMusic = isHost && String(user.email || '').trim().toLowerCase() === MEETING_MUSIC_CONTROLLER_EMAIL;
   const remotePresentation = remotePresentationEntry;
   const presentationStream = sharing || remotePresentation?.[1];
   const presentationPeer = remotePresentation && participants.find((item) => item.peerId === remotePresentation[0]);
@@ -1509,7 +1538,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   return <section className={`meeting-page ${mobilePanelOpen ? 'mobile-panel-open' : ''}`}>
     {mobilePanelOpen && <button className="meeting-mobile-scrim" type="button" aria-label="Cerrar chat" onClick={() => setMobilePanelOpen(false)} />}
     <button className={`mobile-chat-fab ${mobilePanelOpen ? 'active' : ''} ${messagePulse ? 'message-pulse' : ''}`} type="button" disabled={!joined} onClick={() => { setSideTab('chat'); setMobilePanelOpen((open) => !open); }}><MessageCircle /><span>{mobilePanelOpen ? 'Cerrar chat' : 'Abrir chat'}</span>{unreadMessages > 0 && <i aria-label={`${unreadMessages} mensajes sin leer`}>{unreadMessages}</i>}</button>
-    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-controls"><MeetingMusicPlayer tracks={MEETING_MUSIC_TRACKS} state={musicState} isHost={isHost} open={musicOpen} onToggleOpen={() => setMusicOpen((value) => !value)} onCommand={controlMeetingMusic} /><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Invitados sin cuenta' : meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar usuarios</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div></div>
+    <div className="meeting-top"><div><p className="eyebrow">REUNIÓN ACTIVA</p><h1>{meeting.title}</h1><MeetingDuration startedAt={meeting.startsAt} /></div><div className="meeting-top-controls"><MeetingMusicPlayer tracks={musicTracks} state={musicState} canControl={canControlMusic} open={musicOpen} onToggleOpen={() => setMusicOpen((value) => !value)} onCommand={controlMeetingMusic} onUpload={uploadMeetingMusic} uploading={musicUploading} /><div className="meeting-top-actions"><button className={`secondary-button ${pipActive ? 'active' : ''}`} disabled={!joined} onClick={() => enterPictureInPicture()} title="Mantener la reunión visible al cambiar de aplicación"><PictureInPicture2 /> {pipActive ? 'Cerrar ventana' : 'Ventana flotante'}</button><button className="secondary-button" onClick={() => isHost ? openGuestLinks() : copyInvite()}><Copy /> {isHost ? 'Invitados sin cuenta' : meeting.roomCode}</button>{isHost && <button className="secondary-button" onClick={openInvites}><UserPlus /> Invitar usuarios</button>}{isHost && <button className={`secondary-button participant-mic-lock ${participantMicsLocked ? 'active' : ''}`} onClick={toggleParticipantMics}>{participantMicsLocked ? <Mic /> : <MicOff />} {participantMicsLocked ? 'Permitir micrófonos' : 'Silenciar a todos'}</button>}<div className={`secure-pill ${status} ${relayReady === false ? 'relay-missing' : ''}`}><ShieldCheck /> {status === 'connected' ? relayReady ? 'WebRTC + TURN' : 'WebRTC sin relay' : status === 'signaling' ? 'Conectando…' : 'Fuera de línea'}</div></div></div></div>
     <div className="meeting-grid">
       <div className={`meeting-stage-shell ${sharing ? 'has-analysis-tools' : ''}`}>
       <div className="meeting-stage">

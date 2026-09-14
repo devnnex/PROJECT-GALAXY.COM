@@ -14,7 +14,8 @@ function safeMeetingMusicState(value) {
   const trackId = typeof value.trackId === 'string' && /^[a-z0-9_-]{1,120}$/i.test(value.trackId) ? value.trackId : null;
   const position = Number(value.position); const startedAt = Number(value.startedAt); const revision = Number(value.revision); const volume = Number(value.volume);
   if (!trackId || !Number.isFinite(position) || position < 0 || position > 86_400 || !Number.isFinite(revision) || revision < 0 || !Number.isFinite(volume) || volume < 0 || volume > 1) return null;
-  return { trackId, playing: value.playing === true, position, startedAt: Number.isFinite(startedAt) ? startedAt : null, revision, volume };
+  const syncMode = ['transport', 'volume', 'snapshot'].includes(value.syncMode) ? value.syncMode : 'snapshot';
+  return { trackId, playing: value.playing === true, position, startedAt: Number.isFinite(startedAt) ? startedAt : null, revision, volume, syncMode };
 }
 
 async function replaceMeetingSenderTrack(sender, track) {

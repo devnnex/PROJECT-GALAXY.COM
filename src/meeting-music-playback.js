@@ -1,14 +1,10 @@
 export const MEETING_MUSIC_SYNC = Object.freeze({
-  settledDrift: 0.08,
-  hardDrift: 1.5,
-  minimumRate: 0.9925,
-  maximumRate: 1.0075,
-  rateGain: 0.018,
+  settledDrift: 0.15,
+  hardDrift: 2.5,
+  minimumRate: 1,
+  maximumRate: 1,
+  rateGain: 0,
 });
-
-function clamp(value, minimum, maximum) {
-  return Math.min(maximum, Math.max(minimum, value));
-}
 
 export function getMeetingMusicPlaybackPlan(currentTime, expectedTime, forceSeek = false) {
   const current = Math.max(0, Number(currentTime) || 0);
@@ -22,11 +18,7 @@ export function getMeetingMusicPlaybackPlan(currentTime, expectedTime, forceSeek
   if (absoluteDrift <= MEETING_MUSIC_SYNC.settledDrift) {
     return { seekTo: null, playbackRate: 1, drift };
   }
-  return {
-    seekTo: null,
-    playbackRate: clamp(1 + drift * MEETING_MUSIC_SYNC.rateGain, MEETING_MUSIC_SYNC.minimumRate, MEETING_MUSIC_SYNC.maximumRate),
-    drift,
-  };
+  return { seekTo: null, playbackRate: 1, drift };
 }
 
 export function isMeetingMusicStateContinuous(previous, next, positionAt) {

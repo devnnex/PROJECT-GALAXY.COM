@@ -9,19 +9,17 @@ describe('professional meeting music playback', () => {
     expect(plan.drift).toBeCloseTo(0.05);
   });
 
-  it('corrects normal network drift gently without seeking', () => {
+  it('keeps native speed during normal network drift without time-stretch artifacts', () => {
     const late = getMeetingMusicPlaybackPlan(20, 20.5);
     const early = getMeetingMusicPlaybackPlan(20.5, 20);
     expect(late.seekTo).toBeNull();
-    expect(late.playbackRate).toBeGreaterThan(1);
-    expect(late.playbackRate).toBeLessThanOrEqual(MEETING_MUSIC_SYNC.maximumRate);
+    expect(late.playbackRate).toBe(1);
     expect(early.seekTo).toBeNull();
-    expect(early.playbackRate).toBeLessThan(1);
-    expect(early.playbackRate).toBeGreaterThanOrEqual(MEETING_MUSIC_SYNC.minimumRate);
+    expect(early.playbackRate).toBe(1);
   });
 
   it('seeks only for a real jump or an explicit transport command', () => {
-    expect(getMeetingMusicPlaybackPlan(10, 12).seekTo).toBe(12);
+    expect(getMeetingMusicPlaybackPlan(10, 13).seekTo).toBe(13);
     expect(getMeetingMusicPlaybackPlan(10, 10.1, true).seekTo).toBe(10.1);
   });
 
