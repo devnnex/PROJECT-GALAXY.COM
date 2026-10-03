@@ -16,6 +16,7 @@ import AuthGate from './components/AuthGate';
 import { DeleteUserDialog, InvitationForm, WalletActivity } from './components/RegistrationManagement';
 import MeetingStudio from './components/MeetingStudio';
 import CalendarPage from './components/CalendarPage';
+import ProfitCalendarPage from './components/ProfitCalendarPage';
 import ConstellationAvatar from './components/ConstellationAvatar';
 import GalaxyStore from './components/GalaxyStore';
 import ReportsPage from './components/ReportsPage';
@@ -33,14 +34,14 @@ const catalogFor = () => products;
 
 const navigation = [
   ['dashboard', 'Inicio', Home], ['reports', 'Reportes', Flag], ['marketplace', 'Marketplace', ShoppingBag],
-  ['store', 'Galaxy Store', ShoppingBag], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['messages', 'Mensajes', MessageCircle],
+  ['store', 'Galaxy Store', ShoppingBag], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['pnl', 'PNL / Profit', CircleDollarSign], ['messages', 'Mensajes', MessageCircle],
   ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['users', 'Usuarios', Users], ['profile', 'Perfil', User],
 ];
-const memberNavigation = navigation.filter(([id]) => ['reports', 'marketplace', 'store', 'meetings', 'calendar', 'messages', 'wallet', 'orders', 'profile'].includes(id));
+const memberNavigation = navigation.filter(([id]) => ['reports', 'marketplace', 'store', 'meetings', 'calendar', 'pnl', 'messages', 'wallet', 'orders', 'profile'].includes(id));
 
 const navigationEnglish = {
   dashboard: 'Home', reports: 'Reports', marketplace: 'Marketplace', store: 'Galaxy Store', meetings: 'Meetings',
-  calendar: 'Calendar', messages: 'Messages', wallet: 'Wallet', orders: 'Orders', users: 'Users', profile: 'Profile',
+  calendar: 'Calendar', pnl: 'PNL / Profit', messages: 'Messages', wallet: 'Wallet', orders: 'Orders', users: 'Users', profile: 'Profile',
 };
 const languageFor = (user) => user?.language === 'en' ? 'en' : 'es';
 
@@ -356,6 +357,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   else if (page === 'store') content = <GalaxyStore isAdmin={isAdmin} toast={toast} />;
   else if (page === 'meetings') content = null;
   else if (page === 'calendar') content = <CalendarPage toast={toast} onJoin={(request) => { setJoinRequest(request); navigate('meetings'); }} />;
+  else if (page === 'pnl') content = <ProfitCalendarPage user={representedUser} toast={toast} />;
   else if (page === 'messages') content = <DirectMessagesPage user={representedUser} toast={toast} onUnreadChange={setDirectUnread} />;
   else if (page === 'wallet') content = <WalletActivity user={representedUser} />;
   else if (page === 'orders') content = <MembershipOrdersPage orders={membershipCenter.orders} onRefresh={() => reloadMembership().catch((error) => toast(error.message, 'error'))} />;

@@ -1,0 +1,18 @@
+.pnl-reviewer{display:grid;grid-template-columns:46px minmax(0,1fr) minmax(250px,340px);align-items:center;gap:14px;padding:14px 16px}
+.pnl-reviewer>span{width:42px;height:42px;display:grid;place-items:center;border-radius:12px;background:rgba(128,85,207,.13);color:#b894f2}
+.pnl-reviewer>span svg{width:19px}
+.pnl-reviewer>div{min-width:0;display:grid;gap:3px}
+.pnl-reviewer>div .eyebrow{margin-bottom:2px!important}
+.pnl-reviewer>div>strong{font:600 13px 'Manrope'}
+.pnl-reviewer>div>small{color:#77707e;font-size:8px}
+.pnl-reviewer>label{display:grid;gap:6px;color:#8d8595;font-size:8px}
+.pnl-reviewer select{width:100%;height:40px;padding:0 11px;border:1px solid rgba(160,116,227,.25);border-radius:8px;outline:0;background:#0b0910;color:#e9e1f1;font-size:10px}
+.pnl-reviewer select:focus{border-color:#8155d4;box-shadow:0 0 0 3px rgba(129,85,212,.12)}
+.pnl-day.read-only{cursor:default}
+
+@media(max-width:700px){
+  .pnl-reviewer{grid-template-columns:38px minmax(0,1fr);gap:10px;padding:12px}
+  .pnl-reviewer>span{width:36px;height:36px}
+  .pnl-reviewer>label{grid-column:1/-1}
+  .pnl-reviewer select{height:44px;font-size:16px}
+}

@@ -11,6 +11,8 @@ import './styles.css';
 import './crop.css';
 import './meeting-live.css';
 import './calendar.css';
+import './profit-calendar.css';
+import './profit-review.css';
 import './membership.css';
 import './registration.css';
 import './galaxy-store.css';
