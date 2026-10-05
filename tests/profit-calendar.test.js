@@ -33,14 +33,15 @@ it('exposes the honest daily calendar, weekly totals and month history', () => {
   expect(page).toContain('Meses anteriores');
 });
 
-it('uses presentation-only mobile meeting rules and clips profile photos inside badges', () => {
+it('uses presentation-only mobile meeting rules without hiding animated reactions and clips profile photos inside badges', () => {
   const meeting = read('../src/components/MeetingStudio.jsx');
   const meetingCss = read('../src/meeting-live.css');
   const avatarCss = read('../src/registration.css');
   expect(meeting).toContain("presentationStream ? 'mobile-presentation-only' : ''");
   expect(meetingCss).toContain('.meeting-page.mobile-presentation-only .meeting-side');
-  expect(meetingCss).toContain('.meeting-page.mobile-presentation-only .reaction-layer');
-  expect(meetingCss).toContain('.meeting-page.mobile-presentation-only .cosmic-reaction-launcher');
+  expect(meetingCss).toContain('.meeting-page.mobile-presentation-only .video-surface.presentation { bottom:58px; height:auto; }');
+  expect(meetingCss).not.toMatch(/mobile-presentation-only \.reaction-layer[^\{]*\{\s*display\s*:\s*none/i);
+  expect(meetingCss).not.toMatch(/mobile-presentation-only \.cosmic-reaction-launcher[^\{]*\{\s*display\s*:\s*none/i);
   expect(avatarCss).toContain('.constellation-avatar.profile-photo.has-membership-badge>img');
   expect(avatarCss).toContain('clip-path:circle(50%)');
 });
