@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Info, Plus, Repeat2, Video, X } from 'lucide-react';
+import { CalendarDays, Check, ChevronLeft, ChevronRight, Clock3, Info, Plus, Repeat2, Trash2, Video, X } from 'lucide-react';
 import { api } from '../services/api';
 
 const WEEKDAYS = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
@@ -87,7 +87,7 @@ function CreateEventModal({ onClose, onCreated, toast }) {
   </section></div>;
 }
 
-function EventDetail({ event, now, onClose, onJoin }) {
+function EventDetail({ event, now, canDelete, deleting, onClose, onJoin, onDelete }) {
   if (!event) return null;
   const state = eventState(event, now); const isMeeting = event.kind === 'MEETING';
   return <div className="modal-backdrop calendar-modal-backdrop" onMouseDown={onClose}><section className="calendar-event-detail glass" role="dialog" aria-modal="true" aria-labelledby="calendar-event-title" onMouseDown={(click) => click.stopPropagation()}>
@@ -97,18 +97,18 @@ function EventDetail({ event, now, onClose, onJoin }) {
     {event.description && <p className="calendar-detail-description">{event.description}</p>}
     <div className="calendar-detail-meta"><span><CalendarDays /> {dateLabel(event.startsAt, { weekday: 'long', day: 'numeric', month: 'long' })}</span><span><Clock3 /> {dateLabel(event.startsAt, { hour: '2-digit', minute: '2-digit' })} – {dateLabel(event.endsAt, { hour: '2-digit', minute: '2-digit' })}</span>{event.recurring && <span><Repeat2 /> Sesión semanal</span>}</div>
     {isMeeting && <div className={`calendar-access-note ${state.toLowerCase()}`}>{state === 'LIVE' ? 'La sala está habilitada. Entrarás directamente, sin sala de espera.' : state === 'UPCOMING' ? `La sala se habilita ${dateLabel(event.startsAt, { weekday: 'long', hour: '2-digit', minute: '2-digit' })}.` : 'La franja programada para esta reunión ya terminó.'}</div>}
-    <footer><button className="secondary-button" type="button" onClick={onClose}>Cerrar</button>{isMeeting && <button className="primary-button" type="button" disabled={state !== 'LIVE'} onClick={() => onJoin(event)}><Video /> {state === 'LIVE' ? 'Unirse a la reunión' : state === 'UPCOMING' ? 'Aún no disponible' : 'Reunión finalizada'}</button>}</footer>
+    <footer>{canDelete && isMeeting && <button className="calendar-delete-button" type="button" disabled={deleting} onClick={() => onDelete(event)}><Trash2 /> {deleting ? 'Eliminando…' : 'Eliminar reunión'}</button>}<button className="secondary-button" type="button" disabled={deleting} onClick={onClose}>Cerrar</button>{isMeeting && <button className="primary-button" type="button" disabled={deleting || state !== 'LIVE'} onClick={() => onJoin(event)}><Video /> {state === 'LIVE' ? 'Unirse a la reunión' : state === 'UPCOMING' ? 'Aún no disponible' : 'Reunión finalizada'}</button>}</footer>
   </section></div>;
 }
 
 export default function CalendarPage({ toast, onJoin }) {
   const [month, setMonth] = useState(() => { const now = new Date(); return new Date(now.getFullYear(), now.getMonth(), 1); });
-  const [events, setEvents] = useState([]); const [canManage, setCanManage] = useState(false); const [loading, setLoading] = useState(true); const [createOpen, setCreateOpen] = useState(false); const [selected, setSelected] = useState(null); const [clock, setClock] = useState(Date.now()); const [serverOffset, setServerOffset] = useState(0);
+  const [events, setEvents] = useState([]); const [canManage, setCanManage] = useState(false); const [canDelete, setCanDelete] = useState(false); const [loading, setLoading] = useState(true); const [deletingId, setDeletingId] = useState(null); const [createOpen, setCreateOpen] = useState(false); const [selected, setSelected] = useState(null); const [clock, setClock] = useState(Date.now()); const [serverOffset, setServerOffset] = useState(0);
   const days = useMemo(() => calendarDays(month), [month]);
   const range = useMemo(() => { const last = days[days.length - 1]; return { from: days[0].toISOString(), to: new Date(last.getFullYear(), last.getMonth(), last.getDate() + 1).toISOString() }; }, [days]);
   const load = async () => {
     setLoading(true);
-    try { const result = await api.getCalendarEvents(range); const serverTime = new Date(result.serverNow || Date.now()).getTime(); setEvents(result.events || []); setCanManage(Boolean(result.canManage)); setServerOffset(serverTime - Date.now()); setClock(serverTime); }
+    try { const result = await api.getCalendarEvents(range); const serverTime = new Date(result.serverNow || Date.now()).getTime(); setEvents(result.events || []); setCanManage(Boolean(result.canManage)); setCanDelete(Boolean(result.canDelete)); setServerOffset(serverTime - Date.now()); setClock(serverTime); }
     catch (error) { toast(error.message, 'error'); } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, [range.from, range.to]);
@@ -118,6 +118,12 @@ export default function CalendarPage({ toast, onJoin }) {
   const moveMonth = (amount) => setMonth(new Date(month.getFullYear(), month.getMonth() + amount, 1));
   const today = () => { const value = new Date(); setMonth(new Date(value.getFullYear(), value.getMonth(), 1)); };
   const join = (event) => { setSelected(null); onJoin({ roomCode: event.roomCode, id: `calendar-${event.id}-${Date.now()}` }); };
+  const removeMeeting = async (event) => {
+    if (!canDelete || deletingId || !window.confirm(`¿Eliminar definitivamente "${event.title}" del calendario?`)) return;
+    setDeletingId(event.id);
+    try { await api.deleteCalendarMeeting(event.id); setSelected(null); await load(); toast('Reunión eliminada del calendario.'); }
+    catch (error) { toast(error.message, 'error'); } finally { setDeletingId(null); }
+  };
   return <div className="calendar-page">
     <header className="calendar-page-head"><div><p className="eyebrow">AGENDA DE LA COMUNIDAD</p><h1>{MONTHS[month.getMonth()]} de {month.getFullYear()}</h1><p>Consulta las sesiones programadas y entra directamente cuando estén en vivo.</p></div>{canManage && <button className="primary-button compact" onClick={() => setCreateOpen(true)}><Plus /> Nuevo evento</button>}</header>
     <div className="calendar-toolbar"><div><button className="icon-button" aria-label="Mes anterior" onClick={() => moveMonth(-1)}><ChevronLeft /></button><button className="calendar-today" onClick={today}>Hoy</button><button className="icon-button" aria-label="Mes siguiente" onClick={() => moveMonth(1)}><ChevronRight /></button></div>{loading && <span>Actualizando calendario…</span>}</div>
@@ -129,6 +135,6 @@ export default function CalendarPage({ toast, onJoin }) {
       <aside className="calendar-upcoming"><div className="calendar-upcoming-title"><h2>Próximos eventos</h2><span>{upcoming.length}</span></div>{upcoming.length ? upcoming.map((event) => { const state = eventState(event, clock); return <article className={state.toLowerCase()} key={event.id} onClick={() => setSelected(event)}><div className="calendar-upcoming-state"><span>{state === 'LIVE' ? 'AHORA' : dateLabel(event.startsAt, { day: 'numeric', month: 'short' }).toUpperCase()}</span><i>{state === 'LIVE' ? 'LIVE' : event.kind === 'MEETING' ? 'REUNIÓN' : 'EVENTO'}</i></div><h3>{event.title}</h3><p><Clock3 /> {dateLabel(event.startsAt, { hour: '2-digit', minute: '2-digit' })} – {dateLabel(event.endsAt, { hour: '2-digit', minute: '2-digit' })}</p><small>{event.description || (event.kind === 'MEETING' ? 'Ingreso automático durante la franja programada.' : 'Evento de la comunidad.')}</small>{state === 'LIVE' && event.kind === 'MEETING' && <button className="primary-button" onClick={(click) => { click.stopPropagation(); join(event); }}><Video /> Unirse ahora</button>}</article>; }) : <div className="calendar-empty"><CalendarDays /><strong>Agenda despejada</strong><p>No hay eventos próximos en este mes.</p></div>}</aside>
     </div>
     {createOpen && <CreateEventModal toast={toast} onClose={() => setCreateOpen(false)} onCreated={load} />}
-    {selected && <EventDetail event={selected} now={clock} onClose={() => setSelected(null)} onJoin={join} />}
+    {selected && <EventDetail event={selected} now={clock} canDelete={canDelete} deleting={deletingId === selected.id} onClose={() => setSelected(null)} onJoin={join} onDelete={removeMeeting} />}
   </div>;
 }

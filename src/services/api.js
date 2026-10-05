@@ -327,6 +327,7 @@ export const api = {
   redeemMeetingShareLink: (token) => rpc('redeem_meeting_share_link', { token }),
   getCalendarEvents: (payload) => rpc('get_calendar_events', payload),
   createCalendarEvent: (payload) => rpc('create_calendar_event', payload),
+  deleteCalendarMeeting: (eventId) => rpc('delete_calendar_meeting', { eventId }),
   getTradingPnl: (month, userId) => rpc('get_trading_pnl', { month, userId }),
   saveTradingPnl: (payload) => rpc('save_trading_pnl', payload),
   deleteTradingPnl: (tradingDate) => rpc('delete_trading_pnl', { tradingDate }),

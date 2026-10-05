@@ -88,4 +88,14 @@ describe('Galaxy owner and member access controls', () => {
     expect(calendar).toContain('const title = form.title.trim()');
     expect(calendar).toContain('La hora final debe ser posterior a la hora de inicio.');
   });
+
+  it('lets only the owner delete a meeting from the calendar', () => {
+    expect(schema).toMatch(/function public\.delete_calendar_meeting\(p_event_id uuid\)[\s\S]*lower\(account\.email\)='elkin56ty@gmail\.com'/);
+    expect(schema).toMatch(/function public\.delete_calendar_meeting[\s\S]*v_event\.kind<>'MEETING'[\s\S]*delete from public\.meetings[\s\S]*delete from public\.calendar_events/);
+    expect(schema).toContain('public.delete_calendar_meeting(uuid)');
+    expect(api).toContain("deleteCalendarMeeting: (eventId) => rpc('delete_calendar_meeting', { eventId })");
+    expect(calendar).toContain('canDelete={canDelete}');
+    expect(calendar).toContain('api.deleteCalendarMeeting(event.id)');
+    expect(calendar).toContain('Eliminar reunión');
+  });
 });

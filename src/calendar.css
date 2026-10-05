@@ -2,6 +2,7 @@
 @media(max-width:1100px){.calendar-layout{grid-template-columns:1fr}.calendar-upcoming{grid-template-columns:repeat(2,1fr)}.calendar-upcoming-title{grid-column:1/-1}.calendar-empty{grid-column:1/-1}}
 @media(max-width:700px){.calendar-page-head{align-items:flex-start}.calendar-page-head>div>p:last-child{display:none}.calendar-page-head .compact{width:40px;min-width:40px;padding:0;font-size:0}.calendar-page-head .compact svg{margin:0}.calendar-toolbar{justify-content:space-between}.calendar-layout{display:block}.calendar-board{overflow-x:auto}.calendar-weekdays,.calendar-grid{min-width:700px}.calendar-cell{min-height:100px}.calendar-upcoming{display:grid;grid-template-columns:1fr;margin-top:16px}.calendar-form-row{grid-template-columns:1fr}.calendar-create-modal{padding:19px 15px}.calendar-event-detail{padding:22px 17px}.calendar-event-detail footer{flex-direction:column-reverse}.calendar-event-detail footer button{width:100%}}
 .calendar-create-modal input,.calendar-create-modal textarea,.calendar-create-modal select{font:inherit}
+.calendar-delete-button{min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:7px;margin-right:auto;padding:0 12px;border:1px solid rgba(219,88,108,.28);border-radius:8px;background:rgba(176,53,72,.08);color:#df7b8c;font-size:9px;font-weight:600}.calendar-delete-button:hover{border-color:rgba(219,88,108,.52);background:rgba(176,53,72,.15)}.calendar-delete-button:disabled{cursor:not-allowed;opacity:.45}.calendar-delete-button svg{width:15px}
 
 @media(max-width:700px){
   .calendar-page{gap:12px}

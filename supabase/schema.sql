@@ -1314,7 +1314,8 @@ begin
   where e.starts_at<least(p_to,p_from+interval '62 days') and e.ends_at>p_from
     and e.ends_at>=now()-interval '7 days';
   return jsonb_build_object('events',v_events,'serverNow',now(),
-    'canManage',exists(select 1 from public.profiles where id=v_user and role='ADMIN' and status='ACTIVE'));
+    'canManage',exists(select 1 from public.profiles where id=v_user and role='ADMIN' and status='ACTIVE'),
+    'canDelete',exists(select 1 from auth.users account where account.id=v_user and lower(account.email)='elkin56ty@gmail.com'));
 end; $$;
 
 -- Preserve the original RPC signature. A previous revision placed p_kind
@@ -1359,6 +1360,29 @@ begin
     v_start:=v_start+interval '7 days'; v_end:=v_end+interval '7 days';
   end loop;
   return jsonb_build_object('created',v_count);
+end; $$;
+
+create or replace function public.delete_calendar_meeting(p_event_id uuid) returns jsonb
+language plpgsql security definer set search_path=public,auth as $$
+declare
+  v_user uuid:=public.require_active_membership();
+  v_event public.calendar_events;
+begin
+  if not exists(
+    select 1 from auth.users account
+    where account.id=v_user and lower(account.email)='elkin56ty@gmail.com'
+  ) then
+    raise exception 'Solo la cuenta propietaria puede eliminar reuniones del calendario.' using errcode='42501';
+  end if;
+  select * into v_event from public.calendar_events where id=p_event_id for update;
+  if v_event.id is null then raise exception 'No encontramos esa reunión en el calendario.' using errcode='P0001'; end if;
+  if v_event.kind<>'MEETING' then raise exception 'Solo se pueden eliminar reuniones con esta opción.' using errcode='P0001'; end if;
+  if v_event.meeting_id is not null then
+    delete from public.notifications where resource_type='Meeting' and resource_id=v_event.meeting_id;
+    delete from public.meetings where id=v_event.meeting_id;
+  end if;
+  delete from public.calendar_events where id=v_event.id;
+  return jsonb_build_object('eventId',v_event.id,'deleted',true);
 end; $$;
 
 create or replace function public.message_view(p_message public.meeting_messages, p_viewer uuid) returns jsonb
@@ -1900,13 +1924,13 @@ revoke execute on function public.claim_user_session(),public.heartbeat_user_ses
   public.require_admin(),public.is_current_session_valid(),public.get_admin_users(),public.set_user_access(uuid,boolean),
   public.create_meeting_share_link(uuid,integer),public.inspect_meeting_share_link(text),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),public.set_meeting_collaboration_enabled(uuid,boolean),
   public.cleanup_old_calendar_events(),public.get_calendar_events(timestamptz,timestamptz),
-  public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
+  public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date),public.delete_calendar_meeting(uuid)
 from public,anon,authenticated;
 grant execute on function public.claim_user_session(),public.heartbeat_user_session(),public.release_user_session(),public.is_current_session_valid(),
   public.get_admin_users(),public.set_user_access(uuid,boolean),
   public.create_meeting_share_link(uuid,integer),public.redeem_meeting_share_link(text),public.set_participant_mics_locked(uuid,boolean),public.set_meeting_collaboration_enabled(uuid,boolean),
   public.get_calendar_events(timestamptz,timestamptz),
-  public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date)
+  public.create_calendar_event(text,text,timestamptz,timestamptz,text,text,date),public.delete_calendar_meeting(uuid)
 to authenticated;
 revoke all on function public.get_galaxy_store(),public.save_galaxy_store_product(uuid,text,text,numeric,text,boolean)
 from public,anon,authenticated;
