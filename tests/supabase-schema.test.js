@@ -106,6 +106,12 @@ describe('Supabase contract', () => {
     expect(meetingClient).toContain("pc?.signalingState === 'have-local-offer'");
   });
 
+  it('resends an active presentation state when a new participant joins', () => {
+    expect(meetingClient).toContain('let discoveredPeer = false');
+    expect(meetingClient).toContain('if (!this.participants.has(peer.peerId)) discoveredPeer = true');
+    expect(meetingClient).toContain('if (discoveredPeer && this.identity?.sharing) this.sendPresence()');
+  });
+
   it('uses a dedicated remote-audio path with an iOS playback recovery control', () => {
     expect(meetingStudio).toContain('<audio className="remote-audio"');
     expect(meetingStudio).toContain('muted controls={false}');

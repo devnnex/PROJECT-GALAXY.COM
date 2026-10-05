@@ -249,8 +249,9 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
 
   async syncPresence() {
-    if (!this.active || !this.channel) return; const online = new Set(); const canonicalUsers = this.canonicalPresence();
+    if (!this.active || !this.channel) return; const online = new Set(); const canonicalUsers = this.canonicalPresence(); let discoveredPeer = false;
     for (const peer of canonicalUsers.values()) {
+      if (!this.participants.has(peer.peerId)) discoveredPeer = true;
       online.add(peer.peerId); this.cancelPeerRemoval(peer.peerId);
       this.participants.set(peer.peerId, { ...this.participants.get(peer.peerId), ...peer });
       if (this.selfId > peer.peerId && !this.peers.has(peer.peerId)) await this.createPeer(peer.peerId, true).catch(() => {});
@@ -261,6 +262,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
       if (replacement) this.removePeer(peerId, false); else this.schedulePeerRemoval(peerId);
     }
     this.emitParticipants();
+    if (discoveredPeer && this.identity?.sharing) this.sendPresence();
   }
 
   async handleParticipantState(message) {
