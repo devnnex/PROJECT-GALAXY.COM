@@ -368,9 +368,11 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     }, delay);
   }
   setPresence(data) {
+    const sharingChanged = typeof data.sharing === 'boolean' && data.sharing !== this.identity?.sharing;
     this.presence = { ...this.presence, ...data };
     this.identity = { ...this.identity, ...this.presence };
     this.sendPresence();
+    if (sharingChanged && this.active && this.channel) this.channel.track(this.identity).catch(() => {});
   }
   sendPresence() {
     if (!this.active || !this.identity) return;
