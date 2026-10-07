@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CalendarDays, Check, ChevronLeft, ChevronRight, CircleDollarSign, Scale, ShieldCheck, Trash2, TrendingUp, Users, X } from 'lucide-react';
 import { api } from '../services/api';
+import { parsePnlAmount } from '../pnl-amount';
 
 const WEEKDAYS = ['LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB', 'DOM'];
 const pad = (value) => String(value).padStart(2, '0');
@@ -19,13 +20,14 @@ function calendarDays(month) {
 
 function EntryModal({ date, entry, busy, onClose, onSave, onDelete }) {
   const [amount, setAmount] = useState(entry ? String(Number(entry.amountUsd)) : '');
+  const [invalid, setInvalid] = useState(false);
   const day = parseDateKey(date);
-  const submit = (event) => { event.preventDefault(); if (amount === '' || !Number.isFinite(Number(amount))) return; onSave(Number(amount)); };
+  const submit = (event) => { event.preventDefault(); const parsed = parsePnlAmount(amount); if (parsed === null) { setInvalid(true); return; } onSave(parsed); };
   return <div className="modal-backdrop pnl-modal-backdrop" onMouseDown={onClose}><form className="pnl-entry-modal glass" role="dialog" aria-modal="true" aria-labelledby="pnl-entry-title" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
     <header><span className="pnl-entry-icon"><CircleDollarSign /></span><button className="icon-button" type="button" aria-label="Cerrar" onClick={onClose}><X /></button></header>
     <p className="eyebrow">RESULTADO REAL DEL DÍA</p>
     <h2 id="pnl-entry-title">{new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: 'numeric', month: 'long' }).format(day)}</h2>
-    <label>Profit o pérdida en USD<div className="pnl-amount-field"><span>$</span><input autoFocus required type="number" inputMode="decimal" step="0.01" min="-99999999.99" max="99999999.99" value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="Ej. 125.50 o -48.00" /></div><small>Usa un valor positivo para ganancia y negativo para pérdida.</small></label>
+    <label>Profit o pérdida en USD<div className="pnl-amount-field"><span>$</span><input autoFocus required type="text" inputMode="decimal" value={amount} onChange={(event) => { setAmount(event.target.value); setInvalid(false); }} placeholder="Ej. 125.50, 125,50 o -48,00" /></div><small>{invalid ? 'Escribe un importe válido con hasta dos decimales (punto o coma).' : 'Usa un valor positivo para ganancia y negativo para pérdida.'}</small></label>
     <div className="pnl-honesty-note"><ShieldCheck /><p><strong>Registro honesto</strong>Escribe el resultado real. Este calendario es privado y solo será útil si también registras cada pérdida.</p></div>
     <footer>{entry ? <button className="pnl-delete-button" type="button" disabled={busy} onClick={onDelete}><Trash2 /> Eliminar</button> : <span />}<div><button className="secondary-button" type="button" disabled={busy} onClick={onClose}>Cancelar</button><button className="primary-button" disabled={busy || amount === ''}><Check /> {busy ? 'Guardando…' : 'Guardar resultado'}</button></div></footer>
   </form></div>;
@@ -37,17 +39,21 @@ export default function ProfitCalendarPage({ user, toast }) {
   const [targetUserId, setTargetUserId] = useState(user.id); const [reviewUsers, setReviewUsers] = useState([]); const [canReview, setCanReview] = useState(false);
   const [viewingUser, setViewingUser] = useState({ id: user.id, name: user.name, username: user.username, isSelf: true });
   const [selectedDate, setSelectedDate] = useState(''); const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false);
+  const loadVersion = useRef(0);
   const days = useMemo(() => calendarDays(month), [month]);
   const byDate = useMemo(() => Object.fromEntries(entries.map((entry) => [entry.date, entry])), [entries]);
   const monthTotal = entries.reduce((sum, entry) => sum + Number(entry.amountUsd || 0), 0);
   const wins = entries.filter((entry) => Number(entry.amountUsd) > 0).length; const losses = entries.filter((entry) => Number(entry.amountUsd) < 0).length;
   const load = async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
     try {
       const data = await api.getTradingPnl(monthKey(month), targetUserId);
+      if (version !== loadVersion.current) return;
       setEntries(data.entries || []); setHistory(data.history || []); setReviewUsers(data.users || []); setCanReview(Boolean(data.canReview));
       setViewingUser(data.viewingUser || { id: user.id, name: user.name, username: user.username, isSelf: true });
-    } catch (error) { toast(error.message, 'error'); } finally { setLoading(false); }
+    } catch (error) { if (version === loadVersion.current) toast(error.message, 'error'); }
+    finally { if (version === loadVersion.current) setLoading(false); }
   };
   useEffect(() => { load(); }, [month.getFullYear(), month.getMonth(), targetUserId]);
   const weeks = useMemo(() => Array.from({ length: 6 }, (_, index) => {
@@ -61,7 +67,12 @@ export default function ProfitCalendarPage({ user, toast }) {
   const save = async (amountUsd) => {
     if (readOnly) return;
     setBusy(true);
-    try { await api.saveTradingPnl({ tradingDate: selectedDate, amountUsd }); toast('Resultado PNL guardado.'); setSelectedDate(''); await load(); }
+    try {
+      const saved = await api.saveTradingPnl({ tradingDate: selectedDate, amountUsd });
+      loadVersion.current += 1;
+      setEntries((current) => [...current.filter((entry) => entry.date !== saved.date), saved].sort((a, b) => a.date.localeCompare(b.date)));
+      setSelectedDate(''); toast('Resultado PNL guardado.'); await load();
+    }
     catch (error) { toast(error.message, 'error'); } finally { setBusy(false); }
   };
   const remove = async () => {
