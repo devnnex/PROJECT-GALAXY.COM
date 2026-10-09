@@ -435,7 +435,7 @@
   .meeting-page.mobile-presentation-only .meeting-grid { display:block; }
   .meeting-page.mobile-presentation-only .meeting-stage-shell { width:100%; height:min(68dvh,620px); min-height:min(390px,58dvh); }
   .meeting-page.mobile-presentation-only .meeting-stage { width:100%; height:100%; min-height:0; }
-  .meeting-page.mobile-presentation-only .meeting-side { display:none!important; }
+  .meeting-page.mobile-presentation-only:not(.mobile-panel-open) .meeting-side { display:none!important; }
   .meeting-page.mobile-presentation-only .video-surface.presentation { bottom:58px; height:auto; }
   .meeting-page.mobile-presentation-only .video-surface.presentation video { object-position:center center; }
 }
@@ -460,4 +460,9 @@
 @media (min-width: 1001px) {
   .control-dock { transform:translateX(-171px); }
   .collaboration-overlay:focus,.collaboration-overlay:focus-visible { outline:none; }
+}
+
+@media (max-width: 1000px) {
+  .sidebar.open { z-index: 141; }
+  .sidebar-scrim { z-index: 140; }
 }

@@ -166,6 +166,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     this.pendingRemovals = new Map();
     this.pendingSignals = new Map();
     this.iceRefreshTimer = null;
+    this.sharingRevision = 0;
   }
 
   async connect({ roomId, stream, iceServers = [], role = 'PARTICIPANT', hostId, user }) {
@@ -180,6 +181,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
       this.channel = channel;
       channel.on('broadcast', { event: 'signal' }, ({ payload }) => this.handleSignal(payload).catch(() => {}));
       channel.on('broadcast', { event: 'participant-state' }, ({ payload }) => this.handleParticipantState(payload).catch(() => {}));
+      channel.on('broadcast', { event: 'participant-state-request' }, ({ payload }) => { if (payload?.source && payload.source !== this.selfId) this.sendPresence(); });
       channel.on('broadcast', { event: 'chat' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId, true));
       channel.on('broadcast', { event: 'chat-reaction' }, ({ payload }) => this.handlePersistedMessage(payload?.messageId, false));
       channel.on('broadcast', { event: 'meeting-ended' }, ({ payload }) => this.handleMeetingEnded(payload));
@@ -194,6 +196,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
       throw Object.assign(new Error('Conexión reemplazada.'), { name: 'AbortError' });
     }
     this.channel = channel; await this.syncPresence(); this.sendPresence();
+    this.broadcast('participant-state-request', { source: this.selfId }).catch(() => {});
     this.callbacks.onStatus?.('connected');
   }
 
@@ -253,7 +256,15 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     for (const peer of canonicalUsers.values()) {
       if (!this.participants.has(peer.peerId)) discoveredPeer = true;
       online.add(peer.peerId); this.cancelPeerRemoval(peer.peerId);
-      this.participants.set(peer.peerId, { ...this.participants.get(peer.peerId), ...peer });
+      const previous = this.participants.get(peer.peerId);
+      const next = { ...previous, ...peer };
+      const previousRevision = Number(previous?.sharingRevision) || 0;
+      const trackedRevision = Number(peer.sharingRevision) || 0;
+      if (previous?._sharingFromBroadcast && previousRevision >= trackedRevision) {
+        next.sharing = previous.sharing;
+        next.sharingRevision = previousRevision;
+      }
+      this.participants.set(peer.peerId, next);
       if (this.selfId > peer.peerId && !this.peers.has(peer.peerId)) await this.createPeer(peer.peerId, true).catch(() => {});
       await this.flushPendingSignals(peer.peerId).catch(() => {});
     }
@@ -271,8 +282,14 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     const participant = this.participants.get(message.source);
     if (!participant || (message.userId && participant.userId !== message.userId)) return;
     const state = {};
-    for (const key of ['mic', 'camera', 'sharing', 'handRaised', 'speaking']) {
+    for (const key of ['mic', 'camera', 'handRaised', 'speaking']) {
       if (typeof message.data?.[key] === 'boolean') state[key] = message.data[key];
+    }
+    const revision = Number(message.data?.sharingRevision) || 0;
+    if (typeof message.data?.sharing === 'boolean' && revision >= (Number(participant.sharingRevision) || 0)) {
+      state.sharing = message.data.sharing;
+      state.sharingRevision = revision;
+      state._sharingFromBroadcast = true;
     }
     this.participants.set(message.source, { ...participant, ...state });
     this.emitParticipants();
@@ -369,10 +386,10 @@ export class SupabaseMeetingConnection extends MeetingConnection {
   }
   setPresence(data) {
     const sharingChanged = typeof data.sharing === 'boolean' && data.sharing !== this.identity?.sharing;
-    this.presence = { ...this.presence, ...data };
+    if (sharingChanged) this.sharingRevision += 1;
+    this.presence = { ...this.presence, ...data, sharingRevision: this.sharingRevision };
     this.identity = { ...this.identity, ...this.presence };
     this.sendPresence();
-    if (sharingChanged && this.active && this.channel) this.channel.track(this.identity).catch(() => {});
   }
   sendPresence() {
     if (!this.active || !this.identity) return;
@@ -380,6 +397,7 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     for (const key of ['mic', 'camera', 'sharing', 'handRaised', 'speaking']) {
       if (typeof this.identity[key] === 'boolean') data[key] = this.identity[key];
     }
+    data.sharingRevision = this.sharingRevision;
     this.broadcast('participant-state', { source: this.selfId, userId: this.identity.userId, data }).catch(() => {});
   }
   send(message) {

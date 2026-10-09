@@ -38,7 +38,7 @@ it('uses presentation-only mobile meeting rules without hiding animated reaction
   const meetingCss = read('../src/meeting-live.css');
   const avatarCss = read('../src/registration.css');
   expect(meeting).toContain("presentationStream ? 'mobile-presentation-only' : ''");
-  expect(meetingCss).toContain('.meeting-page.mobile-presentation-only .meeting-side');
+  expect(meetingCss).toContain('.meeting-page.mobile-presentation-only:not(.mobile-panel-open) .meeting-side');
   expect(meetingCss).toContain('.meeting-page.mobile-presentation-only .video-surface.presentation { bottom:58px; height:auto; }');
   expect(meetingCss).not.toMatch(/mobile-presentation-only \.reaction-layer[^\{]*\{\s*display\s*:\s*none/i);
   expect(meetingCss).not.toMatch(/mobile-presentation-only \.cosmic-reaction-launcher[^\{]*\{\s*display\s*:\s*none/i);
