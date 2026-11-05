@@ -9,6 +9,8 @@ import {
 import { CONFIG } from './config';
 import { api } from './services/api';
 import { onOnlineUsersChange } from './services/supabase';
+import { createPushEnrollment } from './services/push-enrollment';
+import { setPwaMeetingState } from './services/pwa-updates';
 import { feed, products } from './data';
 import { manualPayment, PAYMENT_CONTACT_EMAIL, PAYMENT_NETWORKS } from './payment-config';
 import NeuralCanvas from './components/NeuralCanvas';
@@ -22,6 +24,7 @@ import GalaxyStore from './components/GalaxyStore';
 import ReportsPage from './components/ReportsPage';
 import DirectMessagesPage from './components/DirectMessagesPage';
 import ProfilePhotoCropper from './components/ProfilePhotoCropper';
+import AdminUserEditor from './components/AdminUserEditor';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
 import { membershipForAvatar } from './membership-badges';
 import lotajesImage from '../LOTAJES.jpeg';
@@ -192,6 +195,7 @@ function ProfilePage({ user, toast, onUserChange, navigate, membership }) {
 }
 
 function AdminUsersPage({ toast }) {
+  const [editing, setEditing] = useState(null);
   const [inviting, setInviting] = useState(false);
   const [deleting, setDeleting] = useState(null);
   const [onlineUserIds, setOnlineUserIds] = useState(() => new Set());
@@ -216,12 +220,13 @@ function AdminUsersPage({ toast }) {
     } catch (error) { toast(error.message, 'error'); } finally { setBusyId(''); }
   };
   return <div className="page-stack admin-users-page"><header className="page-header"><div><p className="eyebrow">CONTROL DE ACCESO</p><h1>Usuarios</h1><p>Activa o suspende cuentas y revisa si mantienen una sesión vigente.</p></div><div className="admin-users-actions"><button className="secondary-button" onClick={load} disabled={loading}>Actualizar</button><button className="primary-button" onClick={() => setInviting(true)}><Plus size={17} /> Crear invitación</button></div></header>
+    {editing && <AdminUserEditor account={editing} onClose={() => setEditing(null)} onSaved={(updated) => { setUsers((items) => items.map((item) => item.id === updated.id ? { ...item, ...updated } : item)); toast('Nombre y foto actualizados.'); }} />}
     {deleting && <DeleteUserDialog account={deleting} onClose={() => setDeleting(null)} onDeleted={account => { setUsers(items => items.filter(item => item.id !== account.id)); setDeleting(null); toast('Usuario eliminado.'); }} />}
     {inviting && <InvitationForm users={users} toast={toast} onClose={() => setInviting(false)} />}
     <section className="surface admin-users-table"><div className="table-head"><span>USUARIO</span><span>ROL</span><span>SESIÓN</span><span>ACCESO</span><span>CONTROL</span></div>
       {users.map((account) => {
         const online = onlineUserIds.has(account.id);
-        return <div className={`admin-user-row ${account.status !== 'ACTIVE' ? 'suspended' : ''}`} key={account.id}><span className="admin-user-identity"><span className="admin-user-avatar-shell" title={online ? 'Conectado ahora' : 'Desconectado'}><ConstellationAvatar className="avatar avatar-sm" seed={account.id} name={account.name} src={account.avatar} membership={membershipForAvatar(account)} /><i className={`admin-user-presence-dot ${online ? 'online' : ''}`} role="status" aria-label={online ? `${account.name} está conectado` : `${account.name} está desconectado`} /></span><span><strong>{account.name}</strong><small>{account.email}</small></span></span><span>{account.role === 'ADMIN' ? 'Administrador' : 'Miembro'}</span><span>{account.role === 'ADMIN' ? 'Sin límite' : account.sessionActive ? 'Activa' : 'Cerrada'}</span><span className={`account-state ${account.status.toLowerCase()}`}>{account.status === 'ACTIVE' ? 'Permitido' : 'Suspendido'}</span><label className="access-toggle"><input type="checkbox" checked={account.status === 'ACTIVE'} disabled={account.role === 'ADMIN' || busyId === account.id} onChange={() => toggle(account)} /><span /><em>{account.role === 'ADMIN' ? 'Protegido' : account.status === 'ACTIVE' ? 'Quitar acceso' : 'Dar acceso'}</em></label>{account.role !== 'ADMIN' && <button className="text-button delete-account" disabled={busyId === account.id} onClick={() => setDeleting(account)}><Trash2 size={14} /> Eliminar</button>}</div>;
+        return <div className={`admin-user-row ${account.status !== 'ACTIVE' ? 'suspended' : ''}`} key={account.id}><span className="admin-user-identity"><span className="admin-user-avatar-shell" title={online ? 'Conectado ahora' : 'Desconectado'}><ConstellationAvatar className="avatar avatar-sm" seed={account.id} name={account.name} src={account.avatar} membership={membershipForAvatar(account)} /><i className={`admin-user-presence-dot ${online ? 'online' : ''}`} role="status" aria-label={online ? `${account.name} está conectado` : `${account.name} está desconectado`} /></span><span><strong>{account.name}</strong><small>{account.email}</small></span></span><span>{account.role === 'ADMIN' ? 'Administrador' : 'Miembro'}</span><span>{account.role === 'ADMIN' ? 'Sin límite' : account.sessionActive ? 'Activa' : 'Cerrada'}</span><span className={`account-state ${account.status.toLowerCase()}`}>{account.status === 'ACTIVE' ? 'Permitido' : 'Suspendido'}</span><div className="admin-profile-control"><button className="text-button" disabled={busyId === account.id} onClick={() => setEditing(account)}><Settings size={14} /> Editar</button><label className="access-toggle"><input type="checkbox" checked={account.status === 'ACTIVE'} disabled={account.role === 'ADMIN' || busyId === account.id} onChange={() => toggle(account)} /><span /><em>{account.role === 'ADMIN' ? 'Protegido' : account.status === 'ACTIVE' ? 'Quitar acceso' : 'Dar acceso'}</em></label></div>{account.role !== 'ADMIN' && <button className="text-button delete-account" disabled={busyId === account.id} onClick={() => setDeleting(account)}><Trash2 size={14} /> Eliminar</button>}</div>;
       })}
       {!loading && !users.length && <EmptyState icon={Users} title="No hay usuarios" text="Las cuentas registradas aparecerán aquí." />}
     </section></div>;
@@ -259,10 +264,40 @@ function AppShell({ user, onUserChange, onLogout }) {
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [notificationItems, setNotificationItems] = useState([]); const [notificationFilter, setNotificationFilter] = useState('UNREAD'); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const [directUnread, setDirectUnread] = useState(0);
+  const [messagePeer, setMessagePeer] = useState('');
   const [membershipCenter, setMembershipCenter] = useState({ membership: user.membership || { isActive: false }, plans: [], orders: [] });
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
   const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
+  useEffect(() => {
+    if (user.isGuest || !import.meta.env.PROD) return undefined;
+    return createPushEnrollment({ userId: user.id, adapter: api });
+  }, [user.id, user.isGuest]);
+  useEffect(() => {
+    setPwaMeetingState(meetingSession);
+    return () => setPwaMeetingState({});
+  }, [meetingSession.busy, meetingSession.joined, meetingSession.waiting]);
+  useEffect(() => {
+    if (user.isGuest) return undefined;
+    const open = (notice) => {
+      if (!notice || notice.userId !== user.id) return;
+      if (notice.type === 'DIRECT_MESSAGE') { setMessagePeer(notice.actorId || ''); navigate('messages'); }
+      else {
+        navigate('meetings');
+        if (/^[A-F0-9]{4}-[A-F0-9]{4}$/.test(notice.roomCode || '')) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() });
+      }
+    };
+    const params = new URLSearchParams(location.search);
+    if (params.has('recipient')) {
+      open({ userId: params.get('recipient'), type: params.get('section') === 'messages' ? 'DIRECT_MESSAGE' : 'MEETING_AVAILABLE', actorId: params.get('peer'), roomCode: params.get('room') });
+      const clean = new URL(location.href);
+      for (const key of ['recipient', 'section', 'peer', 'room']) clean.searchParams.delete(key);
+      history.replaceState({}, '', clean.href);
+    }
+    const receive = (event) => { if (event.data?.type === 'GALAXY_NOTIFICATION_OPEN') open(event.data.notice); };
+    navigator.serviceWorker?.addEventListener('message', receive);
+    return () => navigator.serviceWorker?.removeEventListener('message', receive);
+  }, [user.id, user.isGuest]);
   useEffect(() => { if (page === 'marketplace') setVipPromoOpen(true); }, [page]);
   const reloadMembership = async () => { const center = await api.getMembershipCenter(); setMembershipCenter(center); if (center.membership) onUserChange((current) => current ? { ...current, membership: center.membership } : current); return center; };
   useEffect(() => { if (!user.isGuest) reloadMembership().catch(() => {}); }, [user.id, user.isGuest]);
@@ -319,7 +354,9 @@ function AppShell({ user, onUserChange, onLogout }) {
       api.markNotificationRead(notice.id).catch(() => reloadNotifications());
     }
     if (notice.type === 'MEETING_ADMITTED' && notice.roomCode) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() });
-    if (notice.meetingId) navigate('meetings'); else toast(notice.title, 'info');
+    if (notice.type === 'DIRECT_MESSAGE') { setMessagePeer(notice.actorId || ''); navigate('messages'); }
+    else if (notice.meetingId) { if (notice.type === 'MEETING_AVAILABLE' && notice.roomCode) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() }); navigate('meetings'); }
+    else toast(notice.title, 'info');
   };
   const closeNotice = () => { if (activeNotice) setDismissedNotices((items) => new Set(items).add(activeNotice.id)); setActiveNotice(null); };
   const resolveNotice = async (accepted) => {
@@ -358,7 +395,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   else if (page === 'meetings') content = null;
   else if (page === 'calendar') content = <CalendarPage toast={toast} onJoin={(request) => { setJoinRequest(request); navigate('meetings'); }} />;
   else if (page === 'pnl') content = <ProfitCalendarPage user={representedUser} toast={toast} />;
-  else if (page === 'messages') content = <DirectMessagesPage user={representedUser} toast={toast} onUnreadChange={setDirectUnread} />;
+  else if (page === 'messages') content = <DirectMessagesPage user={representedUser} toast={toast} onUnreadChange={setDirectUnread} peerId={messagePeer} />;
   else if (page === 'wallet') content = <WalletActivity user={representedUser} />;
   else if (page === 'orders') content = <MembershipOrdersPage orders={membershipCenter.orders} onRefresh={() => reloadMembership().catch((error) => toast(error.message, 'error'))} />;
   else if (page === 'users' && isAdmin) content = <AdminUsersPage toast={toast} />;

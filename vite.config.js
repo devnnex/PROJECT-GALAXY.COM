@@ -1,8 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
+const buildId = Date.now().toString(36);
+
 export default defineConfig(({ command }) => ({
-  plugins: [react()],
+  plugins: [react(), { name: 'galaxy-build-version', generateBundle() { this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ version: buildId }) }); } }],
+  define: { __GALAXY_BUILD_ID__: JSON.stringify(buildId) },
   // Relative paths work on GitHub Pages and when the repository is served locally.
   base: command === 'build' ? './' : '/',
   build: {

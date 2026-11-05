@@ -1,4 +1,5 @@
 import { authorizeRealtime, supabase } from './supabase';
+import { detachDevicePush } from './push-enrollment';
 
 const APPS_SCRIPT_MAIL_URL = 'https://script.google.com/macros/s/AKfycbwRqZg3wBJX8sz7ZC8q7NZhwW-Za57ymNJTOvBNfBhsTb-qSc107C-V7uhigHKGXPEj/exec';
 
@@ -195,6 +196,7 @@ export const api = {
     return { user: await currentUser(), session: data.session };
   },
   async logout() {
+    await detachDevicePush({ removePushSubscription: (endpoint) => rpc('remove_push_subscription', { endpoint }) }).catch(() => {});
     await rpc('release_user_session').catch(() => {});
     const { error } = await supabase.auth.signOut();
     if (error) throw friendlyError(error);
@@ -346,6 +348,34 @@ export const api = {
   restartMeeting: (payload) => rpc('restart_meeting', payload),
   removeEndedMeeting: (payload) => rpc('remove_ended_meeting', payload),
   getAdminUsers: () => rpc('get_admin_users'),
+  async adminUpdateUserProfile({ userId, name, file, remove = false, previousAvatar = '' }) {
+    const cleanName = String(name || '').trim();
+    if (cleanName.length < 2 || cleanName.length > 100) throw new Error('El nombre debe tener entre 2 y 100 caracteres.');
+    if (!/^[0-9a-f-]{36}$/.test(userId)) throw new Error('Selecciona un usuario valido.');
+    let uploadedPath = '';
+    let avatar;
+    if (file) {
+      if (!(file instanceof File) || !PROFILE_AVATAR_TYPES.has(file.type) || !file.size || file.size > PROFILE_AVATAR_MAX_BYTES) throw new Error('Elige una imagen JPG, PNG o WebP de hasta 5 MB.');
+      uploadedPath = `${userId}/admin-${crypto.randomUUID()}`;
+      const { error } = await supabase.storage.from(PROFILE_AVATAR_BUCKET).upload(uploadedPath, file, { upsert: false, contentType: file.type, cacheControl: '31536000' });
+      if (error) throw new Error('No fue posible subir la foto del usuario.');
+      avatar = `${uploadedPath}?v=${Date.now()}`;
+    } else if (remove) avatar = '';
+    try {
+      const updated = await rpc('admin_update_user_profile', { userId, name: cleanName, avatar });
+      if (avatar !== undefined && previousAvatar && previousAvatar !== avatar) {
+        const oldPath = previousAvatar.split('?')[0];
+        if (oldPath.startsWith(`${userId}/admin-`)) await supabase.storage.from(PROFILE_AVATAR_BUCKET).remove([oldPath]).catch(() => {});
+      }
+      return updated;
+    } catch (error) {
+      if (uploadedPath) await supabase.storage.from(PROFILE_AVATAR_BUCKET).remove([uploadedPath]).catch(() => {});
+      throw error;
+    }
+  },
+  getPushConfig: () => rpc('get_push_config'),
+  savePushSubscription: (subscription) => rpc('save_push_subscription', { subscription }),
+  removePushSubscription: (endpoint) => rpc('remove_push_subscription', { endpoint }),
   setUserAccess: (payload) => rpc('set_user_access', payload),
   getCommunityMembers: (query = '') => rpc('get_community_members', { query }),
   getPlatformReports: () => rpc('get_platform_reports'),

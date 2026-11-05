@@ -44,7 +44,7 @@ function profileAvatarUrl(value) {
   if (!avatar) return '';
   if (avatar.startsWith('blob:')) return avatar;
   const [path, version = ''] = avatar.split('?');
-  if (!CONFIG.SUPABASE_URL || !/^[0-9a-f-]{36}\/profile$/i.test(path)) return '';
+  if (!CONFIG.SUPABASE_URL || !/^[0-9a-f-]{36}\/(profile|admin-[0-9a-f-]{36})$/i.test(path)) return '';
   const encodedPath = path.split('/').map(encodeURIComponent).join('/');
   return `${CONFIG.SUPABASE_URL}/storage/v1/object/public/profile-avatars/${encodedPath}${version ? `?${version}` : ''}`;
 }

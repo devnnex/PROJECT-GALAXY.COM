@@ -12,7 +12,7 @@ function MessageReceipt({ message }) {
   return <Check className="sent" aria-label="Enviado" />;
 }
 
-export default function DirectMessagesPage({ user, toast, onUnreadChange }) {
+export default function DirectMessagesPage({ user, toast, onUnreadChange, peerId = '' }) {
   const [contacts, setContacts] = useState([]);
   const [onlineIds, setOnlineIds] = useState(() => new Set());
   const [activeId, setActiveId] = useState('');
@@ -53,7 +53,7 @@ export default function DirectMessagesPage({ user, toast, onUnreadChange }) {
     let mounted = true;
     refreshContacts().then((items) => {
       if (!mounted) return;
-      const preferred = items.find((item) => item.unreadCount > 0) || items.find((item) => onlineIds.has(item.id)) || items.find((item) => item.lastMessage);
+      const preferred = items.find((item) => item.id === peerId) || items.find((item) => item.unreadCount > 0) || items.find((item) => onlineIds.has(item.id)) || items.find((item) => item.lastMessage);
       if (preferred) setActiveId(preferred.id);
     }).catch((error) => toast(error.message, 'error')).finally(() => mounted && setLoading(false));
     const unsubscribePresence = onOnlineUsersChange((ids) => mounted && setOnlineIds(ids));
@@ -66,6 +66,8 @@ export default function DirectMessagesPage({ user, toast, onUnreadChange }) {
     const timer = setInterval(() => { refreshContacts().catch(() => {}); refreshMessages().catch(() => {}); }, 8000);
     return () => { mounted = false; unsubscribePresence(); unsubscribeMessages(); clearInterval(timer); };
   }, [user.id, refreshContacts, refreshMessages]);
+
+  useEffect(() => { if (peerId && contacts.some((contact) => contact.id === peerId)) setActiveId(peerId); }, [peerId, contacts.some((contact) => contact.id === peerId)]);
 
   useEffect(() => {
     if (!activeId) { setMessages([]); return undefined; }

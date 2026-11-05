@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { setPwaMeetingState } from '../services/pwa-updates';
 import { Camera, CameraOff, Check, Clock3, Copy, Eraser, Hand, ListMusic, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Music2, Pause, Pencil, PhoneOff, PictureInPicture2, Play, Plus, Reply, RotateCcw, Send, ShieldCheck, SkipBack, SkipForward, SmilePlus, Trash2, Unlock, UploadCloud, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { api } from '../services/api';
 import { getMeetingAccess, SupabaseMeetingConnection } from '../services/meetingClient';
@@ -1145,7 +1146,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     const epoch = ++lifecycleEpoch.current;
     return () => { if (lifecycleEpoch.current === epoch) lifecycleEpoch.current += 1; entrySequence.current += 1; connectSequence.current += 1; connection.current?.disconnect(); connection.current = null; sharedAudio.current?.close(); pipPlaceholderRef.current?.close(); pipPlaceholderRef.current = null; if (document.pictureInPictureElement === pipVideoRef.current) document.exitPictureInPicture?.().catch(() => {}); stopMeetingStream(mediaRef.current); sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); clearTimeout(cursorTimer.current); clearTimeout(requestTimer.current); clearTimeout(messagePulseTimer.current); };
   }, []);
-  useEffect(() => { onSessionChange?.({ active: joined || waiting, joined, waiting, title: meeting?.title || '', roomCode: meeting?.roomCode || '', mic, camera, sharing: Boolean(sharing), audioBlocked }); }, [joined, waiting, meeting?.title, meeting?.roomCode, mic, camera, sharing, audioBlocked, onSessionChange]);
+  useLayoutEffect(() => { setPwaMeetingState({ busy, joined, waiting }); onSessionChange?.({ active: joined || waiting, busy, joined, waiting, title: meeting?.title || '', roomCode: meeting?.roomCode || '', mic, camera, sharing: Boolean(sharing), audioBlocked }); }, [busy, joined, waiting, meeting?.title, meeting?.roomCode, mic, camera, sharing, audioBlocked, onSessionChange]);
   useEffect(() => {
     if (user.isGuest) return undefined;
     const unsubscribe = onOnlineUsersChange((userIds) => setOnlineUserIds(userIds));
