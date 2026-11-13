@@ -26,9 +26,15 @@ El estado y la cuota consumida se guardan en PostgreSQL. Un reinicio normal reut
 
 Los precios vencidos, futuros, mal formados o fuera de orden se rechazan. Las invocaciones se coordinan mediante un lease; estado, operaciones, eventos y cola de avisos se confirman en una sola transacción. Los eventos y señales tienen claves únicas para evitar duplicados.
 
+La interfaz identifica esta fuente como **Gold API · muestra cada 30 s** y muestra la hora y antigüedad de su última actualización, separada de la entrada fija de la última señal. Después de 60 segundos etiqueta la cotización como retrasada; la edad sigue avanzando aunque fallen las consultas. La hora informada por el proveedor no certifica que su precio sea igual al de OANDA. No se presenta este muestreo como un feed de ticks en vivo.
+
+Para aproximar las señales del gráfico **OANDA:XAUUSD** hay que sustituir tanto cotizaciones como velas históricas por las de OANDA y validar la componente de precio (bid/ask/mid), parámetros e histórico. El acceso oficial necesita una cuenta v20 y autorización de API, cuya disponibilidad depende de la división de OANDA y el país: [requisitos oficiales](https://developer.oanda.com/rest-live-v20/introduction/). Una cuenta demo puede servir donde esté disponible. No se cambia de proveedor sin verificar ese acceso ni se mezclan estadísticas de proveedores distintos. El feed actual sigue siendo Gold API mientras no exista esa conexión validada.
+
 ## Notificaciones y sonido
 
 Se envían avisos de BUY, SELL, TP1, TP2, TP3 y toque del SL a las cuentas registradas activas según las reglas de acceso existentes. Invitados y cuentas suspendidas quedan excluidos; la elegibilidad se comprueba también al enviar trabajos pendientes. Los avisos de trading que llevan más de cinco minutos sin enviarse no se entregan como si fueran actuales.
+
+Los símbolos aparecen junto a cada dato: **🔵 Entrada**, **🔴 SL**, **🎯 TP pendiente** y **✅ TP alcanzado**. El título identifica la entrada, el TP logrado o la salida por SL. Los avisos antiguos conservan su lectura y los nuevos símbolos no alteran los tonos ni el conteo. Un aviso de TP2 marca TP1 y TP2, sin marcar TP3 antes de tiempo.
 
 En Galaxy abierto, toca **Activar sonido** dentro de Black Galaxy Trade. Se reproduce una confirmación y se recuerda la preferencia en ese dispositivo. Señal, TP y SL tienen tonos distintos. El navegador puede exigir una nueva interacción para reanudar el audio tras abrir la app: [política de reproducción](https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Autoplay).
 

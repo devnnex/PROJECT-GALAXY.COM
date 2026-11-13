@@ -28,7 +28,9 @@ export async function activateScanner({ enable = false, request = fetch, log = c
   };
   try {
     log('1/5 Instalando el registro privado, los permisos y la programación del scanner...');
-    await call(['db', 'query', '--file', resolve(root, 'supabase/migrations/20261113010000_server_scanner_signals.sql')]);
+    for (const name of ['20261113010000_server_scanner_signals.sql', '20261113131000_scanner_notice_symbols.sql']) {
+      await call(['db', 'query', '--file', resolve(root, 'supabase/migrations', name)]);
+    }
     const dispatchSecret = randomBytes(32).toString('base64url');
     const envFile = join(temporary, 'scanner.env'); privateFiles.push(envFile);
     await writeFile(envFile, `SCANNER_DISPATCH_SECRET=${dispatchSecret}\n`, { mode: 0o600 });

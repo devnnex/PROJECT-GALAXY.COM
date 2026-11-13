@@ -23,6 +23,7 @@ it('deploys only the scanner, removes private files, and keeps its dispatch cred
   const log = vi.fn();
   await activateScanner({ request, execute, log });
   expect(calls.find((args) => args[0] === 'functions')).toContain('scanner-signals');
+  expect(calls.some((args) => args.some((value) => value.endsWith('20261113131000_scanner_notice_symbols.sql')))).toBe(true);
   expect(JSON.stringify(calls)).not.toContain(credential); expect(JSON.stringify(log.mock.calls)).not.toContain(credential);
   expect(calls.flat()).not.toContain('--prune');
   expect(calls.some((args) => args.some((value) => value.endsWith('enable.sql')))).toBe(false);

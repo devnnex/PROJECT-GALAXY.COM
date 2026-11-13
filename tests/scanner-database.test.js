@@ -36,6 +36,7 @@ beforeAll(async () => {
     create function net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) returns bigint language sql as $$select 1::bigint$$;
     insert into profiles(id,name,status,is_guest) values('${member}','Member','ACTIVE',false),('${admin}','Admin','ACTIVE',false),('${guest}','Guest','ACTIVE',true),('${suspended}','Suspended','SUSPENDED',false);`);
   await db.exec(readFileSync(new URL('../supabase/migrations/20261113010000_server_scanner_signals.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261113131000_scanner_notice_symbols.sql', import.meta.url), 'utf8'));
 }, 20000);
 beforeEach(async () => {
   await db.exec(`reset role;truncate scanner_events,scanner_trades,notifications,push_subscriptions,push_delivery_jobs,push_dispatches cascade;
@@ -52,6 +53,9 @@ it('leases once, publishes to active registered members and queues only their de
   expect(await complete(tick.lease, [trade], [event])).toBe(true);
   const recipients = (await q('select user_id from notifications order by user_id')).rows.map((row) => row.user_id);
   expect(recipients).toEqual([member, admin]);
+  const notice = (await q('select title,body from notifications limit 1')).rows[0];
+  expect(notice.title).toBe('🔵 BUY · Entrada · XAUUSD · 5m');
+  expect(notice.body).toBe('🔵 Entrada 100.000 | 🔴 SL 90.000 | 🎯 TP1 105.000 | 🎯 TP2 110.000 | 🎯 TP3 115.000');
   expect((await q('select count(*)::int as count from push_delivery_jobs')).rows[0].count).toBe(2);
   expect((await q('select count(*)::int as count from push_dispatches')).rows[0].count).toBe(1);
   expect(await complete(tick.lease, [trade], [event])).toBe(false);
@@ -67,6 +71,22 @@ it('records TP1/2/3 once and the completed winner atomically with delivery jobs'
   expect(result).toMatchObject({ signals: 1, wins: 1, losses: 0, ignored: 0 });
   expect(result.trades[0]).toMatchObject({ hit1: true, hit2: true, hit3: true, grossPips: 3000 });
   expect((await q('select count(*)::int as count from notifications')).rows[0].count).toBe(6);
+  const notices = (await q('select title,body from notifications')).rows;
+  const first = notices.find((item) => item.title.startsWith('✅ TP1'));
+  expect(first.title).toBe('✅ TP1 alcanzado · XAUUSD · 5m');
+  expect(first.body).toContain('✅ TP1'); expect(first.body).toContain('🎯 TP2');
+  const third = notices.find((item) => item.title.startsWith('✅ TP3'));
+  for (const level of [1, 2, 3]) expect(third.body).toContain(`✅ TP${level}`);
+});
+it('distinguishes red SL exits after a TP without changing the protected winning outcome', async () => {
+  const first = updateTrade(makeTrade(), 105, Date.now());
+  const stopped = updateTrade(first.trade, 90, Date.now());
+  const tick = await claim(); await complete(tick.lease, [stopped.trade], stopped.events);
+  const notice = (await q('select title,body from notifications limit 1')).rows[0];
+  expect(notice.title).toBe('🔴 SL · Salida tras TP · sin descuento · XAUUSD · 5m');
+  expect(notice.body).toContain('✅ TP1');
+  const result = (await q('select get_black_galaxy_trade() as value')).rows[0].value;
+  expect(result.wins).toBe(1); expect(result.losses).toBe(0);
 });
 it('excludes an ignored trade from wins and losses, retaining both real wins and SL', async () => {
   const win = updateTrade(makeTrade('win', 900_000), 115, Date.now()).trade;

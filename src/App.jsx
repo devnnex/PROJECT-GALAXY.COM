@@ -28,6 +28,7 @@ import AdminUserEditor from './components/AdminUserEditor';
 import BlackGalaxyTrade, { ScannerNotice } from './components/BlackGalaxyTrade';
 import { scannerNoticeBatch } from './services/scanner-notices';
 import { playScannerSound, resumeScannerSound } from './services/scanner-audio';
+import { parseScannerNotice } from './services/scanner-presentation';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
 import { membershipForAvatar } from './membership-badges';
 import lotajesImage from '../LOTAJES.jpeg';
@@ -335,7 +336,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     scannerCursor.current = batch.cursor;
     if (batch.fresh.length) {
       setScannerQueue((current) => [...current, ...batch.fresh].slice(-8));
-      const type = batch.fresh.some((notice) => notice.title.startsWith('SL')) ? 'SL' : batch.fresh.some((notice) => notice.title.startsWith('TP')) ? 'TP' : 'SIGNAL';
+      const type = batch.fresh.some((notice) => parseScannerNotice(notice).event === 'SL') ? 'SL' : batch.fresh.some((notice) => parseScannerNotice(notice).event?.startsWith('TP')) ? 'TP' : 'SIGNAL';
       playScannerSound(type);
     }
   }, [notificationItems, noticeOwner, user.id, user.isGuest]);
