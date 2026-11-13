@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity, ArrowRight, Bell, Bookmark, Boxes, CalendarDays, Check, ChevronDown, CircleDollarSign,
   Clock3, Compass, Copy, CreditCard, Eye, EyeOff, Flag, Heart, Home, KeyRound, Languages, LayoutGrid, LockKeyhole,
@@ -25,6 +25,9 @@ import ReportsPage from './components/ReportsPage';
 import DirectMessagesPage from './components/DirectMessagesPage';
 import ProfilePhotoCropper from './components/ProfilePhotoCropper';
 import AdminUserEditor from './components/AdminUserEditor';
+import BlackGalaxyTrade, { ScannerNotice } from './components/BlackGalaxyTrade';
+import { scannerNoticeBatch } from './services/scanner-notices';
+import { playScannerSound, resumeScannerSound } from './services/scanner-audio';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
 import { membershipForAvatar } from './membership-badges';
 import lotajesImage from '../LOTAJES.jpeg';
@@ -36,11 +39,11 @@ const isMeetingOwner = (user) => String(user?.email || '').trim().toLowerCase() 
 const catalogFor = () => products;
 
 const navigation = [
-  ['dashboard', 'Inicio', Home], ['reports', 'Reportes', Flag], ['marketplace', 'Marketplace', ShoppingBag],
+  ['dashboard', 'Inicio', Home], ['black-trade', 'Black Galaxy Trade', TrendingUp], ['reports', 'Reportes', Flag], ['marketplace', 'Marketplace', ShoppingBag],
   ['store', 'Galaxy Store', ShoppingBag], ['meetings', 'Reuniones', Video], ['calendar', 'Calendario', CalendarDays], ['pnl', 'PNL / Profit', CircleDollarSign], ['messages', 'Mensajes', MessageCircle],
   ['wallet', 'Wallet', WalletCards], ['orders', 'Órdenes', Package], ['users', 'Usuarios', Users], ['profile', 'Perfil', User],
 ];
-const memberNavigation = navigation.filter(([id]) => ['reports', 'marketplace', 'store', 'meetings', 'calendar', 'pnl', 'messages', 'wallet', 'orders', 'profile'].includes(id));
+const memberNavigation = navigation.filter(([id]) => ['black-trade', 'reports', 'marketplace', 'store', 'meetings', 'calendar', 'pnl', 'messages', 'wallet', 'orders', 'profile'].includes(id));
 
 const navigationEnglish = {
   dashboard: 'Home', reports: 'Reports', marketplace: 'Marketplace', store: 'Galaxy Store', meetings: 'Meetings',
@@ -264,6 +267,8 @@ function AppShell({ user, onUserChange, onLogout }) {
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [notificationItems, setNotificationItems] = useState([]); const [notificationFilter, setNotificationFilter] = useState('UNREAD'); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const [directUnread, setDirectUnread] = useState(0);
+  const [noticeOwner, setNoticeOwner] = useState(''); const [scannerQueue, setScannerQueue] = useState([]);
+  const scannerCursor = useRef(null);
   const [messagePeer, setMessagePeer] = useState('');
   const [membershipCenter, setMembershipCenter] = useState({ membership: user.membership || { isActive: false }, plans: [], orders: [] });
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
@@ -282,6 +287,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     const open = (notice) => {
       if (!notice || notice.userId !== user.id) return;
       if (notice.type === 'DIRECT_MESSAGE') { setMessagePeer(notice.actorId || ''); navigate('messages'); }
+      else if (notice.type === 'SCANNER_SIGNAL') { navigate('black-trade'); }
       else {
         navigate('meetings');
         if (/^[A-F0-9]{4}-[A-F0-9]{4}$/.test(notice.roomCode || '')) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() });
@@ -289,7 +295,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     };
     const params = new URLSearchParams(location.search);
     if (params.has('recipient')) {
-      open({ userId: params.get('recipient'), type: params.get('section') === 'messages' ? 'DIRECT_MESSAGE' : 'MEETING_AVAILABLE', actorId: params.get('peer'), roomCode: params.get('room') });
+      open({ userId: params.get('recipient'), type: params.get('section') === 'messages' ? 'DIRECT_MESSAGE' : params.get('section') === 'black-trade' ? 'SCANNER_SIGNAL' : 'MEETING_AVAILABLE', actorId: params.get('peer'), roomCode: params.get('room') });
       const clean = new URL(location.href);
       for (const key of ['recipient', 'section', 'peer', 'room']) clean.searchParams.delete(key);
       history.replaceState({}, '', clean.href);
@@ -319,10 +325,31 @@ function AppShell({ user, onUserChange, onLogout }) {
   const reloadNotifications = async () => { try { setNotificationItems(await api.getMyNotifications()); } catch {} };
   useEffect(() => {
     let active = true;
-    const refresh = async () => { try { const items = await api.getMyNotifications(); if (active) setNotificationItems(items); } catch {} };
+    const refresh = async () => { try { const items = await api.getMyNotifications(); if (active) { setNotificationItems(items); setNoticeOwner(user.id); } } catch {} };
     refresh(); const unsubscribe = api.onNotificationChange(user.id, refresh); const timer = setInterval(refresh, 15_000);
     return () => { active = false; unsubscribe(); clearInterval(timer); };
   }, [user.id]);
+  useEffect(() => {
+    if (user.isGuest || noticeOwner !== user.id) return;
+    const batch = scannerNoticeBatch(scannerCursor.current, notificationItems, user.id);
+    scannerCursor.current = batch.cursor;
+    if (batch.fresh.length) {
+      setScannerQueue((current) => [...current, ...batch.fresh].slice(-8));
+      const type = batch.fresh.some((notice) => notice.title.startsWith('SL')) ? 'SL' : batch.fresh.some((notice) => notice.title.startsWith('TP')) ? 'TP' : 'SIGNAL';
+      playScannerSound(type);
+    }
+  }, [notificationItems, noticeOwner, user.id, user.isGuest]);
+  useEffect(() => {
+    if (!scannerQueue.length) return undefined;
+    const timer = setTimeout(() => setScannerQueue((current) => current.slice(1)), 9000);
+    return () => clearTimeout(timer);
+  }, [scannerQueue[0]?.id]);
+  useEffect(() => {
+    if (user.isGuest) return undefined;
+    const resume = () => resumeScannerSound();
+    window.addEventListener('pointerdown', resume); window.addEventListener('keydown', resume);
+    return () => { window.removeEventListener('pointerdown', resume); window.removeEventListener('keydown', resume); };
+  }, [user.id, user.isGuest]);
   useEffect(() => {
     if (user.isGuest) return undefined;
     let active = true;
@@ -355,6 +382,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     }
     if (notice.type === 'MEETING_ADMITTED' && notice.roomCode) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() });
     if (notice.type === 'DIRECT_MESSAGE') { setMessagePeer(notice.actorId || ''); navigate('messages'); }
+    else if (notice.type === 'SCANNER_SIGNAL') { navigate('black-trade'); }
     else if (notice.meetingId) { if (notice.type === 'MEETING_AVAILABLE' && notice.roomCode) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() }); navigate('meetings'); }
     else toast(notice.title, 'info');
   };
@@ -389,6 +417,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   const activeLabel = availableNavigation.find(([id]) => id === page)?.[1] || 'Reuniones';
   let content;
   if (page === 'dashboard') content = <Dashboard user={representedUser} navigate={navigate} openProduct={setSelectedProduct} />;
+  else if (page === 'black-trade') content = <BlackGalaxyTrade toast={toast} />;
   else if (page === 'reports') content = <ReportsPage user={representedUser} toast={toast} />;
   else if (page === 'marketplace') content = <Marketplace onOpen={setSelectedProduct} user={representedUser} />;
   else if (page === 'store') content = <GalaxyStore isAdmin={isAdmin} toast={toast} />;
@@ -411,6 +440,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     {lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
     {!lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
+    {scannerQueue[0] && <ScannerNotice notice={scannerQueue[0]} onClose={() => setScannerQueue((current) => current.slice(1))} onOpen={() => { navigate('black-trade'); setScannerQueue((current) => current.slice(1)); }} />}
     <Toast item={toastItem} />
   </div>;
 }

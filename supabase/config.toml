@@ -10,3 +10,7 @@ verify_jwt = true
 # Authenticated exclusively by the private database-to-function dispatch secret.
 [functions.push-notifications]
 verify_jwt = false
+
+# Called exclusively by the private, server-side scanner dispatch secret.
+[functions.scanner-signals]
+verify_jwt = false

@@ -1,5 +1,7 @@
 # Project Galaxy
 
+Black Galaxy Trade incorpora el scanner de XAUUSD de servidor, avisos de entrada/TP/SL y registro de efectividad. Configuración, activación y límites de precisión: [guía de Black Galaxy Trade](docs/BLACK-GALAXY-TRADE.md).
+
 Plataforma React/Vite con autenticación, datos, salas y señalización en tiempo real sobre Supabase.
 
 ## Puesta en marcha

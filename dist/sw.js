@@ -1,4 +1,4 @@
-const CACHE = 'galaxy-shell-mw3nb3pz';
+const CACHE = 'galaxy-shell-mwejt9xg';
 const SHELL = ['index.html', 'manifest.webmanifest', 'galaxy-icon.svg', 'galaxy-notification.png'];
 const scopedUrl = (path) => new URL(path, self.registration.scope).href;
 self.addEventListener('install', (event) => event.waitUntil(
@@ -39,12 +39,14 @@ self.addEventListener('push', (event) => {
   let notice = {};
   try { notice = notificationData(event.data?.json()); } catch { /* An empty payload still produces a visible notice. */ }
   const message = notice.type === 'DIRECT_MESSAGE';
+  const scanner = notice.type === 'SCANNER_SIGNAL';
   event.waitUntil(self.registration.showNotification(notice.title || 'PROJECT GALAXY', {
     body: notice.body || 'Tienes novedades en tu comunidad.',
     icon: scopedUrl('galaxy-notification.png'), badge: scopedUrl('galaxy-notification.png'),
     tag: `galaxy-${notice.id || 'update'}`, data: notice,
     vibrate: [180, 80, 180], renotify: true,
-    actions: [{ action: 'open', title: message ? 'Ver mensaje' : 'Ver reunion' }, { action: 'dismiss', title: 'Cerrar' }],
+    ...(scanner ? { silent: false } : {}),
+    actions: [{ action: 'open', title: message ? 'Ver mensaje' : scanner ? 'Ver señal' : 'Ver reunion' }, { action: 'dismiss', title: 'Cerrar' }],
   }));
 });
 self.addEventListener('notificationclick', (event) => {
@@ -57,7 +59,7 @@ self.addEventListener('notificationclick', (event) => {
     const client = windows.find((item) => { const url = new URL(item.url); return url.origin === scope.origin && url.pathname.startsWith(scope.pathname); });
     if (client) { await client.focus(); client.postMessage({ type: 'GALAXY_NOTIFICATION_OPEN', notice }); return; }
     const url = new URL('index.html', scope);
-    url.searchParams.set('section', notice.type === 'DIRECT_MESSAGE' ? 'messages' : 'meetings');
+    url.searchParams.set('section', notice.type === 'DIRECT_MESSAGE' ? 'messages' : notice.type === 'SCANNER_SIGNAL' ? 'black-trade' : 'meetings');
     url.searchParams.set('recipient', notice.userId);
     if (notice.type === 'DIRECT_MESSAGE') url.searchParams.set('peer', notice.actorId);
     else if (notice.roomCode) url.searchParams.set('room', notice.roomCode);

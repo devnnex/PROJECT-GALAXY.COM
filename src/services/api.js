@@ -324,6 +324,7 @@ export const api = {
   },
   getTurnCredentials: (meetingId) => invokeSecure('turn-credentials', { meetingId }, 'El relay TURN no está disponible.'),
   getScannerDownload: () => invokeSecure('scanner-download', {}, 'No fue posible preparar la descarga privada.'),
+  getBlackGalaxyTrade: (limit = 40) => rpc('get_black_galaxy_trade', { limit }),
   createMeeting: (payload) => rpc('create_meeting', payload),
   createMeetingShareLink: (meetingId, guestLimit = 1) => rpc('create_meeting_share_link', { meetingId, guestLimit }),
   redeemMeetingShareLink: (token) => rpc('redeem_meeting_share_link', { token }),
