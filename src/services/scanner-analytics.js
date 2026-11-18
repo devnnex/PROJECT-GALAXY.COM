@@ -30,9 +30,11 @@ export function summarizePeriods(days, from = '', to = '', target = 'all', lossP
     .map((day) => ({ ...day, count: day.wins + day.losses, rate: day.wins * 100 / (day.wins + day.losses) }))
     .sort((a, b) => b.rate - a.rate || b.count - a.count || a.day.localeCompare(b.day));
   const daily = rank(selected), monthly = rank([...months.values()]), yearly = rank([...years.values()]);
+  const signalDates = [...new Set(selected.filter((day) => Number(day.signals) > 0).map((day) => day.day))].sort();
   // Ties prefer the larger sample, then the earliest period for both extremes.
   const worst = (items) => [...items].sort((a, b) => a.rate - b.rate || b.count - a.count || a.day.localeCompare(b.day))[0] || null;
-  return { ...totals, available, target, days: selected, monthly: [...monthly].sort((a, b) => a.day.localeCompare(b.day)), yearly: [...yearly].sort((a, b) => a.day.localeCompare(b.day)),
+  return { ...totals, available, target, signalDays: signalDates.length, firstSignalDay: signalDates[0] || null, lastSignalDay: signalDates[signalDates.length - 1] || null,
+    days: selected, monthly: [...monthly].sort((a, b) => a.day.localeCompare(b.day)), yearly: [...yearly].sort((a, b) => a.day.localeCompare(b.day)),
     rate: totals.wins + totals.losses ? totals.wins * 100 / (totals.wins + totals.losses) : null,
     bestDay: daily[0] || null, worstDay: worst(daily), bestMonth: monthly[0] || null, worstMonth: worst(monthly), bestYear: yearly[0] || null, worstYear: worst(yearly) };
 }
