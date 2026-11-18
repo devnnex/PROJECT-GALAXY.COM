@@ -3,29 +3,47 @@ let audio;
 let preference;
 export function scannerSoundEnabled() {
   if (typeof preference === 'boolean') return preference;
-  try { return localStorage.getItem(preferenceKey) === 'on'; } catch { return false; }
+  try { return localStorage.getItem(preferenceKey) !== 'off'; } catch { return true; }
+}
+export function scannerAudioReady() { return scannerSoundEnabled() && audio?.state === 'running'; }
+function notifyAudio() { globalThis.window?.dispatchEvent(new Event('galaxy:scanner-audio')); }
+function context(Audio) {
+  if (!audio || audio.state === 'closed') {
+    audio = new Audio();
+    audio.addEventListener?.('statechange', notifyAudio);
+  }
+  return audio;
 }
 export async function setScannerSound(enabled) {
-  if (!enabled) { preference = false; try { localStorage.setItem(preferenceKey, 'off'); } catch {} return false; }
+  if (!enabled) { preference = false; try { localStorage.setItem(preferenceKey, 'off'); } catch {} notifyAudio(); return false; }
   const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
   if (!Audio) throw new Error('Este navegador no permite activar el sonido.');
-  audio ||= new Audio();
+  context(Audio);
   await audio.resume();
   if (audio.state !== 'running') throw new Error('Toca de nuevo para habilitar el sonido.');
   preference = true;
   try { localStorage.setItem(preferenceKey, 'on'); } catch {}
   playScannerSound('SIGNAL');
+  notifyAudio();
   return true;
 }
-export function resumeScannerSound() {
-  if (!scannerSoundEnabled()) return;
+export async function resumeScannerSound() {
+  if (!scannerSoundEnabled()) return false;
   const Audio = globalThis.AudioContext || globalThis.webkitAudioContext;
-  if (!Audio) return;
-  audio ||= new Audio();
-  audio.resume().catch(() => {});
+  if (!Audio) return false;
+  try {
+    context(Audio);
+    if (audio.state !== 'running') await audio.resume();
+    notifyAudio(); return audio.state === 'running';
+  } catch { return false; }
 }
 export function playScannerSound(type = 'SIGNAL') {
-  if (!scannerSoundEnabled() || !audio || audio.state !== 'running') return false;
+  if (!scannerSoundEnabled() || !audio) return false;
+  if (audio.state !== 'running') {
+    const requested = Date.now();
+    resumeScannerSound().then((ready) => { if (ready && Date.now() - requested < 3000) playScannerSound(type); });
+    return false;
+  }
   const start = audio.currentTime;
   const notes = type === 'SL' ? [440, 330] : type.startsWith('TP') ? [880, 1174.66, 1396.91] : [659.25, 987.77];
   notes.forEach((frequency, index) => {

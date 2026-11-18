@@ -37,9 +37,10 @@ beforeAll(async () => {
     insert into profiles(id,name,status,is_guest) values('${member}','Member','ACTIVE',false),('${admin}','Admin','ACTIVE',false),('${guest}','Guest','ACTIVE',true),('${suspended}','Suspended','SUSPENDED',false);`);
   await db.exec(readFileSync(new URL('../supabase/migrations/20261113010000_server_scanner_signals.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/20261113131000_scanner_notice_symbols.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261118010000_scanner_speed_and_analytics.sql', import.meta.url), 'utf8'));
 }, 20000);
 beforeEach(async () => {
-  await db.exec(`reset role;truncate scanner_events,scanner_trades,notifications,push_subscriptions,push_delivery_jobs,push_dispatches cascade;
+  await db.exec(`reset role;truncate scanner_events,scanner_trades,scanner_daily_statistics,notifications,push_subscriptions,push_delivery_jobs,push_dispatches cascade;
     update scanner_streams set enabled=true,provider='gold-api',runtime='{}',lease_id=null,lease_until=null,next_poll_at=now(),tracking_started_at=now();
     update profiles set status=case when id='${suspended}' then 'SUSPENDED' else 'ACTIVE' end;
     insert into push_subscriptions(user_id,subscription) values('${member}','{}'),('${admin}','{}'),('${guest}','{}'),('${suspended}','{}');
@@ -124,7 +125,61 @@ it('prevents clients from forging signals or reading private runtime, while expo
   await db.exec('set role authenticated');
   await expect(q('select claim_scanner_tick()')).rejects.toThrow();
   await expect(q('select * from scanner_streams')).rejects.toThrow();
+  await expect(q('select * from scanner_daily_statistics')).rejects.toThrow();
+  expect((await q('select get_scanner_analytics() as value')).rows[0].value.days).toEqual([]);
   expect((await q('select get_black_galaxy_trade() as value')).rows[0].value.signals).toBe(0);
   await q("select set_config('test.user',$1,false)", [guest]);
   await expect(q('select get_black_galaxy_trade()')).rejects.toThrow('Forbidden');
+  await expect(q('select get_scanner_analytics()')).rejects.toThrow('Forbidden');
+});
+
+it('updates the shared totals incrementally without double-counting earlier TP or replayed trades', async () => {
+  const trade = makeTrade();
+  const tick = await claim(); await complete(tick.lease, [trade]);
+  const reached1 = updateTrade(trade, 105, Date.now());
+  await q('update scanner_trades set payload=$1 where trade_key=$2', [j(reached1.trade), trade.key]);
+  let stats = (await q('select get_scanner_analytics() as value')).rows[0].value;
+  expect(stats.days[0]).toMatchObject({ signals: 1, wins: 0, open: 1, gain: 5, peakGain: 5, hits: [1, 0, 0] });
+  const reached3 = updateTrade(reached1.trade, 115, Date.now());
+  for (let i = 0; i < 2; i++) await q("update scanner_trades set payload=$1,status='CLOSED',outcome='WIN' where trade_key=$2", [j(reached3.trade), trade.key]);
+  stats = (await q('select get_scanner_analytics() as value')).rows[0].value;
+  expect(stats.days[0]).toMatchObject({ signals: 1, wins: 1, open: 0, gain: 30, peakGain: 15, hits: [1, 1, 1] });
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261118010000_scanner_speed_and_analytics.sql', import.meta.url), 'utf8'));
+  expect((await q('select get_scanner_analytics() as value')).rows[0].value.days).toEqual(stats.days);
+  await q('delete from scanner_trades where trade_key=$1', [trade.key]);
+  expect((await q('select get_scanner_analytics() as value')).rows[0].value.days).toEqual([]);
+  expect((await q('select get_black_galaxy_trade() as value')).rows[0].value).toMatchObject({ signals: 0, wins: 0, losses: 0 });
+});
+
+it('groups entry dates in Colombia across midnight and includes all history beyond the visible page', async () => {
+  const win = updateTrade(makeTrade('colombia-win'), 115, Date.now()).trade;
+  const loss = updateTrade(makeTrade('colombia-loss'), 90, Date.now()).trade;
+  for (const [trade, at] of [[win, '2026-01-02T04:55:00Z'], [loss, '2026-01-02T05:00:00Z']]) {
+    trade.barAt = at; trade.detectedAt = at;
+    await q('insert into scanner_trades(stream_id,trade_key,bar_at,side,status,outcome,payload) values($1,$2,$3,$4,$5,$6,$7)', ['xauusd-5m', trade.key, at, trade.side, trade.status, trade.outcome, j(trade)]);
+  }
+  const result = (await q('select get_black_galaxy_trade(1) as value')).rows[0].value;
+  expect(result.trades).toHaveLength(1); expect(result.signals).toBe(2);
+  const stats = (await q('select get_scanner_analytics() as value')).rows[0].value;
+  expect(stats.days).toMatchObject([{ day: '2026-01-01', wins: 1, peakGain: 15 }, { day: '2026-01-02', losses: 1, loss: 10 }]);
+});
+
+it('retries trading sends without a two-minute lease and never claims a currently leased device twice', async () => {
+  const trade = makeTrade(); const tick = await claim();
+  await complete(tick.lease, [trade], [{ tradeKey: trade.key, type: 'SIGNAL', occurredAt: new Date().toISOString(), payload: trade }]);
+  const jobs = (await q('select * from claim_push_delivery_jobs()')).rows;
+  expect(jobs).toHaveLength(2); expect(jobs[0].notification.createdAt).toBeTruthy();
+  expect((await q('select * from claim_push_delivery_jobs()')).rows).toEqual([]);
+  const lease = (await q('select extract(epoch from leased_until-now())::int as seconds from push_delivery_jobs limit 1')).rows[0].seconds;
+  expect(lease).toBeGreaterThan(0); expect(lease).toBeLessThanOrEqual(20);
+});
+
+it('does not invoke an Edge Function while the provider response is still cached', async () => {
+  await db.exec(`create or replace function net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) returns bigint language sql as $$insert into push_dispatches default values returning 1::bigint$$;
+    insert into vault.decrypted_secrets(name,decrypted_secret) values('galaxy_scanner_dispatch_url','https://example.invalid/scanner'),('galaxy_scanner_dispatch_secret','local-test');
+    update scanner_streams set runtime=jsonb_build_object('nextQuoteFetchAt',extract(epoch from now()+interval '20 seconds')*1000);`);
+  await q('select dispatch_scanner_tick()');
+  expect((await q('select count(*)::int as n from push_dispatches')).rows[0].n).toBe(0);
+  await q("update scanner_streams set runtime='{}'"); await q('select dispatch_scanner_tick()');
+  expect((await q('select count(*)::int as n from push_dispatches')).rows[0].n).toBe(1);
 });

@@ -52,5 +52,13 @@ export async function fetchGoldBootstrap({ key, quote, settings, cache = {}, onP
 export async function fetchGoldQuote({ request = fetch, now = Date.now } = {}) {
   const response = await request(GOLD_PRICE_URL, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(10_000), redirect: 'error' });
   if (!response.ok) throw new Error(`PROVIDER_HTTP_${response.status}`);
-  return parseGoldQuote(await response.json(), now());
+  const value = await response.json();
+  const receivedAt = now();
+  const quote = parseGoldQuote(value, receivedAt);
+  // Gold API reports seconds until its next sample. Honor this cache window
+  // even though our scheduler checks more frequently for a new sample.
+  const maxAge = Number(response.headers?.get('cache-control')?.match(/(?:^|,)\s*max-age=(\d+)/i)?.[1]);
+  const age = Math.max(0, Number(response.headers?.get('age')) || 0);
+  const cacheSeconds = Number.isFinite(maxAge) ? Math.max(0, Math.min(30, maxAge - age)) : 0;
+  return { ...quote, nextFetchAt: receivedAt + cacheSeconds * 1000 };
 }

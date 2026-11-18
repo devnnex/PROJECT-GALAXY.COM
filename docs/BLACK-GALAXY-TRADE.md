@@ -14,7 +14,17 @@ El motor conserva las fórmulas originales: HL2, ATR de Wilder de 10 períodos, 
 - Efectividad = ganadas cerradas / (ganadas cerradas + SL). Las operaciones abiertas y las descartadas no entran en ese porcentaje.
 - Las sumas de distancias de TP conservan la regla anterior; no representan rentabilidad de una cuenta ni cierres parciales reales.
 
-Los resultados empiezan al activar este servicio. El histórico descargado solo prepara ATR y bandas; no se publica como si fueran operaciones reales anteriores. La interfaz muestra las 40 operaciones más recientes y los totales de todo el registro del servidor. Una señal pendiente puede alcanzar TP1/TP2 antes de cerrar: sus objetivos aparecen marcados mientras sigue en seguimiento.
+Los resultados empiezan al activar este servicio. El histórico descargado solo prepara ATR y bandas; no se publica como si fueran operaciones reales anteriores. La interfaz muestra las 40 operaciones más recientes, los 100 avisos más recientes y los totales de todo el registro del servidor. Los límites visibles se indican junto a cada historial. Una señal pendiente puede alcanzar TP1/TP2 antes de cerrar: sus objetivos aparecen marcados mientras sigue en seguimiento.
+
+## Simulador y mejores períodos
+
+El botón **Simular** está en la esquina superior derecha del KPI Efectividad. Abre un panel con lotaje, onzas por lote, costes opcionales y fechas. El criterio predeterminado acordado es **una posición que acompaña los objetivos**: se acredita solo la distancia al TP más alto alcanzado por cada señal, sin sumar otra vez objetivos anteriores. A 0,10 lotes y 100 oz/lote, movimientos de $5/$10/$15 desde entrada equivalen a $50/$100/$150. TP3 suma $150, no $300. BUY y SELL usan distancias absolutas de sus niveles reales.
+
+Se muestran TP acreditados, SL iniciales, costes y resultado teórico por separado. Los TP ya observados en señales abiertas aportan al escenario, pero no al porcentaje de acierto hasta cerrar. Se mantiene la regla de la herramienta: SL después de TP conserva el resultado y no descuenta una pérdida. Por esa razón el panel describe un **escenario del registro**, no el saldo realizado de una cuenta con cierres reales ni un pronóstico garantizado. El contrato es editable y los costes no incluyen automáticamente spread, swap o deslizamiento. Las modalidades adicionales de tres posiciones o reparto en tercios explican su exposición y fórmula.
+
+Mejor y peor día/mes se calculan sobre todo el registro, según fecha de entrada en `America/Bogota`. Los meses usan ganadas totales ÷ resultados totales, no un promedio de porcentajes diarios. Se excluyen períodos sin resultados; en empates se prioriza mayor muestra y después fecha más antigua. Cada tarjeta indica fecha, porcentaje, ganadas, SL y tamaño de muestra. La tabla mensual y los filtros se recalculan localmente.
+
+`scanner_daily_statistics` conserva sumas compartidas actualizadas en la misma transacción que cada cambio de operación. La migración inicial reconstruye esos totales con el historial existente. Las estadísticas completas se solicitan solo al abrir el simulador o cuando cambia su revisión, no cada segundo ni al editar un campo. Ningún visitante tiene acceso directo a la tabla privada.
 
 ## Fuente gratuita y precisión
 
@@ -36,11 +46,23 @@ Se envían avisos de BUY, SELL, TP1, TP2, TP3 y toque del SL a las cuentas regis
 
 Los símbolos aparecen junto a cada dato: **🔵 Entrada**, **🔴 SL**, **🎯 TP pendiente** y **✅ TP alcanzado**. El título identifica la entrada, el TP logrado o la salida por SL. Los avisos antiguos conservan su lectura y los nuevos símbolos no alteran los tonos ni el conteo. Un aviso de TP2 marca TP1 y TP2, sin marcar TP3 antes de tiempo.
 
-En Galaxy abierto, toca **Activar sonido** dentro de Black Galaxy Trade. Se reproduce una confirmación y se recuerda la preferencia en ese dispositivo. Señal, TP y SL tienen tonos distintos. El navegador puede exigir una nueva interacción para reanudar el audio tras abrir la app: [política de reproducción](https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Autoplay).
+En Galaxy abierto, el sonido queda dispuesto de forma predeterminada y se reanuda con la primera interacción, respetando un silencio elegido anteriormente. **Activar sonido** reproduce una confirmación; **Probar sonido** permite comprobarlo sin generar una notificación ni avisar a otros miembros. La interfaz solo dice «Sonido activado» cuando el contexto de audio está en ejecución. Señal, TP y SL tienen tonos distintos. El navegador puede exigir una nueva interacción para reanudar el audio tras abrir la app: [política de reproducción](https://developer.mozilla.org/en-US/docs/Web/Media/Guides/Autoplay).
 
-Con la app cerrada se reutiliza Web Push, con icono, vibración y solicitud de sonido nativo. Permisos, volumen, modo silencio y concentración dependen del teléfono/sistema operativo. La web no puede imponer un sonido personalizado ni anular esos ajustes: [opciones de notificación](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification). En iPhone se necesita la PWA instalada y permiso de notificaciones, como en el sistema existente.
+Con la app cerrada se reutiliza Web Push, con el PNG de Galaxy como icono y badge, vibración, `silent:false` y solicitud de persistencia para trading. El mismo logo aparece en los avisos internos y se declara en el manifiesto de instalación. El distintivo del navegador y la composición final de la notificación son responsabilidad del sistema. Permisos, volumen, modo silencio y concentración dependen del teléfono/sistema operativo. La web no puede imponer un sonido personalizado ni anular esos ajustes: [opciones de notificación](https://developer.mozilla.org/en-US/docs/Web/API/ServiceWorkerRegistration/showNotification). En iPhone se necesita la PWA instalada y permiso de notificaciones, como en el sistema existente. Realtime y Push comparten el ID para evitar repetir un tono en la misma sesión.
+
+## Latencia y carga
+
+El cron global comprueba cada 15 segundos, con lease exclusivo; ninguna visita ejecuta el scanner. El servidor conserva el vencimiento `Cache-Control`/`Age` del proveedor y evita invocar la Edge Function hasta que vence esa muestra. [Gold API publica precios cada 30 segundos](https://gold-api.com/faqs); consultar más veces no crea precios nuevos y no cambia la cuota de diez OHLC por hora.
+
+La ruta principal de avisos abiertos usa el registro recibido por Realtime directamente y no hace otra RPC por cada TP. Push también entrega ese mismo registro a ventanas abiertas. El panel agrupa ráfagas de eventos en una consulta y el respaldo consulta cada 20 segundos con una sola solicitud simultánea, pausa al ocultarse y recuperación al volver o reconectarse. Solo el reloj de la cotización se renderiza cada segundo, separado del historial y del simulador.
+
+Los envíos mantienen el disparo inmediato transaccional. El worker puede drenar hasta 20 lotes de 50 trabajos, con un presupuesto de 20 segundos para iniciar nuevos lotes y timeout individual de ocho segundos. Trading usa leases de 20 segundos y un cron de recuperación cada 15 segundos, que no invoca el worker si no hay avisos de trading pendientes. Las reglas de acceso, lectura, caducidad y no duplicación de trabajos se conservan. El procesamiento del proveedor, cold starts, Push, conexión y suspensión del dispositivo impiden garantizar una entrega máxima de 30 segundos desde un movimiento del mercado.
 
 ## Despliegue
+
+Para actualizar una instalación que **ya funciona**, ejecutar `node scripts/update-black-galaxy.mjs` con la sesión administradora de Supabase y después publicar el frontend por el workflow existente. Aplica solo la migración nueva y despliega `scanner-signals` y `push-notifications`. No rota secretos, no reinicia el registro, no activa un scanner pausado ni envía alertas sintéticas. El servidor se debe actualizar antes del frontend porque el simulador utiliza la nueva RPC `get_scanner_analytics()`.
+
+Para una instalación inicial:
 
 1. Iniciar sesión con el Supabase CLI en la cuenta administradora del proyecto Galaxy `xdsqtuubsptpzwadecha`.
 2. Guardar la clave gratuita de Gold API en **Edge Functions → Secrets**, nombre `GOLD_API_KEY`.

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { advanceScanner, DEFAULT_SETTINGS, evaluateBar, seedScanner, settingsFor } from '../supabase/functions/scanner-signals/engine.js';
 import { openTrade, updateTrade } from '../supabase/functions/scanner-signals/trade-accounting.js';
-import { fetchGoldBootstrap, parseGoldQuote } from '../supabase/functions/scanner-signals/provider.js';
+import { fetchGoldBootstrap, fetchGoldQuote, parseGoldQuote } from '../supabase/functions/scanner-signals/provider.js';
 import { runScannerTick } from '../supabase/functions/scanner-signals/worker.js';
 
 const interval = 300_000;
@@ -104,6 +104,14 @@ describe('chronological trade outcomes', () => {
 });
 
 describe('free provider and worker', () => {
+  it('honors the source cache lifetime and Age header without letting it postpone requests beyond 30 seconds', async () => {
+    const response = (maxAge) => ({ ok: true, headers: new Headers({ 'cache-control': `public, max-age=${maxAge}`, age: '5' }),
+      json: async () => ({ symbol: 'XAU', price: 4000, updatedAt: new Date(at).toISOString() }) });
+    const quote = await fetchGoldQuote({ request: async () => response(25), now: () => at });
+    expect(quote).toMatchObject({ price: 4000, nextFetchAt: at + 20_000 });
+    const bounded = await fetchGoldQuote({ request: async () => response(3600), now: () => at });
+    expect(bounded.nextFetchAt).toBe(at + 30_000);
+  });
   it('requires fresh actual XAU/USD prices and rejects stale/future/wrong-symbol data', () => {
     const quote = { symbol: 'XAU', price: 3880.495, updatedAt: new Date(at).toISOString() };
     expect(parseGoldQuote(quote, at)).toMatchObject({ price: 3880.495, at, source: 'gold-api' });

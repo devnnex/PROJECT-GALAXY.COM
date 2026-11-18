@@ -32,7 +32,7 @@ self.addEventListener('fetch', (event) => {
 });
 
 function notificationData(value = {}) {
-  const fields = ['id', 'type', 'title', 'body', 'actorId', 'userId', 'meetingId', 'roomCode'];
+  const fields = ['id', 'type', 'title', 'body', 'actorId', 'userId', 'meetingId', 'roomCode', 'createdAt'];
   return Object.fromEntries(fields.map((key) => [key, typeof value?.[key] === 'string' ? value[key].slice(0, key === 'body' ? 240 : 140) : '']));
 }
 self.addEventListener('push', (event) => {
@@ -40,14 +40,18 @@ self.addEventListener('push', (event) => {
   try { notice = notificationData(event.data?.json()); } catch { /* An empty payload still produces a visible notice. */ }
   const message = notice.type === 'DIRECT_MESSAGE';
   const scanner = notice.type === 'SCANNER_SIGNAL';
-  event.waitUntil(self.registration.showNotification(notice.title || 'PROJECT GALAXY', {
+  const display = self.registration.showNotification(notice.title || 'PROJECT GALAXY', {
     body: notice.body || 'Tienes novedades en tu comunidad.',
     icon: scopedUrl('galaxy-notification.png'), badge: scopedUrl('galaxy-notification.png'),
     tag: `galaxy-${notice.id || 'update'}`, data: notice,
     vibrate: [180, 80, 180], renotify: true,
-    ...(scanner ? { silent: false } : {}),
+    ...(scanner ? { silent: false, requireInteraction: true, timestamp: Date.parse(notice.createdAt) || Date.now() } : {}),
     actions: [{ action: 'open', title: message ? 'Ver mensaje' : scanner ? 'Ver señal' : 'Ver reunion' }, { action: 'dismiss', title: 'Cerrar' }],
-  }));
+  });
+  const foreground = scanner ? self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+    for (const client of clients) client.postMessage({ type: 'GALAXY_SCANNER_PUSH', notice });
+  }) : Promise.resolve();
+  event.waitUntil(Promise.all([display, foreground]));
 });
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
