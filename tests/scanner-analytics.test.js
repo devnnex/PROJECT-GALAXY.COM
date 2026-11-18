@@ -1,0 +1,41 @@
+import { expect, it } from 'vitest';
+import { simulateRecordedResults, summarizePeriods } from '../src/services/scanner-analytics';
+
+const day = (date, wins, losses, extra = {}) => ({ day: date, signals: wins + losses, wins, losses, gain: 0, peakGain: 0, loss: 0, ...extra });
+
+it('credits $150 for one 0.10 position through TP3, without counting earlier targets twice', () => {
+  const summary = summarizePeriods([day('2026-11-17', 1, 0, { gain: 30, peakGain: 15, hits: [1, 1, 1] })]);
+  expect(simulateRecordedResults(summary, { lots: '0.10', contractSize: '100' })).toMatchObject({ gross: 150, losses: 0, net: 150, exposure: 0.1 });
+  expect(simulateRecordedResults(summary, { lots: '0.10', contractSize: '100', allocation: 'per-target' }).gross).toBe(300);
+  expect(simulateRecordedResults(summary, { lots: '0.10', contractSize: '100', allocation: 'split' }).gross).toBe(100);
+});
+it('uses actual recorded distances, subtracts initial stops, scales lot/contract size and explicit costs', () => {
+  const summary = summarizePeriods([day('2026-11-17', 2, 1, { peakGain: 15, gain: 20, loss: 7.5 })]);
+  const result = simulateRecordedResults(summary, { lots: 0.1, contractSize: 100, costPerLot: 7 });
+  expect(result).toMatchObject({ gross: 150, losses: 75 });
+  expect(result.costs).toBeCloseTo(2.1); expect(result.net).toBeCloseTo(72.9);
+  expect(simulateRecordedResults(summary, { lots: 0.2, contractSize: 100 }).net).toBe(150);
+  expect(simulateRecordedResults(summary, { lots: 0.1, contractSize: 10 }).net).toBe(7.5);
+});
+it('includes observed TP on open signals without turning them into closed wins', () => {
+  const summary = summarizePeriods([day('2026-11-17', 0, 0, { signals: 1, open: 1, gain: 5, peakGain: 5, hits: [1, 0, 0] })]);
+  expect(summary.rate).toBeNull(); expect(summary.bestDay).toBeNull();
+  expect(simulateRecordedResults(summary, { lots: 0.1, contractSize: 100 }).net).toBe(50);
+});
+it('ranks days and months by weighted effectiveness, excluding open/ignored and breaking ties by sample size', () => {
+  const summary = summarizePeriods([
+    day('2026-09-01', 1, 0), day('2026-10-01', 6, 2), day('2026-10-02', 0, 2),
+    day('2026-11-01', 5, 0), day('2026-11-02', 1, 4), day('2026-11-03', 0, 0, { ignored: 5, signals: 5 }),
+  ]);
+  expect(summary.bestDay.day).toBe('2026-11-01'); expect(summary.worstDay.day).toBe('2026-10-02');
+  expect(summary.bestMonth.day).toBe('2026-09'); expect(summary.worstMonth.day).toBe('2026-10');
+  expect(summary.monthly.find((period) => period.day === '2026-10').rate).toBe(60);
+  expect(summarizePeriods(summary.days, '2026-11-01', '2026-11-01')).toMatchObject({ wins: 5, losses: 0, rate: 100 });
+  expect(summarizePeriods([], '', '')).toMatchObject({ rate: null, bestDay: null, worstMonth: null });
+});
+it('rejects invalid numeric inputs instead of displaying misleading gains', () => {
+  const summary = summarizePeriods([]);
+  for (const lots of ['', 'abc', 'Infinity', '-0.1', '0', 101]) expect(simulateRecordedResults(summary, { lots, contractSize: 100 })).toBeNull();
+  expect(simulateRecordedResults(summary, { lots: 0.1, contractSize: 0 })).toBeNull();
+  expect(simulateRecordedResults(summary, { lots: 0.1, contractSize: 100, costPerLot: -1 })).toBeNull();
+});

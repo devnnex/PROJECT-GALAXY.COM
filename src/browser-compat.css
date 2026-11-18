@@ -119,6 +119,12 @@ canvas {
 
   .bottom-nav {
     height: calc(64px + env(safe-area-inset-bottom));
+    position: fixed;
+    inset: auto 0 0;
+    margin: 0;
+    transform: none;
+    contain: layout style;
+    overscroll-behavior: contain;
   }
 
   .control-dock {

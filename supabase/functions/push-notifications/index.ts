@@ -20,7 +20,8 @@ Deno.serve(async (request) => {
     const admin = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), { auth: { persistSession: false, autoRefreshToken: false } });
     const totals = { sent: 0, expired: 0, retry: 0 };
     // Drain a bounded batch; the cron worker picks up retries and remaining jobs.
-    for (let batch = 0; batch < 5; batch++) {
+    const deadline = Date.now() + 20_000;
+    for (let batch = 0; batch < 20 && Date.now() < deadline; batch++) {
       const { data: jobs, error } = await admin.rpc('claim_push_delivery_jobs');
       if (error) throw error;
       if (!jobs?.length) break;

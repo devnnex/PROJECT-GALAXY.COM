@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   Activity, ArrowRight, Bell, Bookmark, Boxes, CalendarDays, Check, ChevronDown, CircleDollarSign,
   Clock3, Compass, Copy, CreditCard, Eye, EyeOff, Flag, Heart, Home, KeyRound, Languages, LayoutGrid, LockKeyhole,
@@ -25,7 +26,8 @@ import ReportsPage from './components/ReportsPage';
 import DirectMessagesPage from './components/DirectMessagesPage';
 import ProfilePhotoCropper from './components/ProfilePhotoCropper';
 import AdminUserEditor from './components/AdminUserEditor';
-import BlackGalaxyTrade, { ScannerNotice } from './components/BlackGalaxyTrade';
+import BlackGalaxyTrade, { ScannerNotice, ScannerNotificationLabel } from './components/BlackGalaxyTrade';
+import { watchVisibleResource } from './services/visible-refresh';
 import { scannerNoticeBatch } from './services/scanner-notices';
 import { playScannerSound, resumeScannerSound } from './services/scanner-audio';
 import { parseScannerNotice } from './services/scanner-presentation';
@@ -325,10 +327,25 @@ function AppShell({ user, onUserChange, onLogout }) {
   const actionableNotice = (notice) => notice?.meetingStatus === 'ACTIVE' && ((notice.type === 'MEETING_JOIN_REQUEST' && notice.participantId) || (notice.type === 'MEETING_INVITE' && notice.invitationId && notice.invitationStatus === 'PENDING'));
   const reloadNotifications = async () => { try { setNotificationItems(await api.getMyNotifications()); } catch {} };
   useEffect(() => {
-    let active = true;
-    const refresh = async () => { try { const items = await api.getMyNotifications(); if (active) { setNotificationItems(items); setNoticeOwner(user.id); } } catch {} };
-    refresh(); const unsubscribe = api.onNotificationChange(user.id, refresh); const timer = setInterval(refresh, 15_000);
-    return () => { active = false; unsubscribe(); clearInterval(timer); };
+    const watcher = watchVisibleResource({ load: () => api.getMyNotifications(), onData: (items) => { setNotificationItems(items); setNoticeOwner(user.id); } });
+    const receive = (notice) => {
+      if (notice.userId !== user.id || notice.type !== 'SCANNER_SIGNAL') return;
+      setNotificationItems((items) => {
+        const previous = items.find((item) => item.id === notice.id);
+        const merged = { ...previous, ...notice, readAt: notice.readAt || previous?.readAt };
+        return [merged, ...items.filter((item) => item.id !== notice.id)].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 100);
+      });
+      setNoticeOwner(user.id);
+      window.dispatchEvent(new Event('galaxy:scanner-update'));
+    };
+    const unsubscribe = api.onNotificationChange(user.id, (payload) => {
+      const row = payload?.new;
+      if (row?.type === 'SCANNER_SIGNAL' && row.user_id === user.id) receive({ id: row.id, userId: row.user_id, type: row.type, title: row.title, body: row.body, createdAt: row.created_at, readAt: row.read_at });
+      else watcher.refresh();
+    });
+    const push = (event) => { if (event.data?.type === 'GALAXY_SCANNER_PUSH') receive(event.data.notice); };
+    navigator.serviceWorker?.addEventListener('message', push);
+    return () => { watcher.stop(); unsubscribe(); navigator.serviceWorker?.removeEventListener('message', push); };
   }, [user.id]);
   useEffect(() => {
     if (user.isGuest || noticeOwner !== user.id) return;
@@ -337,7 +354,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     if (batch.fresh.length) {
       setScannerQueue((current) => [...current, ...batch.fresh].slice(-8));
       const type = batch.fresh.some((notice) => parseScannerNotice(notice).event === 'SL') ? 'SL' : batch.fresh.some((notice) => parseScannerNotice(notice).event?.startsWith('TP')) ? 'TP' : 'SIGNAL';
-      playScannerSound(type);
+      if (!document.hidden) playScannerSound(type);
     }
   }, [notificationItems, noticeOwner, user.id, user.isGuest]);
   useEffect(() => {
@@ -347,9 +364,11 @@ function AppShell({ user, onUserChange, onLogout }) {
   }, [scannerQueue[0]?.id]);
   useEffect(() => {
     if (user.isGuest) return undefined;
-    const resume = () => resumeScannerSound();
+    const resume = (event) => { if (!event?.target?.closest?.('.bgt-audio-controls')) resumeScannerSound(); };
+    const visible = () => { if (!document.hidden) resume(); };
     window.addEventListener('pointerdown', resume); window.addEventListener('keydown', resume);
-    return () => { window.removeEventListener('pointerdown', resume); window.removeEventListener('keydown', resume); };
+    document.addEventListener('visibilitychange', visible);
+    return () => { window.removeEventListener('pointerdown', resume); window.removeEventListener('keydown', resume); document.removeEventListener('visibilitychange', visible); };
   }, [user.id, user.isGuest]);
   useEffect(() => {
     if (user.isGuest) return undefined;
@@ -433,9 +452,9 @@ function AppShell({ user, onUserChange, onLogout }) {
   return <div className="app-shell">
     <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{availableNavigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{id === 'messages' && directUnread > 0 && <i>{Math.min(directUnread, 99)}</i>}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><div><strong>{representedUser.name}</strong><span>{isAdmin ? 'ADMIN' : english ? 'COMMUNITY' : 'COMUNIDAD'} · LVL {representedUser.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> {english ? 'Sign out' : 'Cerrar sesión'}</button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
-    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>{english ? 'Search Galaxy' : 'Buscar en Galaxy'}</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)} aria-label={english ? 'Notifications' : 'Notificaciones'}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>{english ? 'Notifications' : 'Notificaciones'}</h3><span>{unread} {english ? 'new' : 'nuevas'}</span></div><div className="notification-filters" role="group" aria-label={english ? 'Notification filter' : 'Filtro de notificaciones'}><button className={notificationFilter === 'ALL' ? 'active' : ''} onClick={() => setNotificationFilter('ALL')}>{english ? 'All' : 'Todas'}</button><button className={notificationFilter === 'UNREAD' ? 'active' : ''} onClick={() => setNotificationFilter('UNREAD')}>{english ? 'Unread' : 'No leídas'}{unread > 0 && <span>{unread}</span>}</button></div><div className="notification-list">{visibleNotifications.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}><Bell /></span><div><strong>{notice.title}</strong><small>{notice.body || notice.meetingTitle || (english ? 'Account activity' : 'Actividad de tu cuenta')}</small></div></button>)}</div>{!visibleNotifications.length && <p className="notifications-empty">{notificationFilter === 'UNREAD' ? (english ? 'You have no unread notifications.' : 'No tienes notificaciones sin leer.') : (english ? 'You have no notifications.' : 'No tienes notificaciones.')}</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>{english ? 'Mark all as read' : 'Marcar todas como leídas'}</button></div>}</header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={representedUser} joinRequest={joinRequest} onSessionChange={setMeetingSession} canCreate={isMeetingOwner(user)} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
+    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>{english ? 'Search Galaxy' : 'Buscar en Galaxy'}</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)} aria-label={english ? 'Notifications' : 'Notificaciones'}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>{english ? 'Notifications' : 'Notificaciones'}</h3><span>{unread} {english ? 'new' : 'nuevas'}</span></div><div className="notification-filters" role="group" aria-label={english ? 'Notification filter' : 'Filtro de notificaciones'}><button className={notificationFilter === 'ALL' ? 'active' : ''} onClick={() => setNotificationFilter('ALL')}>{english ? 'All' : 'Todas'}</button><button className={notificationFilter === 'UNREAD' ? 'active' : ''} onClick={() => setNotificationFilter('UNREAD')}>{english ? 'Unread' : 'No leídas'}{unread > 0 && <span>{unread}</span>}</button></div><div className="notification-list">{visibleNotifications.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}>{notice.type === 'SCANNER_SIGNAL' ? <img src={`${import.meta.env.BASE_URL}galaxy-notification.png`} alt="Galaxy" /> : <Bell />}</span><div><strong>{notice.type === 'SCANNER_SIGNAL' ? <ScannerNotificationLabel notice={notice} /> : notice.title}</strong><small>{notice.body || notice.meetingTitle || (english ? 'Account activity' : 'Actividad de tu cuenta')}</small></div></button>)}</div>{!visibleNotifications.length && <p className="notifications-empty">{notificationFilter === 'UNREAD' ? (english ? 'You have no unread notifications.' : 'No tienes notificaciones sin leer.') : (english ? 'You have no notifications.' : 'No tienes notificaciones.')}</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>{english ? 'Mark all as read' : 'Marcar todas como leídas'}</button></div>}</header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={representedUser} joinRequest={joinRequest} onSessionChange={setMeetingSession} canCreate={isMeetingOwner(user)} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
     {meetingSession.active && page !== 'meetings' && <div className="background-meeting-bar glass"><button className="background-meeting-main" onClick={() => navigate('meetings')}><span className="meeting-live-dot" /><span><strong>{meetingSession.title || 'Reunión en curso'}</strong><small>{meetingSession.waiting ? 'Esperando admisión' : 'Audio y conexión activos en segundo plano'}</small></span></button>{meetingSession.audioBlocked && <button className="background-audio-button" title="Activar sonido" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /></button>}<button className="secondary-button" onClick={() => navigate('meetings')}>Volver</button></div>}
-    <nav className="bottom-nav">{availableNavigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>
+    {createPortal(<nav className="bottom-nav" aria-label="Navegación principal">{availableNavigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>, document.body)}
     {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} items={availableNavigation} />}
     <ProductModal product={selectedProduct} onClose={() => setSelectedProduct(null)} toast={toast} membershipCenter={membershipCenter} user={user} />
     {lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
