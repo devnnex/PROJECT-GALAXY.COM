@@ -66,3 +66,17 @@ it('weights yearly results over the selected dates and does not average daily pe
   expect(summary.worstYear).toMatchObject({ day: '2025', rate: 20, count: 10 });
   expect(summarizePeriods(summary.days, '2026-01-01', '2026-12-31').yearly).toHaveLength(1);
 });
+
+it('counts actual dates with signals rather than elapsed calendar days or the number of trades', () => {
+  const days = [day('2026-11-18', 1, 0), day('2026-11-13', 2, 1), day('2026-11-17', 0, 0), day('2026-11-16', 0, 0, { signals: 2, open: 2 })];
+  expect(summarizePeriods(days)).toMatchObject({ signalDays: 3, firstSignalDay: '2026-11-13', lastSignalDay: '2026-11-18', signals: 6 });
+  expect(summarizePeriods(days, '2026-11-16', '2026-11-18')).toMatchObject({ signalDays: 2, firstSignalDay: '2026-11-16', lastSignalDay: '2026-11-18' });
+  expect(summarizePeriods(days, '2026-11-18', '2026-11-18')).toMatchObject({ signalDays: 1, firstSignalDay: '2026-11-18', lastSignalDay: '2026-11-18' });
+});
+
+it('uses the same signal-day context for fixed exits, including days whose target was not reached', () => {
+  const days = [day('2026-11-18', 0, 0, { signals: 1, open: 1, targets: [0, 1, 2].map(() => ({ wins: 0, pending: 1 })) })];
+  expect(summarizePeriods(days, '', '', 'tp3')).toMatchObject({ signalDays: 1, wins: 0, open: 1, firstSignalDay: '2026-11-18' });
+  expect(summarizePeriods(days, '2027-01-01')).toMatchObject({ signalDays: 0, firstSignalDay: null, lastSignalDay: null });
+  expect(summarizePeriods([])).toMatchObject({ signalDays: 0, firstSignalDay: null, lastSignalDay: null });
+});
