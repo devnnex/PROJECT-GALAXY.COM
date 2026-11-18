@@ -2,12 +2,7 @@
 
 .bgt-levels .bgt-level-symbol{display:inline-block;margin:0;font-size:12px;line-height:1}.bgt-levels .bgt-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.bgt-quote-details{display:flex;align-items:center;flex-wrap:wrap;gap:6px 16px;margin:-7px 0 22px;font-size:10px;color:#95a4bb}.bgt-quote-details>small{flex-basis:100%;font-size:10px;color:#8493a8}.bgt-quote-details.delayed{color:#f1ba77}.bgt-status>strong>small{display:inline;font-size:9px;font-weight:400;color:#92a2b7;margin-left:4px}
 
-/* Recorded outcomes keep the existing typography, with stronger visual cues. */
-.bgt-stats>.bgt-stat-win{background:linear-gradient(135deg,#087e54,#065f43);border-color:#39dc9545;color:#fff}
-.bgt-stats>.bgt-stat-loss{background:linear-gradient(135deg,#b8344d,#8f2539);border-color:#ff829545;color:#fff}
-.bgt-stats>.bgt-stat-neutral{background:linear-gradient(135deg,#fff,#e9eef3);color:#111923;border-color:#fff}
-.bgt-stat-win span,.bgt-stat-win small,.bgt-stat-loss span,.bgt-stat-loss small{color:#fff!important}
-.bgt-stat-neutral span,.bgt-stat-neutral small{color:#202a39!important}
+/* Keep the original dark KPI surfaces and subtle outcome accents. */
 .bgt-effectiveness{position:relative;overflow:hidden}
 .bgt-stats .bgt-effectiveness>span{padding-right:62px}
 .bgt-sim-launch{position:absolute;top:13px;right:12px;display:flex;align-items:center;gap:5px;padding:7px 8px;border:1px solid #c4a77455;border-radius:9px;background:#d9b56d12;color:#e6c98f;font-size:10px;transition:background .2s,box-shadow .2s}
