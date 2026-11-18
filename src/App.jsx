@@ -26,7 +26,9 @@ import ReportsPage from './components/ReportsPage';
 import DirectMessagesPage from './components/DirectMessagesPage';
 import ProfilePhotoCropper from './components/ProfilePhotoCropper';
 import AdminUserEditor from './components/AdminUserEditor';
-import BlackGalaxyTrade, { ScannerNotice, ScannerNotificationLabel } from './components/BlackGalaxyTrade';
+import BlackGalaxyTrade, { ScannerNotice } from './components/BlackGalaxyTrade';
+import NotificationCenter from './components/NotificationCenter';
+import { useNotificationInbox } from './services/use-notification-inbox';
 import { watchVisibleResource } from './services/visible-refresh';
 import { latestScannerBanner, scannerNoticeBatch } from './services/scanner-notices';
 import { playScannerSound, resumeScannerSound } from './services/scanner-audio';
@@ -266,15 +268,17 @@ function AppShell({ user, onUserChange, onLogout }) {
   const isAdmin = user.role === 'ADMIN'; const language = languageFor(user); const english = language === 'en';
   const availableNavigation = (user.isGuest ? navigation.filter(([id]) => id === 'meetings') : isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
   const inviteToken = new URLSearchParams(location.search).get('invite') || '';
-  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [notices, setNotices] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(!user.isGuest); const [vipPromoOpen, setVipPromoOpen] = useState(false);
+  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(!user.isGuest); const [vipPromoOpen, setVipPromoOpen] = useState(false);
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
-  const [notificationItems, setNotificationItems] = useState([]); const [notificationFilter, setNotificationFilter] = useState('UNREAD'); const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
+  const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const [directUnread, setDirectUnread] = useState(0);
   const [noticeOwner, setNoticeOwner] = useState(''); const [scannerQueue, setScannerQueue] = useState([]);
   const scannerCursor = useRef(null);
   const [messagePeer, setMessagePeer] = useState('');
   const [membershipCenter, setMembershipCenter] = useState({ membership: user.membership || { isActive: false }, plans: [], orders: [] });
   const toast = (message, kind = '') => { setToastItem({ message, kind, id: Date.now() }); setTimeout(() => setToastItem(null), 4200); };
+  const inbox = useNotificationInbox(user.id, api.markAllNotificationsRead);
+  const { items: notificationItems, setItems: setNotificationItems, open: notices } = inbox;
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
   const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
   useEffect(() => {
@@ -325,9 +329,9 @@ function AppShell({ user, onUserChange, onLogout }) {
     return () => { active = false; };
   }, [inviteToken]);
   const actionableNotice = (notice) => notice?.meetingStatus === 'ACTIVE' && ((notice.type === 'MEETING_JOIN_REQUEST' && notice.participantId) || (notice.type === 'MEETING_INVITE' && notice.invitationId && notice.invitationStatus === 'PENDING'));
-  const reloadNotifications = async () => { try { setNotificationItems(await api.getMyNotifications()); } catch {} };
+  const reloadNotifications = async () => { const version = inbox.getVersion(); try { setNotificationItems(await api.getMyNotifications(), version); } catch {} };
   useEffect(() => {
-    const watcher = watchVisibleResource({ load: () => api.getMyNotifications(), onData: (items) => { setNotificationItems(items); setNoticeOwner(user.id); } });
+    const watcher = watchVisibleResource({ load: async () => { const version = inbox.getVersion(); return { items: await api.getMyNotifications(), version }; }, onData: ({ items, version }) => { setNotificationItems(items, version); setNoticeOwner(user.id); } });
     const receive = (notice) => {
       if (notice.userId !== user.id || notice.type !== 'SCANNER_SIGNAL') return;
       setNotificationItems((items) => {
@@ -391,15 +395,12 @@ function AppShell({ user, onUserChange, onLogout }) {
     if (activeNotice?.type !== 'MEETING_INVITE' || activeNotice.invitationStatus !== 'PENDING' || !activeNotice.invitationId) return;
     api.markMeetingInvitationSeen(activeNotice.invitationId).catch(() => {});
   }, [activeNotice?.id, activeNotice?.type, activeNotice?.invitationId, activeNotice?.invitationStatus]);
-  const unread = notificationItems.filter((notice) => !notice.readAt).length;
-  const visibleNotifications = notificationFilter === 'UNREAD' ? notificationItems.filter((notice) => !notice.readAt) : notificationItems;
+  const unread = inbox.unread;
   const openNotice = async (notice) => {
-    setNotices(false);
+    setScannerQueue([]);
+    if (unread) inbox.readAll();
+    inbox.close();
     if (actionableNotice(notice)) { setActiveNotice(notice); return; }
-    if (!notice.readAt) {
-      setNotificationItems((items) => items.map((item) => item.id === notice.id ? { ...item, readAt: new Date().toISOString() } : item));
-      api.markNotificationRead(notice.id).catch(() => reloadNotifications());
-    }
     if (notice.type === 'MEETING_ADMITTED' && notice.roomCode) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() });
     if (notice.type === 'DIRECT_MESSAGE') { setMessagePeer(notice.actorId || ''); navigate('messages'); }
     else if (notice.type === 'SCANNER_SIGNAL') { navigate('black-trade'); }
@@ -429,11 +430,7 @@ function AppShell({ user, onUserChange, onLogout }) {
       await reloadNotifications();
     } catch (error) { toast(error.message, 'error'); await reloadNotifications(); } finally { setNoticeBusy(false); }
   };
-  const markAllRead = async () => {
-    setNotificationItems((items) => items.map((item) => ({ ...item, readAt: item.readAt || new Date().toISOString() })));
-    setNotices(false);
-    try { await api.markAllNotificationsRead(); } catch (error) { toast(error.message, 'error'); reloadNotifications(); }
-  };
+  const markAllRead = () => { setScannerQueue([]); return inbox.readAll(); };
   const activeLabel = availableNavigation.find(([id]) => id === page)?.[1] || 'Reuniones';
   let content;
   if (page === 'dashboard') content = <Dashboard user={representedUser} navigate={navigate} openProduct={setSelectedProduct} />;
@@ -452,7 +449,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   return <div className="app-shell">
     <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="sidebar-top"><Brand /><button className="mobile-close icon-button" onClick={() => setMenu(false)}><X /></button></div><nav>{availableNavigation.map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label}</span>{id === 'messages' && directUnread > 0 && <i>{Math.min(directUnread, 99)}</i>}</button>)}</nav><div className="sidebar-bottom"><button onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><div><strong>{representedUser.name}</strong><span>{isAdmin ? 'ADMIN' : english ? 'COMMUNITY' : 'COMUNIDAD'} · LVL {representedUser.level}</span></div><MoreHorizontal /></button><button className="logout-button" onClick={onLogout}><LogOut /> {english ? 'Sign out' : 'Cerrar sesión'}</button></div></aside>
     {menu && <button className="sidebar-scrim" aria-label="Cerrar menú" onClick={() => setMenu(false)} />}
-    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>{english ? 'Search Galaxy' : 'Buscar en Galaxy'}</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => setNotices(!notices)} aria-label={english ? 'Notifications' : 'Notificaciones'}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><ChevronDown /></button></div>{notices && <div className="notifications-popover glass"><div className="panel-heading"><h3>{english ? 'Notifications' : 'Notificaciones'}</h3><span>{unread} {english ? 'new' : 'nuevas'}</span></div><div className="notification-filters" role="group" aria-label={english ? 'Notification filter' : 'Filtro de notificaciones'}><button className={notificationFilter === 'ALL' ? 'active' : ''} onClick={() => setNotificationFilter('ALL')}>{english ? 'All' : 'Todas'}</button><button className={notificationFilter === 'UNREAD' ? 'active' : ''} onClick={() => setNotificationFilter('UNREAD')}>{english ? 'Unread' : 'No leídas'}{unread > 0 && <span>{unread}</span>}</button></div><div className="notification-list">{visibleNotifications.map((notice) => <button className={notice.readAt ? 'read' : ''} key={notice.id} onClick={() => openNotice(notice)}><span className={`notice-icon ${notice.type.toLowerCase()}`}>{notice.type === 'SCANNER_SIGNAL' ? <img src={`${import.meta.env.BASE_URL}galaxy-notification.png`} alt="Galaxy" /> : <Bell />}</span><div><strong>{notice.type === 'SCANNER_SIGNAL' ? <ScannerNotificationLabel notice={notice} /> : notice.title}</strong><small>{notice.body || notice.meetingTitle || (english ? 'Account activity' : 'Actividad de tu cuenta')}</small></div></button>)}</div>{!visibleNotifications.length && <p className="notifications-empty">{notificationFilter === 'UNREAD' ? (english ? 'You have no unread notifications.' : 'No tienes notificaciones sin leer.') : (english ? 'You have no notifications.' : 'No tienes notificaciones.')}</p>}<button className="view-all" disabled={!unread} onClick={markAllRead}>{english ? 'Mark all as read' : 'Marcar todas como leídas'}</button></div>}</header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={representedUser} joinRequest={joinRequest} onSessionChange={setMeetingSession} canCreate={isMeetingOwner(user)} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
+    <main className="app-main"><header className="topbar"><button className="mobile-menu icon-button" onClick={() => setMenu(true)}><Menu /></button><span className="mobile-title">{activeLabel}</span><button className="command-trigger" onClick={() => setCommand(true)}><Search /><span>{english ? 'Search Galaxy' : 'Buscar en Galaxy'}</span><kbd>Ctrl K</kbd></button><div className="top-actions"><button className="icon-button notification-button" onClick={() => { if (!notices) setScannerQueue([]); inbox.toggle(); }} aria-expanded={notices} aria-controls="galaxy-notification-center" aria-label={english ? 'Notifications' : 'Notificaciones'}><Bell />{unread > 0 && <i>{Math.min(unread, 99)}</i>}</button><button className="avatar-button" onClick={() => navigate('profile')}><ConstellationAvatar className="avatar" seed={representedUser.id} name={representedUser.name} src={representedUser.avatar} membership={representedUser.membership} /><ChevronDown /></button></div></header><div className="page-content"><div className={`meeting-route ${page === 'meetings' ? 'active' : 'background'}`}><MeetingStudio toast={toast} user={representedUser} joinRequest={joinRequest} onSessionChange={setMeetingSession} canCreate={isMeetingOwner(user)} /></div>{page !== 'meetings' && <div className="standard-route">{content}</div>}</div></main>
     {meetingSession.active && page !== 'meetings' && <div className="background-meeting-bar glass"><button className="background-meeting-main" onClick={() => navigate('meetings')}><span className="meeting-live-dot" /><span><strong>{meetingSession.title || 'Reunión en curso'}</strong><small>{meetingSession.waiting ? 'Esperando admisión' : 'Audio y conexión activos en segundo plano'}</small></span></button>{meetingSession.audioBlocked && <button className="background-audio-button" title="Activar sonido" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /></button>}<button className="secondary-button" onClick={() => navigate('meetings')}>Volver</button></div>}
     {createPortal(<nav className="bottom-nav" aria-label="Navegación principal">{availableNavigation.slice(0, 5).map(([id, label, Icon]) => <button className={page === id ? 'active' : ''} onClick={() => navigate(id)} key={id}><Icon /><span>{label === 'Marketplace' ? 'Market' : label}</span></button>)}</nav>, document.body)}
     {command && <CommandPalette onClose={() => setCommand(false)} navigate={navigate} items={availableNavigation} />}
@@ -460,7 +457,8 @@ function AppShell({ user, onUserChange, onLogout }) {
     {lotajesOpen && <PromotionImageModal image={lotajesImage} alt="Gestión del riesgo según el capital" onClose={() => setLotajesOpen(false)} className="lotajes-promotion" />}
     {!lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
-    {scannerQueue[0] && <ScannerNotice notice={scannerQueue[0]} onClose={() => setScannerQueue((current) => current.slice(1))} onOpen={() => { navigate('black-trade'); setScannerQueue((current) => current.slice(1)); }} />}
+    {notices && <NotificationCenter items={inbox.visible} unread={unread} busy={inbox.busy} error={inbox.error} cleared={inbox.cleared} english={english} onClose={inbox.close} onOpen={openNotice} onReadAll={markAllRead} />}
+    {scannerQueue[0] && <ScannerNotice notice={scannerQueue[0]} onClose={() => setScannerQueue((current) => current.slice(1))} onOpen={() => { inbox.readAll(); navigate('black-trade'); setScannerQueue((current) => current.slice(1)); }} />}
     <Toast item={toastItem} />
   </div>;
 }
