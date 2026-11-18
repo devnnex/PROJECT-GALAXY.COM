@@ -38,6 +38,7 @@ beforeAll(async () => {
   await db.exec(readFileSync(new URL('../supabase/migrations/20261113010000_server_scanner_signals.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/20261113131000_scanner_notice_symbols.sql', import.meta.url), 'utf8'));
   await db.exec(readFileSync(new URL('../supabase/migrations/20261118010000_scanner_speed_and_analytics.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261118170000_scanner_target_scenarios.sql', import.meta.url), 'utf8'));
 }, 20000);
 beforeEach(async () => {
   await db.exec(`reset role;truncate scanner_events,scanner_trades,scanner_daily_statistics,notifications,push_subscriptions,push_delivery_jobs,push_dispatches cascade;
@@ -126,6 +127,7 @@ it('prevents clients from forging signals or reading private runtime, while expo
   await expect(q('select claim_scanner_tick()')).rejects.toThrow();
   await expect(q('select * from scanner_streams')).rejects.toThrow();
   await expect(q('select * from scanner_daily_statistics')).rejects.toThrow();
+  await expect(q("select refresh_scanner_target_statistics(current_date)")).rejects.toThrow();
   expect((await q('select get_scanner_analytics() as value')).rows[0].value.days).toEqual([]);
   expect((await q('select get_black_galaxy_trade() as value')).rows[0].value.signals).toBe(0);
   await q("select set_config('test.user',$1,false)", [guest]);
@@ -145,6 +147,7 @@ it('updates the shared totals incrementally without double-counting earlier TP o
   stats = (await q('select get_scanner_analytics() as value')).rows[0].value;
   expect(stats.days[0]).toMatchObject({ signals: 1, wins: 1, open: 0, gain: 30, peakGain: 15, hits: [1, 1, 1] });
   await db.exec(readFileSync(new URL('../supabase/migrations/20261118010000_scanner_speed_and_analytics.sql', import.meta.url), 'utf8'));
+  await db.exec(readFileSync(new URL('../supabase/migrations/20261118170000_scanner_target_scenarios.sql', import.meta.url), 'utf8'));
   expect((await q('select get_scanner_analytics() as value')).rows[0].value.days).toEqual(stats.days);
   await q('delete from scanner_trades where trade_key=$1', [trade.key]);
   expect((await q('select get_scanner_analytics() as value')).rows[0].value.days).toEqual([]);
@@ -182,4 +185,39 @@ it('does not invoke an Edge Function while the provider response is still cached
   expect((await q('select count(*)::int as n from push_dispatches')).rows[0].n).toBe(0);
   await q("update scanner_streams set runtime='{}'"); await q('select dispatch_scanner_tick()');
   expect((await q('select count(*)::int as n from push_dispatches')).rows[0].n).toBe(1);
+});
+
+it('caches each fixed exit using observed TP and SL, preserving protected stops and unknown exits', async () => {
+  const full = updateTrade(makeTrade('full', 1_200_000), 115, Date.now()).trade;
+  const protectedWin = updateTrade(updateTrade(makeTrade('protected', 900_000), 105, Date.now()).trade, 90, Date.now()).trade;
+  const loss = updateTrade(makeTrade('loss', 600_000), 90, Date.now()).trade;
+  const ignored = updateTrade(makeTrade('ignored', 300_000), 102, Date.now(), true).trade;
+  const pending = updateTrade(makeTrade('pending'), 105, Date.now()).trade;
+  for (const trade of [full, protectedWin, loss, ignored, pending]) {
+    await q('insert into scanner_trades(stream_id,trade_key,bar_at,side,status,outcome,payload) values($1,$2,$3,$4,$5,$6,$7)', ['xauusd-5m', trade.key, trade.barAt, trade.side, trade.status, trade.outcome, j(trade)]);
+  }
+  await q("insert into scanner_events(trade_id,type,occurred_at,payload) select id,'SL',now(),payload from scanner_trades where trade_key='protected'");
+  const stats = (await q('select get_scanner_analytics() as value')).rows[0].value;
+  const totals = stats.days.reduce((acc, day) => day.targets.map((target, i) => Object.fromEntries(['wins','gain','losses','loss','protectedStops','protectedLoss','pending','excluded'].map((key) => [key, (acc[i]?.[key] || 0) + target[key]]))), []);
+  expect(totals[0]).toMatchObject({ wins: 3, gain: 15, losses: 1, loss: 10, protectedStops: 0, pending: 0, excluded: 1 });
+  expect(totals[1]).toMatchObject({ wins: 1, gain: 10, losses: 2, loss: 20, protectedStops: 1, protectedLoss: 10, pending: 1, excluded: 1 });
+  expect(totals[2]).toMatchObject({ wins: 1, gain: 15, losses: 2, loss: 20, protectedStops: 1, protectedLoss: 10, pending: 1, excluded: 1 });
+  // The protected stop remains a WIN in the original record.
+  expect((await q('select get_black_galaxy_trade() as value')).rows[0].value).toMatchObject({ signals: 5, wins: 2, losses: 1, ignored: 1 });
+});
+
+it('updates target summaries on later TP and on stop deletion without double counting', async () => {
+  const trade = updateTrade(makeTrade(), 105, Date.now()).trade;
+  await q('insert into scanner_trades(stream_id,trade_key,bar_at,side,status,outcome,payload) values($1,$2,$3,$4,$5,$6,$7)', ['xauusd-5m', trade.key, trade.barAt, trade.side, trade.status, trade.outcome, j(trade)]);
+  const reached = updateTrade(trade, 110, Date.now()).trade;
+  for (let i = 0; i < 2; i++) await q('update scanner_trades set payload=$1 where trade_key=$2', [j(reached), trade.key]);
+  let day = (await q('select get_scanner_analytics() as value')).rows[0].value.days[0];
+  expect(day.targets[1]).toMatchObject({ wins: 1, gain: 10, pending: 0 });
+  expect(day.targets[2].pending).toBe(1);
+  await q("insert into scanner_events(trade_id,type,occurred_at,payload) select id,'SL',now(),payload from scanner_trades");
+  day = (await q('select get_scanner_analytics() as value')).rows[0].value.days[0];
+  expect(day.targets[2]).toMatchObject({ protectedStops: 1, pending: 0 });
+  await q("delete from scanner_events where type='SL'");
+  day = (await q('select get_scanner_analytics() as value')).rows[0].value.days[0];
+  expect(day.targets[2]).toMatchObject({ protectedStops: 0, pending: 1 });
 });

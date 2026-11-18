@@ -15,8 +15,10 @@ Ahora:
 
 La latencia final depende de la región del proyecto Supabase, la ubicación de los usuarios y la ruta WebRTC. El siguiente paso de medición es registrar p50/p95 de `join_meeting`, `post_meeting_message` y tiempo hasta Broadcast desde clientes en redes reales.
 
-Black Galaxy Trade conserva un único scanner de servidor para todos los usuarios. El cron revisa disponibilidad cada 15 segundos y respeta la caché de 30 segundos del proveedor antes de invocar la Edge Function. Los resúmenes diarios se mantienen por diferencias cuando cambia una operación; consultar el panel no recuenta toda la tabla de operaciones.
+Black Galaxy Trade conserva un único scanner de servidor para todos los usuarios. El cron revisa disponibilidad cada cinco segundos y respeta la caché de 30 segundos del proveedor antes de invocar la Edge Function. Los resúmenes diarios se mantienen por diferencias cuando cambia una operación; los escenarios de salida fija recalculan solo ese día con un índice temporal. Consultar el panel no recuenta toda la tabla de operaciones. Si el proveedor falla, los reintentos esperan 30 segundos.
 
 El panel pasa de seis a tres consultas de respaldo por minuto visible; las notificaciones de cuatro a tres. Realtime entrega los avisos de scanner directamente sin una consulta adicional por destinatario y evento. Las ráfagas de TP se agrupan, no hay solicitudes simultáneas del mismo recurso, las pestañas ocultas detienen el respaldo y los fallos aplican espera progresiva hasta 60 segundos. El simulador se carga como módulo separado y sus controles no consultan Supabase.
+
+La barra de lotaje, radios de TP, filtro de año y tabla de meses/años usan los resúmenes locales. Los efectos de metal y glass del historial son gradientes estáticos. Los avisos flotantes nuevos sustituyen al anterior inmediatamente; ya no esperan turnos de nueve segundos para mostrar TP2/TP3.
 
 Las visitas todavía consumen conexiones Realtime y lecturas; no existe un número de usuarios ilimitado ni una garantía de coste sin medir tráfico y el plan real. La revisión conserva cuotas OHLC, permisos y configuración de reuniones, pagos y mensajes.

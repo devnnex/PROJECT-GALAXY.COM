@@ -28,7 +28,7 @@ import ProfilePhotoCropper from './components/ProfilePhotoCropper';
 import AdminUserEditor from './components/AdminUserEditor';
 import BlackGalaxyTrade, { ScannerNotice, ScannerNotificationLabel } from './components/BlackGalaxyTrade';
 import { watchVisibleResource } from './services/visible-refresh';
-import { scannerNoticeBatch } from './services/scanner-notices';
+import { latestScannerBanner, scannerNoticeBatch } from './services/scanner-notices';
 import { playScannerSound, resumeScannerSound } from './services/scanner-audio';
 import { parseScannerNotice } from './services/scanner-presentation';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
@@ -352,7 +352,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     const batch = scannerNoticeBatch(scannerCursor.current, notificationItems, user.id);
     scannerCursor.current = batch.cursor;
     if (batch.fresh.length) {
-      setScannerQueue((current) => [...current, ...batch.fresh].slice(-8));
+      setScannerQueue((current) => latestScannerBanner(batch.fresh, current));
       const type = batch.fresh.some((notice) => parseScannerNotice(notice).event === 'SL') ? 'SL' : batch.fresh.some((notice) => parseScannerNotice(notice).event?.startsWith('TP')) ? 'TP' : 'SIGNAL';
       if (!document.hidden) playScannerSound(type);
     }

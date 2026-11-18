@@ -24,7 +24,6 @@
 .bgt-trade-neutral .bgt-levels .entry strong{color:#174b89}
 .bgt-trade-neutral .bgt-levels .target strong{color:#09623e}
 .bgt-trade-neutral .bgt-levels .risk strong{color:#ad233c}
-.bgt-trade-neutral .bgt-levels strong{color:#111923!important}
 .bgt-history-scope{display:block;margin-top:7px;font-size:10px;color:#9aa8bc;line-height:1.6}
 .bgt-history-head{flex-wrap:wrap}
 .bgt-event-count{border:1px solid #ffffff13;border-radius:20px;padding:6px 12px;font-size:11px;color:#cbb78d}
@@ -106,3 +105,96 @@
   .bgt-event-list>div{gap:8px}.bgt-event-list>div>strong small{display:none}.bgt-event-list time{font-size:9px}
 }
 @media(prefers-reduced-motion:reduce){.bgt-simulator-backdrop,.bgt-sim-result>strong{animation:none}.bgt-rate-bar i,.bgt-sim-launch{transition:none}}
+
+/* Purple glass and brushed-metal finish, scoped to history and analysis.
+   Static highlights keep the effect light even on a long trade history. */
+.bgt-history>article[class*="bgt-trade-"]{position:relative;background:radial-gradient(ellipse at 8% 0,#9071ef16,transparent 58%),linear-gradient(125deg,#272533e8,#151520f5 47%,#24212fe8);border:1px solid #c9bcff2e;box-shadow:inset 0 1px 0 #fff1,inset 0 -1px 0 #0005,0 7px 20px #0002;color:#eef0ff;transition:border-color .18s ease,box-shadow .18s ease}
+.bgt-history>article[class*="bgt-trade-"]:before{content:"";position:absolute;top:0;left:15px;right:15px;height:1px;background:linear-gradient(90deg,transparent,#e5dcff8c,#ac88ff70,transparent);pointer-events:none}
+.bgt-history>article[class*="bgt-trade-"]:hover{border-color:#af8cfa63;box-shadow:inset 0 1px 0 #fff2,0 0 22px #9361ec12}
+.bgt-history .bgt-history-title{background:linear-gradient(100deg,#b2a2e00c,#ffffff04,transparent);border-bottom:1px solid #d8c5ff13;color:#f1edff}
+.bgt-history .bgt-history-title time{color:#b1a7c4}
+.bgt-history .bgt-levels>div{background:linear-gradient(140deg,#ffffff05,#100d1c25);border-color:#c4b0f00c}
+.bgt-history .bgt-levels span{color:#a8a0ba}
+.bgt-history .bgt-levels .entry strong{color:#b1a5ff}
+.bgt-history .bgt-levels .target strong{color:#77dfc2}
+.bgt-history .bgt-levels .risk strong{color:#f18eaf}
+.bgt-history .bgt-badge{background-image:linear-gradient(155deg,#ffffff20,transparent 65%);box-shadow:inset 0 1px 0 #ffffff12;letter-spacing:.025em}
+.bgt-history-head .bgt-eyebrow{color:#bca2fa}
+.bgt-history-head .bgt-filters button.active{background:linear-gradient(140deg,#67518d66,#392f4e);color:#e0cfff;box-shadow:inset 0 1px 0 #d7c2ff16}
+
+.bgt-simulator-backdrop{background:#080611d9}
+.bgt-simulator{border-color:#c8b8ef4a;background:radial-gradient(ellipse at 90% 0,#8b5cde1d,transparent 44%),linear-gradient(130deg,#262332f5,#12111dfc 40%,#1c172af9);box-shadow:inset 0 1px 0 #ffffff21,0 30px 100px #000a,0 0 55px #8553d81a}
+.bgt-simulator>header{background:linear-gradient(115deg,#d5c4ff08,#9767ea0a,transparent);border-color:#d8c2ff15}
+.bgt-simulator .bgt-eyebrow{color:#c3a5ff}
+.bgt-simulator h2 em{color:#c8a7ff}
+.bgt-simulator-body{scrollbar-color:#6a5288 #15121e}
+.bgt-sim-controls input,.bgt-sim-controls select{background:#0d0b17b3;border-color:#c9b3ff23;color:#efe9ff}
+.bgt-sim-controls input:focus,.bgt-sim-controls select:focus{border-color:#b893f6}
+.bgt-sim-result{border-color:#a884ee4a;background:radial-gradient(ellipse at 50% -30%,#9868df32,transparent 75%),linear-gradient(125deg,#2b243e,#181523 60%,#272137);box-shadow:inset 0 1px 0 #f0e5ff17,0 0 28px #8c54dd0a}
+.bgt-sim-result>span{color:#c7a8ee;font-size:10px;line-height:1.6}
+.bgt-sim-result>strong{color:#f1e8ff;text-shadow:0 0 25px #b087f32e}
+.bgt-sim-result>p,.bgt-sim-result>div>span{color:#b9adca}
+.bgt-sim-result b{color:#f2eafa}
+.bgt-sim-result.negative{border-color:#d678aa55;background:radial-gradient(ellipse at 50% -30%,#b7499225,transparent 75%),linear-gradient(125deg,#302034,#1f1628)}
+.bgt-sim-summary>span{background:linear-gradient(140deg,#ffffff04,#a37be305);border-color:#c8a9ff15;color:#ada0c2}
+.bgt-sim-summary b{color:#e9ddfa}
+.bgt-model-note{font-size:11px;line-height:1.85;color:#b0a5bf}
+.bgt-period-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+.bgt-period-card{background:linear-gradient(130deg,#b99bea08,#ffffff03);border-color:#c5a6f91f;box-shadow:inset 0 1px 0 #fff08}
+.bgt-period-card>strong{color:#e8d8ff}
+.bgt-period-card p{color:#c3a2ed}
+.bgt-period-card>span,.bgt-period-card small{color:#b0a3c1}
+.bgt-rate-bar{background:#b99cf00b}
+.bgt-rate-bar i{background:linear-gradient(90deg,#8c5eea16,#a576e97a)}
+.bgt-rate-bar span{color:#f0e4ff}
+.bgt-month-table{border-color:#c5a6f91f}
+.bgt-month-table thead th{background:#b99cf009;color:#c0accf}
+.bgt-month-table tbody th{color:#d9c7ec}
+.bgt-scenario-caption{font-size:11px;color:#bda6d8;margin:-6px 0 16px}
+.bgt-period-grouping{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin:0 0 12px;color:#b6a4c7;font-size:11px}
+.bgt-period-grouping select{background:#171120;border:1px solid #b79ae731;border-radius:8px;padding:7px 24px 7px 9px;color:#e9dafa;color-scheme:dark}
+
+.bgt-exit-options{border:0;padding:0;margin:0 0 22px;min-width:0}
+.bgt-exit-options legend{font:600 15px Manrope,sans-serif;color:#e9dafa;letter-spacing:-.02em}
+.bgt-exit-options>p{font-size:11px;color:#ab9bbd;line-height:1.7;margin:7px 0 13px}
+.bgt-exit-options>div{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.bgt-exit-options label{position:relative;display:flex;gap:9px;align-items:center;padding:14px 11px;border-radius:11px;border:1px solid #bfa4ec23;background:linear-gradient(130deg,#ffffff06,#a97be904);cursor:pointer;min-width:0;transition:border-color .15s,background-color .15s}
+.bgt-exit-options label.selected{border-color:#af83f99c;background:radial-gradient(ellipse at 30% 0,#9f67f530,transparent 90%),#9d70dc0f;box-shadow:inset 0 1px 0 #e1c5ff26,0 0 14px #8854d412}
+.bgt-exit-options label:focus-within{outline:2px solid #c0a0ff;outline-offset:3px}
+.bgt-exit-options input{position:absolute;width:1px;height:1px;opacity:0}
+.bgt-radio-dot{display:block;flex:0 0 13px;height:13px;border:1px solid #ad94ca6b;border-radius:50%;background:#15101f;box-shadow:inset 0 1px 2px #0008}
+.selected>.bgt-radio-dot{border-color:#c29af9;background:radial-gradient(circle,#d3b6ff 0 30%,#b383f1 35% 42%,#21152f 48%);box-shadow:0 0 10px #a66bf141}
+.bgt-exit-options strong{display:block;font-size:11px;font-weight:600;color:#e5d6f7;line-height:1.5}
+.bgt-exit-options small{display:block;color:#a999bc;font-size:9px;margin-top:4px;line-height:1.5}
+.bgt-lot-workbench{border:1px solid #c4a8ef28;border-radius:14px;background:linear-gradient(130deg,#c2a2f208,#0e0b17a6);padding:17px 19px;margin-bottom:19px;box-shadow:inset 0 1px 0 #ffffff08}
+.bgt-lot-heading{display:flex;align-items:end;justify-content:space-between;gap:16px;margin-bottom:23px}
+.bgt-lot-heading label{display:grid;gap:7px;font-size:10px;color:#b6a4c7;min-width:0}
+.bgt-lot-heading input{max-width:150px;min-width:0;width:100%;height:44px;border:1px solid #ba99ec38;border-radius:9px;background:#100c1bcc;padding:0 12px;color:#eadbfa;font:600 22px Manrope,sans-serif;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.bgt-lot-heading select{min-height:36px;padding:7px 10px;border:1px solid #c8a8f524;background:#16101fcc;border-radius:8px;color:#cfb9e7;font-size:11px;color-scheme:dark;max-width:100%}
+.bgt-lot-slider{-webkit-appearance:none;appearance:none;display:block;box-sizing:border-box;width:100%;height:7px;border:0;border-radius:20px;margin:12px 0 19px;padding:0;cursor:pointer;background:linear-gradient(90deg,#9d72ef 0 var(--lot-progress),#3b2e50 var(--lot-progress) 100%);box-shadow:inset 0 1px 3px #0007}
+.bgt-lot-slider::-webkit-slider-runnable-track{height:7px;background:transparent;border-radius:20px}
+.bgt-lot-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;box-sizing:border-box;width:23px;height:23px;margin-top:-8px;border:2px solid #d2bbf6;border-radius:50%;background:linear-gradient(135deg,#f3eaff,#a988d0 45%,#52376d);box-shadow:inset 0 1px 0 #fff8,0 0 13px #aa73ef70,0 3px 8px #0006}
+.bgt-lot-slider::-moz-range-track{height:7px;background:transparent;border:0;border-radius:20px}
+.bgt-lot-slider::-moz-range-thumb{box-sizing:border-box;width:23px;height:23px;border:2px solid #d2bbf6;border-radius:50%;background:linear-gradient(135deg,#f3eaff,#a988d0 45%,#52376d);box-shadow:inset 0 1px 0 #fff8,0 0 13px #aa73ef70}
+.bgt-lot-slider:focus-visible{outline:2px solid #ba92f8;outline-offset:7px}
+.bgt-lot-scale{display:flex;align-items:center;justify-content:space-between;gap:8px;color:#a28bb8;font-size:9px}
+.bgt-lot-scale>span:nth-child(2){color:#c2abd8}
+.bgt-lot-workbench>p{font-size:10px;color:#bca9cf;line-height:1.7;margin:15px 0 0}
+.bgt-lot-workbench>p strong{color:#dfc4ff;font-size:13px;font-weight:600;margin-right:4px}
+.bgt-lot-preview{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid #c9aaef16;padding-top:13px;margin-top:15px;color:#bda5d5;font-size:11px}
+.bgt-lot-preview output{font:600 24px Manrope,sans-serif;color:#e4cbff;letter-spacing:-.04em;font-variant-numeric:tabular-nums;text-shadow:0 0 18px #b48be025;white-space:nowrap}
+.bgt-period-controls{grid-template-columns:repeat(3,minmax(0,1fr));align-items:end;margin-bottom:15px}
+.bgt-period-controls>.bgt-clear-filters{grid-column:1/-1;justify-self:end;padding:4px 0;color:#c09ee9;background:none}
+.bgt-sim-advanced{margin:0 0 19px;padding:11px 13px;background:#ffffff02;border:1px solid #c4a6ec1a;border-radius:9px}
+.bgt-sim-advanced>summary{font-size:11px;color:#bfa4d9;cursor:pointer;line-height:1.7}
+.bgt-sim-advanced>summary::marker{color:#b485ed}
+.bgt-sim-advanced[open]>.bgt-sim-controls{margin:15px 0 3px}
+@media(max-width:700px){
+  .bgt-exit-options>div{grid-template-columns:repeat(2,minmax(0,1fr))}.bgt-exit-options label{padding:12px 11px;min-height:65px}
+  .bgt-exit-options strong{font-size:12px}.bgt-exit-options small{font-size:10px}
+  .bgt-lot-workbench{padding:15px}.bgt-lot-heading input{max-width:124px;font-size:22px}.bgt-lot-heading select{font-size:13px;min-height:42px}
+  .bgt-lot-scale{font-size:8px}.bgt-period-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .bgt-period-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.bgt-period-controls>label:first-child{grid-column:1/-1}
+  .bgt-period-grouping select{font-size:16px}.bgt-model-note{font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){.bgt-history>article[class*="bgt-trade-"],.bgt-exit-options label{transition:none}}

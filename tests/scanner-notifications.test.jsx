@@ -1,9 +1,26 @@
 import { expect, it, vi, afterEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ScannerNotice, TradeLevels } from '../src/components/BlackGalaxyTrade';
-import { scannerNoticeBatch } from '../src/services/scanner-notices';
+import { latestScannerBanner, scannerNoticeBatch } from '../src/services/scanner-notices';
 import { parseScannerNotice, quotePresentation } from '../src/services/scanner-presentation';
 vi.mock('../src/services/api', () => ({ api: { getBlackGalaxyTrade: vi.fn() } }));
+
+it('shows the newest target immediately instead of putting it behind older nine-second banners', () => {
+  const tp1 = { id: 'tp1', title: 'TP1' }, tp2 = { id: 'tp2', title: 'TP2' }, tp3 = { id: 'tp3', title: 'TP3' };
+  expect(latestScannerBanner([tp1, tp2, tp3])).toEqual([tp3]);
+  expect(latestScannerBanner([tp2])).toEqual([tp2]);
+  expect(latestScannerBanner([])).toEqual([]);
+});
+
+it('does not replace a current target with an older Push or a lower TP from the same sample', () => {
+  const current = { id: 'tp3', title: '✅ TP3 alcanzado', body: '🔵 Entrada 4000.000 | SL 3990.000', createdAt: '2026-11-18T16:00:00Z' };
+  const old = { ...current, id: 'old', title: '✅ TP2 alcanzado', createdAt: '2026-11-18T15:59:30Z' };
+  const earlierTarget = { ...current, id: 'tp1', title: '✅ TP1 alcanzado' };
+  expect(latestScannerBanner([old], [current])).toEqual([current]);
+  expect(latestScannerBanner([earlierTarget], [current])).toEqual([current]);
+  const newSignal = { ...current, id: 'next', title: '🔵 SELL · Entrada', createdAt: '2026-11-18T16:00:30Z' };
+  expect(latestScannerBanner([newSignal], [current])).toEqual([newSignal]);
+});
 
 it('does not replay old notices on login, duplicates, read notices or another account history', () => {
   const now = Date.now(); const notice = (id, extra = {}) => ({ id, type: 'SCANNER_SIGNAL', createdAt: new Date(now).toISOString(), ...extra });
