@@ -39,3 +39,30 @@ it('rejects invalid numeric inputs instead of displaying misleading gains', () =
   expect(simulateRecordedResults(summary, { lots: 0.1, contractSize: 0 })).toBeNull();
   expect(simulateRecordedResults(summary, { lots: 0.1, contractSize: 100, costPerLot: -1 })).toBeNull();
 });
+
+it('compares one full position exiting at TP1/TP2/TP3 and keeps SL after a previous TP without discount', () => {
+  const days = [day('2026-11-18', 2, 1, { signals: 5, targets: [
+    { wins: 3, gain: 15, losses: 1, loss: 10, pending: 0, excluded: 1 },
+    { wins: 1, gain: 10, losses: 2, loss: 20, protectedStops: 1, protectedLoss: 10, pending: 1, excluded: 1 },
+    { wins: 1, gain: 15, losses: 2, loss: 20, protectedStops: 1, protectedLoss: 10, pending: 1, excluded: 1 },
+  ] })];
+  const tp1 = summarizePeriods(days, '', '', 'tp1'), tp2 = summarizePeriods(days, '', '', 'tp2'), tp3 = summarizePeriods(days, '', '', 'tp3');
+  expect(tp1).toMatchObject({ wins: 3, losses: 1, rate: 75, gain: 15, peakGain: 15 });
+  expect(tp2).toMatchObject({ wins: 1, losses: 1, loss: 10, open: 1, ignored: 2 });
+  expect(simulateRecordedResults(tp1, { lots: 0.1, contractSize: 100 }).net).toBe(50);
+  expect(simulateRecordedResults(tp2, { lots: 0.1, contractSize: 100 }).net).toBe(0);
+  expect(simulateRecordedResults(tp3, { lots: 0.1, contractSize: 100 }).net).toBe(50);
+});
+
+it('never invents target profits when the server does not yet provide target scenarios', () => {
+  const summary = summarizePeriods([day('2026-11-18', 1, 0, { peakGain: 15 })], '', '', 'tp2');
+  expect(summary.available).toBe(false);
+  expect(simulateRecordedResults(summary, { lots: 0.1, contractSize: 100 })).toBeNull();
+});
+
+it('weights yearly results over the selected dates and does not average daily percentages', () => {
+  const summary = summarizePeriods([day('2025-01-01', 1, 0), day('2025-12-31', 1, 8), day('2026-01-01', 4, 1)]);
+  expect(summary.bestYear).toMatchObject({ day: '2026', rate: 80, count: 5 });
+  expect(summary.worstYear).toMatchObject({ day: '2025', rate: 20, count: 10 });
+  expect(summarizePeriods(summary.days, '2026-01-01', '2026-12-31').yearly).toHaveLength(1);
+});

@@ -28,7 +28,7 @@ export async function activateScanner({ enable = false, request = fetch, log = c
   };
   try {
     log('1/5 Instalando el registro privado, los permisos y la programación del scanner...');
-    for (const name of ['20261113010000_server_scanner_signals.sql', '20261113131000_scanner_notice_symbols.sql', '20261118010000_scanner_speed_and_analytics.sql']) {
+    for (const name of ['20261113010000_server_scanner_signals.sql', '20261113131000_scanner_notice_symbols.sql', '20261118010000_scanner_speed_and_analytics.sql', '20261118170000_scanner_target_scenarios.sql']) {
       await call(['db', 'query', '--file', resolve(root, 'supabase/migrations', name)]);
     }
     const dispatchSecret = randomBytes(32).toString('base64url');
