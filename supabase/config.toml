@@ -14,3 +14,7 @@ verify_jwt = false
 # Called exclusively by the private, server-side scanner dispatch secret.
 [functions.scanner-signals]
 verify_jwt = false
+
+# Private database-to-server dispatch; Telegram credentials never reach clients.
+[functions.scanner-telegram]
+verify_jwt = false

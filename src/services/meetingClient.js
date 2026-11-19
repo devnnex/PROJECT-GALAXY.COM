@@ -219,15 +219,21 @@ export class SupabaseMeetingConnection extends MeetingConnection {
     this.pendingRemovals.delete(peerId);
   }
 
-  schedulePeerRemoval(peerId) {
+  schedulePeerRemoval(peerId, delay = 4500) {
     if (this.pendingRemovals.has(peerId)) return;
     const timer = setTimeout(() => {
       this.pendingRemovals.delete(peerId);
       if (!this.active || !this.participants.has(peerId)) return;
       const stillCanonical = [...this.canonicalPresence().values()].some((peer) => peer.peerId === peerId);
       if (stillCanonical) { this.syncPresence().catch(() => {}); return; }
+      // Signaling presence can disappear in a background tab while the direct
+      // media connection is healthy. Do not cut that established conversation.
+      const pc = this.peers.get(peerId)?.pc;
+      if (pc?.connectionState === 'connected' || (pc?.connectionState !== 'closed' && ['connected', 'completed'].includes(pc?.iceConnectionState))) {
+        this.schedulePeerRemoval(peerId, 15_000); return;
+      }
       this.removePeer(peerId);
-    }, 4500);
+    }, delay);
     this.pendingRemovals.set(peerId, timer);
   }
 

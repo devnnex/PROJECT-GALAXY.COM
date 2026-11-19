@@ -13,7 +13,7 @@
 .video-surface video.audio-only { opacity: 0; pointer-events: none; }
 .video-surface video::-webkit-media-controls, .video-surface video::-webkit-media-controls-start-playback-button { display: none!important; -webkit-appearance: none; }
 .remote-audio { position: absolute; width: 1px; height: 1px; left: -2px; bottom: 0; opacity: .001; pointer-events: none; }
-.remote-audio-layer { position: absolute; width: 1px; height: 1px; overflow: hidden; pointer-events: none; }
+.remote-audio-layer { position: fixed; left: 0; top: 0; width: 1px; height: 1px; overflow: hidden; pointer-events: none; }
 .meeting-audio-unlock { position: absolute; z-index: 14; left: 50%; bottom: 18px; transform: translateX(-50%); min-height: 39px; display: flex; align-items: center; gap: 8px; padding: 0 15px; border: 1px solid rgba(172, 128, 246, .5); border-radius: 22px; background: rgba(17, 12, 23, .96); color: #efe5ff; box-shadow: 0 10px 30px rgba(0,0,0,.45); font: 600 9px 'Manrope'; }
 .meeting-audio-unlock svg { width: 16px; color: #bb91fb; }
 .resume-audio-button { position: absolute; z-index: 4; left: 50%; bottom: 42px; transform: translateX(-50%); min-height: 36px; display: inline-flex; align-items: center; gap: 7px; padding: 0 13px; border: 1px solid rgba(168, 123, 245, .42); border-radius: 20px; background: rgba(19, 13, 27, .94); color: #e7dafa; font: 600 9px 'Manrope'; box-shadow: 0 8px 25px rgba(0, 0, 0, .35); white-space: nowrap; }

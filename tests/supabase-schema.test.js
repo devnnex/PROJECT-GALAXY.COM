@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 const schema = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8');
 const api = readFileSync(new URL('../src/services/api.js', import.meta.url), 'utf8');
 const meetingStudio = readFileSync(new URL('../src/components/MeetingStudio.jsx', import.meta.url), 'utf8');
+const meetingAudio = readFileSync(new URL('../src/components/MeetingAudioLayer.jsx', import.meta.url), 'utf8');
 const meetingClient = readFileSync(new URL('../src/services/meetingClient.js', import.meta.url), 'utf8');
 const supabaseClient = readFileSync(new URL('../src/services/supabase.js', import.meta.url), 'utf8');
 const meetingStyles = readFileSync(new URL('../src/meeting-live.css', import.meta.url), 'utf8');
@@ -122,8 +123,8 @@ describe('Supabase contract', () => {
   });
 
   it('keeps remote meeting audio direct and independent from the screen-share mixer', () => {
-    expect(meetingStudio).toContain('audio.defaultMuted = false; audio.muted = false; audio.volume = 1');
-    expect(meetingStudio).toContain('audio.srcObject = tracks.length ? new MediaStream(tracks) : null');
+    expect(meetingAudio).toContain('audio.defaultMuted = false; audio.muted = false; audio.volume = 1');
+    expect(meetingAudio).toContain('audio.srcObject = tracks.length ? new MediaStream(tracks) : null');
     expect(meetingStudio).not.toContain('mixedSource.connect(output.input)');
     expect(meetingStudio).toContain('function meetingOutputBus()');
     expect(meetingStudio).not.toContain("track.addEventListener('mute', changed)");
@@ -141,7 +142,7 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('let sharedMeetingAudioContext = null');
     expect(meetingStudio).toContain('const context = meetingAudioContext(); if (!context) return undefined;');
     expect(meetingStudio).toContain('primeMeetingAudio();');
-    expect(meetingStudio).toContain("window.addEventListener('galaxy:resume-meeting-audio', resume)");
+    expect(meetingAudio).toContain("window.addEventListener('galaxy:resume-meeting-audio', resume)");
   });
 
   it('lets the presenter mute only the captured screen sound', () => {
@@ -168,7 +169,7 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain("deEsser.frequency.value = desktop ? 4200 : 5200");
     expect(meetingStudio).toContain('createDynamicsCompressor()');
     expect(meetingStudio).toContain('createLongRangeMicrophoneStream(captured)');
-    expect(meetingStudio).toContain('audio.muted = false');
+    expect(meetingAudio).toContain('audio.muted = false');
     expect(meetingStudio).toContain("{ id: 'UFO'");
     expect(meetingStudio).toContain("{ id: 'ALIEN_BIRTHDAY'");
     expect(meetingStudio).toContain('assets/galaxy-dancer-reaction.webp');
@@ -256,7 +257,7 @@ describe('Supabase contract', () => {
     expect(meetingStudio).toContain('requestDisplayCapture({ video: qualityVideo, audio:');
     expect(meetingStudio).toContain('sharedLocalStream(stream)');
     expect(meetingStudio).toContain('Pantalla, micrófono y audio disponible mezclados correctamente.');
-    expect(meetingStudio).toContain('<RemoteAudioLayer streams={remoteStreams}');
+    expect(meetingStudio).toContain('<MeetingAudioLayer streams={remoteStreams}');
     expect(meetingStudio).toContain('playAudio={false}');
     expect(meetingStudio).toContain('suppressLocalAudioPlayback: false');
     expect(meetingStudio).toContain("selfBrowserSurface: 'exclude'");
@@ -411,7 +412,7 @@ describe('Supabase contract', () => {
   });
 
   it('keeps presenter voice alive while the shared-audio context changes state', () => {
-    expect(meetingStudio).toContain('microphoneTracks.find((track) => track.enabled)');
+    expect(meetingStudio).toContain('fallbackMicrophones.find((track) => track.enabled)');
     expect(meetingStudio).toContain('mixer.setStateHandler?.((running)');
     expect(meetingStudio).toContain('running && mixer.mixedTrack ? mixer.mixedTrack : mixer.fallbackTrack');
     expect(meetingClient).toContain('this.mediaUpdate = Promise.resolve()');
@@ -421,10 +422,10 @@ describe('Supabase contract', () => {
   it('keeps meeting audio active when the app moves to the background', () => {
     expect(meetingStudio).toContain('function keepMeetingAudioAlive()');
     expect(meetingStudio).toContain('context.createConstantSource()');
-    expect(meetingStudio).toContain("window.addEventListener('pagehide', background)");
+    expect(meetingAudio).toContain("window.addEventListener('pagehide', background)");
     expect(meetingStudio).toContain("window.addEventListener('pagehide', pageHiding)");
-    expect(meetingStudio).toContain('longRangeMicrophoneSources.get(processedTrack)');
-    expect(meetingStudio).toContain('const microphoneTrack = background ? nativeTrack : processedTrack');
+    expect(meetingStudio).toContain('meetingTransportStream(stream,');
+    expect(meetingStudio).toContain('reliableMeetingStream(mediaRef.current, background)');
     expect(meetingStudio).toContain('continueAudio(document.hidden)');
     expect(meetingStudio).toContain("context.addEventListener('statechange', stateChanged)");
   });

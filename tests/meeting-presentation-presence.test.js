@@ -5,6 +5,36 @@ vi.mock('../src/services/supabase.js', () => ({ primeRealtime: vi.fn(), subscrib
 
 import { SupabaseMeetingConnection } from '../src/services/meetingClient.js';
 
+it('keeps connected WebRTC media when background signaling presence disappears, then removes a disconnected peer', async () => {
+  vi.useFakeTimers();
+  try {
+    const client = Object.assign(Object.create(SupabaseMeetingConnection.prototype), { active: true, participants: new Map(), peers: new Map(), pendingRemovals: new Map() });
+    client.participants.set('speaker', { peerId: 'speaker' });
+    const pc = { connectionState: 'connected', iceConnectionState: 'completed' };
+    client.peers.set('speaker', { pc }); client.canonicalPresence = () => new Map(); client.removePeer = vi.fn();
+    client.schedulePeerRemoval('speaker'); client.schedulePeerRemoval('speaker');
+    await vi.advanceTimersByTimeAsync(4500);
+    expect(client.removePeer).not.toHaveBeenCalled(); expect(client.pendingRemovals.size).toBe(1);
+    await vi.advanceTimersByTimeAsync(30_000); expect(client.removePeer).not.toHaveBeenCalled();
+    pc.connectionState = 'disconnected'; pc.iceConnectionState = 'disconnected';
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(client.removePeer).toHaveBeenCalledExactlyOnceWith('speaker'); expect(client.pendingRemovals.size).toBe(0);
+  } finally { vi.useRealTimers(); }
+});
+
+it('removes a departed peer without established media and cancels removal when presence returns', async () => {
+  vi.useFakeTimers();
+  try {
+    const client = Object.assign(Object.create(SupabaseMeetingConnection.prototype), { active: true, participants: new Map(), peers: new Map(), pendingRemovals: new Map() });
+    client.participants.set('gone', { peerId: 'gone' }); client.participants.set('returning', { peerId: 'returning' });
+    client.canonicalPresence = () => new Map([['user', { peerId: 'returning' }]]);
+    client.removePeer = vi.fn(); client.syncPresence = vi.fn().mockResolvedValue();
+    client.schedulePeerRemoval('gone'); client.schedulePeerRemoval('returning');
+    await vi.advanceTimersByTimeAsync(4500);
+    expect(client.removePeer).toHaveBeenCalledExactlyOnceWith('gone'); expect(client.syncPresence).toHaveBeenCalledOnce();
+  } finally { vi.useRealTimers(); }
+});
+
 it('announces screen sharing without retracking presence and disturbing connected peers', () => {
   const client = Object.create(SupabaseMeetingConnection.prototype);
   client.sharingRevision = 1;
