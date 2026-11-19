@@ -4,10 +4,14 @@ import { deliverTelegram } from '../supabase/functions/scanner-telegram/worker';
 
 const event = (type = 'TP2') => ({ id: 1, lease: 'lease', kind: 'EVENT', payload: { type, tradeId: 'abcdef12-3456', occurredAt: '2026-11-19T14:00:00Z', trade: { side: 'BUY', entry: 4000, sl: 3995, tp1: 4005, tp2: 4010, tp3: 4015 } } });
 it('renders the same entry, stop and targets with Bogotá time and protects prior-TP stops', () => {
-  const text = telegramMessage(event()); expect(text).toContain('TP2 ALCANZADO'); expect(text).toContain('4.010,000'); expect(text).toContain('09:00:00');
+  const text = telegramMessage(event()); expect(text).toContain('TP2 ALCANZADO'); expect(text).toContain('<code>4010.000</code>'); expect(text).toContain('09:00:00');
+  expect(text).toContain('🟢 BUY · XAUUSD'); expect(text).toContain('✅ <b>TP2</b>');
+  expect(text).toContain('📍 <b>Entrada:</b> <code>4000.000</code>'); expect(text).toContain('🛡 <b>Stop Loss (SL):</b> <code>3995.000</code>');
   const stop = event('SL'); stop.payload.trade.outcome = 'WIN';
   expect(telegramMessage(stop)).toContain('SL tras TP · sin descuento');
-  const signal = event('SIGNAL'); signal.payload.trade.side = 'SELL'; expect(telegramMessage(signal)).toContain('VENTA · NUEVA SEÑAL');
+  const signal = event('SIGNAL'); signal.payload.trade.side = 'SELL';
+  const sell = telegramMessage(signal); expect(sell).toContain('🔴 SELL · XAUUSD'); expect(sell).toContain('✨ NUEVA SEÑAL');
+  expect(sell).not.toMatch(/COMPRA|VENTA/); expect(sell).toContain('<code>4015.000</code>');
   expect(() => telegramMessage({ ...event(), payload: { ...event().payload, type: '<script>' } })).toThrow();
 });
 it('distinguishes report effectiveness, signal days and historical target scenarios', () => {
