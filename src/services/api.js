@@ -133,7 +133,7 @@ async function currentUser() {
 async function invokeSecure(name, payload, fallback) {
   const { data, error } = await supabase.functions.invoke(name, { body: payload });
   if (data?.error) throw new Error(data.error);
-  if (error && name === 'registration' && error.context?.json) {
+  if (error && ['registration', 'telegram-access'].includes(name) && error.context?.json) {
     const detail = await error.context.json().catch(() => null);
     if (detail?.error) throw new Error(detail.error);
   }
@@ -326,6 +326,7 @@ export const api = {
   getScannerDownload: () => invokeSecure('scanner-download', {}, 'No fue posible preparar la descarga privada.'),
   getBlackGalaxyTrade: (limit = 40) => rpc('get_black_galaxy_trade', { limit }),
   getScannerAnalytics: () => rpc('get_scanner_analytics'),
+  telegramAccess: (action = 'status') => invokeSecure('telegram-access', { action }, 'No fue posible conectar tu acceso a Telegram.'),
   createMeeting: (payload) => rpc('create_meeting', payload),
   createMeetingShareLink: (meetingId, guestLimit = 1) => rpc('create_meeting_share_link', { meetingId, guestLimit }),
   redeemMeetingShareLink: (token) => rpc('redeem_meeting_share_link', { token }),

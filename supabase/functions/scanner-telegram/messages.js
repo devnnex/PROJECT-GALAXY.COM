@@ -5,6 +5,8 @@ const date = (day) => new Date(`${day}T12:00:00-05:00`).toLocaleDateString('es-C
 
 export function telegramMessage(job) {
   const p = job.payload;
+  if (job.kind === 'WELCOME') return '💜 <b>¡Bienvenido/a a PROJECT GALAXY!</b>\nSoy <b>PowerEliteBot</b>, tu compañero de Black Galaxy Trade. Aquí recibirás señales y reportes. ¡Qué gusto tenerte con nosotros! 🚀';
+  if (job.kind === 'LINK') return '💜 <b>¡Hola! Soy PowerEliteBot.</b>\nTu cuenta de Telegram está lista para vincularse. Vuelve a Galaxy y confirma que es tuya para solicitar el acceso privado.';
   if (job.kind === 'EVENT') {
     const t = p.trade;
     if (!['SIGNAL', 'TP1', 'TP2', 'TP3', 'SL'].includes(p.type) || !['BUY', 'SELL'].includes(t?.side)
