@@ -11,11 +11,16 @@ export function telegramMessage(job) {
     const t = p.trade;
     if (!['SIGNAL', 'TP1', 'TP2', 'TP3', 'SL'].includes(p.type) || !['BUY', 'SELL'].includes(t?.side)
       || !['entry', 'sl', 'tp1', 'tp2', 'tp3'].every((key) => Number.isFinite(Number(t[key]))) || !Number.isFinite(Date.parse(p.occurredAt))) throw new Error('Invalid event payload');
-    const side = t.side === 'BUY' ? '🟢 COMPRA' : '🔴 VENTA';
+    const side = t.side === 'BUY' ? '🟢 BUY' : '🔴 SELL';
     const protectedStop = p.type === 'SL' && t.outcome === 'WIN';
-    const heading = p.type === 'SIGNAL' ? `${side} · NUEVA SEÑAL` : protectedStop ? '🛡 SL tras TP · sin descuento' : p.type === 'SL' ? '🔴 STOP LOSS' : `🎯 ${p.type} ALCANZADO`;
-    const at = new Date(p.occurredAt).toLocaleString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
-    return `<b>BLACK GALAXY TRADE</b>\n<b>${escape(heading)}</b>\nXAUUSD · 5 min${p.type === 'SIGNAL' ? '' : ` · ${side}`}\n\nEntrada: <b>${number(t.entry, 3)}</b>\nSL: ${number(t.sl, 3)}\nTP1: ${number(t.tp1, 3)}\nTP2: ${number(t.tp2, 3)}\nTP3: ${number(t.tp3, 3)}\n\n${escape(at)} · Bogotá\n<code>Operación ${escape(String(p.tradeId).slice(0, 8))}</code>`;
+    const heading = p.type === 'SIGNAL' ? '✨ NUEVA SEÑAL' : protectedStop ? '🛡 SL tras TP · sin descuento' : p.type === 'SL' ? '🛑 STOP LOSS ALCANZADO' : `🎯 ${p.type} ALCANZADO`;
+    const at = new Date(p.occurredAt);
+    const day = at.toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', year: 'numeric' });
+    const time = at.toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    // Quote-style prices retain all three decimals without mixed grouping marks.
+    const price = (value) => new Intl.NumberFormat('en-US', { useGrouping: false, minimumFractionDigits: 3, maximumFractionDigits: 3 }).format(Number(value));
+    const targets = [1, 2, 3].map((level) => `${t[`hit${level}`] === true || p.type === `TP${level}` ? '✅ ' : ''}<b>TP${level}</b>  <code>${price(t[`tp${level}`])}</code>`).join('\n');
+    return `<b>💜 BLACK GALAXY TRADE</b>\n<b>${side} · XAUUSD</b>\n${escape(heading)} · 5 min\n\n📍 <b>Entrada:</b> <code>${price(t.entry)}</code>\n🛡 <b>Stop Loss (SL):</b> <code>${price(t.sl)}</code>\n\n🎯 <b>OBJETIVOS</b>\n${targets}\n\n🗓 ${escape(day)}\n🕒 ${escape(time)} · Bogotá\n<code>Ref. ${escape(String(p.tradeId).slice(0, 8))}</code>`;
   }
   if (!['WEEKLY', 'MONTHLY'].includes(job.kind) || !/^\d{4}-\d{2}-\d{2}$/.test(p.from) || !/^\d{4}-\d{2}-\d{2}$/.test(p.to)) throw new Error('Invalid report payload');
   const closed = Number(p.wins) + Number(p.losses);
