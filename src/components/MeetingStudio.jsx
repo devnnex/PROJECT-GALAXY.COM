@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import MeetingAudioLayer from './MeetingAudioLayer';
+import { claimMeetingAudioSession, meetingTransportStream } from '../services/meeting-audio-continuity';
 import { setPwaMeetingState } from '../services/pwa-updates';
 import { Camera, CameraOff, Check, Clock3, Copy, Eraser, Hand, ListMusic, Lock, LogIn, MessageCircle, Mic, MicOff, MonitorUp, MousePointer2, Music2, Pause, Pencil, PhoneOff, PictureInPicture2, Play, Plus, Reply, RotateCcw, Send, ShieldCheck, SkipBack, SkipForward, SmilePlus, Trash2, Unlock, UploadCloud, UserPlus, Users, Volume2, VolumeX, X } from 'lucide-react';
 import { api } from '../services/api';
@@ -135,7 +137,7 @@ function meetingOutputBus() {
 function keepMeetingAudioAlive() {
   keepMeetingMediaAlive();
   const context = meetingAudioContext(); if (!context) return null;
-  if (context.state === 'suspended') context.resume?.().catch(() => {});
+  if (context.state === 'suspended' || context.state === 'interrupted') context.resume?.().catch(() => {});
   if (sharedMeetingAudioKeepAlive?.context === context) return context;
   sharedMeetingAudioKeepAlive?.source?.stop?.();
   const source = context.createConstantSource(); const gain = context.createGain(); source.offset.value = 1; gain.gain.value = .000001;
@@ -204,6 +206,10 @@ async function playMeetingReactionSound(emoji, reactionId) {
 
 const longRangeMicrophoneCleanup = new WeakMap();
 const longRangeMicrophoneSources = new WeakMap();
+
+function reliableMeetingStream(stream, hidden = document.hidden) {
+  return meetingTransportStream(stream, { nativeTrack: longRangeMicrophoneSources.get(stream?.getAudioTracks()[0]), hidden, contextState: sharedMeetingAudioContext?.state });
+}
 
 function setMeetingTrackEnabled(track, enabled) {
   if (!track) return;
@@ -375,55 +381,6 @@ function VideoSurface({ stream, name, avatarSeed, avatar = '', membership, muted
     {!muted && playbackBlocked && <button className="resume-audio-button" type="button" onClick={() => resumePlayback.current?.()}><Volume2 /> Activar sonido</button>}
     <span className="video-name">{handRaised && <Hand />} {name}</span>
   </div>;
-}
-
-function RemoteAudioTrack({ stream, peerId, onBlocked }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const audio = ref.current; if (!audio) return undefined;
-    let disposed = false;
-    const play = async () => {
-      if (disposed || !audio.srcObject) return;
-      audio.defaultMuted = false; audio.muted = false; audio.volume = 1;
-      try { await audio.play(); if (!disposed) onBlocked(peerId, false); }
-      catch { if (!disposed) onBlocked(peerId, true); }
-    };
-    const syncTracks = () => {
-      if (disposed) return;
-      const tracks = (stream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
-      const attached = audio.srcObject?.getAudioTracks?.() || [];
-      const unchanged = tracks.length === attached.length && tracks.every((track) => attached.includes(track));
-      if (!unchanged) audio.srcObject = tracks.length ? new MediaStream(tracks) : null;
-      if (!tracks.length) { onBlocked(peerId, false); return; }
-      play();
-    };
-    const resume = () => { play(); };
-    const changed = () => { syncTracks(); };
-    const visibilityChanged = () => { play(); keepMeetingAudioAlive(); };
-    const background = () => { play(); keepMeetingAudioAlive(); };
-    stream?.addEventListener('addtrack', changed); stream?.addEventListener('removetrack', changed);
-    window.addEventListener('galaxy:resume-meeting-audio', resume); window.addEventListener('focus', resume); window.addEventListener('pageshow', resume);
-    window.addEventListener('pagehide', background); window.addEventListener('pointerdown', resume, true); window.addEventListener('keydown', resume, true); document.addEventListener('visibilitychange', visibilityChanged);
-    (stream?.getAudioTracks() || []).forEach((track) => { track.addEventListener('unmute', resume); track.addEventListener('ended', changed); });
-    syncTracks();
-    return () => {
-      disposed = true; onBlocked(peerId, false); window.removeEventListener('galaxy:resume-meeting-audio', resume); window.removeEventListener('focus', resume); window.removeEventListener('pageshow', resume);
-      window.removeEventListener('pagehide', background); window.removeEventListener('pointerdown', resume, true); window.removeEventListener('keydown', resume, true); document.removeEventListener('visibilitychange', visibilityChanged);
-      stream?.removeEventListener('addtrack', changed); stream?.removeEventListener('removetrack', changed);
-      (stream?.getAudioTracks() || []).forEach((track) => { track.removeEventListener('unmute', resume); track.removeEventListener('ended', changed); });
-      audio.pause(); audio.srcObject = null;
-    };
-  }, [stream, peerId, onBlocked]);
-  return <audio ref={ref} className="remote-audio" autoPlay playsInline preload="auto" />;
-}
-
-function RemoteAudioLayer({ streams, onBlockedChange }) {
-  const blocked = useRef(new Set());
-  const update = useCallback((peerId, isBlocked) => {
-    if (isBlocked) blocked.current.add(peerId); else blocked.current.delete(peerId);
-    onBlockedChange?.(blocked.current.size > 0);
-  }, [onBlockedChange]);
-  return <div className="remote-audio-layer" aria-hidden="true">{Object.entries(streams).map(([peerId, stream]) => <RemoteAudioTrack key={peerId} peerId={peerId} stream={stream} onBlocked={update} />)}</div>;
 }
 
 const PRIMARY_ANALYSIS_TOOLS = [
@@ -639,7 +596,12 @@ async function createSharedAudioMixer(displayStream, microphoneStream) {
   const microphoneTracks = (microphoneStream?.getAudioTracks() || []).filter((track) => track.readyState === 'live');
   const tracks = [...displayTracks, ...microphoneTracks]
     .filter((track, index, items) => track.readyState === 'live' && items.findIndex((item) => item.id === track.id) === index);
-  const fallbackTrack = microphoneTracks.find((track) => track.enabled) || displayTracks.find((track) => track.enabled) || microphoneTracks[0] || displayTracks[0] || null;
+  const fallbackMicrophones = microphoneTracks.map((track) => {
+    const native = longRangeMicrophoneSources.get(track);
+    if (!native || native.readyState !== 'live') return track;
+    native.enabled = track.enabled; return native;
+  });
+  const fallbackTrack = fallbackMicrophones.find((track) => track.enabled) || displayTracks.find((track) => track.enabled) || fallbackMicrophones[0] || displayTracks[0] || null;
   if (!tracks.length) return { track: null, close() {} };
   if (tracks.length === 1) return { track: fallbackTrack, fallbackTrack, close() {} };
   const Context = window.AudioContext || window.webkitAudioContext;
@@ -1199,7 +1161,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
         setRelayReady(Boolean(relay?.relayReady));
       } catch { setRelayReady(false); }
       const usingTurn = iceServers?.some((server) => server.username && server.credential);
-      await client.connect({ roomId: normalized.meetingId, role: normalized.role, hostId: normalized.hostId, stream: mediaRef.current, iceServers, user });
+      await client.connect({ roomId: normalized.meetingId, role: normalized.role, hostId: normalized.hostId, stream: reliableMeetingStream(mediaRef.current), iceServers, user });
       if (!isCurrent(client)) { client.disconnect(); return false; }
       if (usingTurn) client.scheduleIceRefresh(relayInfo?.expiresIn);
       await loadMeetingMusicTracks().catch(() => musicTracksRef.current);
@@ -1261,13 +1223,13 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
     });
     return new MediaStream([...(mixer.track ? [mixer.track] : []), ...screen.getVideoTracks()]);
   };
-  const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharingRef.current ? await sharedLocalStream(sharingRef.current, next) : next); };
+  const publishMedia = async (next) => { mediaRef.current = next; setMedia(next); await connection.current?.setLocalStream(sharingRef.current ? await sharedLocalStream(sharingRef.current, next) : reliableMeetingStream(next)); };
   const acquireTrack = async (kind) => { if (!navigator.mediaDevices?.getUserMedia) throw new Error('Tu navegador no ofrece captura de cámara y micrófono.'); const captured = await navigator.mediaDevices.getUserMedia({ audio: kind === 'audio' ? voiceCaptureConstraints() : false, video: kind === 'video' }); const prepared = kind === 'audio' ? await createLongRangeMicrophoneStream(captured) : captured; const track = prepared.getTracks()[0]; const replaced = mediaRef.current.getTracks().filter((item) => item.kind === kind); const retained = mediaRef.current.getTracks().filter((item) => item.kind !== kind); replaced.forEach(stopMeetingTrack); await publishMedia(new MediaStream([...retained, track])); return track; };
   const toggleTrack = async (kind) => { try { const isAudio = kind === 'audio'; if (isAudio && meeting?.role !== 'HOST' && participantMicsLocked) { toast('El anfitrión bloqueó temporalmente los micrófonos.', 'info'); return; } const active = isAudio ? mic : camera; let track = mediaRef.current.getTracks().find((item) => item.kind === kind && item.readyState === 'live'); if (!track) track = await acquireTrack(kind); else if (isAudio) setMeetingTrackEnabled(track, !active); else track.enabled = !active; const enabled = track.enabled; if (isAudio) setMic(enabled); else setCamera(enabled); saveMediaPreferences(isAudio ? { mic: enabled } : { camera: enabled }); connection.current?.setPresence({ mic: isAudio ? enabled : mic, camera: isAudio ? camera : enabled, sharing: Boolean(sharingRef.current), handRaised, speaking: isAudio ? localSpeaking && enabled : localSpeaking }); } catch (error) { toast(error.message || 'No fue posible acceder al dispositivo.', 'error'); } };
   const stopShare = async () => {
     const owner = connection.current?.selfId;
     if (sharingRef.current && owner) connection.current?.collaborate('collab-reset', { presenterPeerId: owner });
-    sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); sourceStream.current = null; sharingRef.current = null; presentationOwner.current = null; setSharing(null); setShareHasAudio(false); setShareAudioEnabled(true); setCropSource(null); setPrivacySource(null); saveMediaPreferences({ sharing: false }); resetCollaboration(); await connection.current?.setLocalStream(mediaRef.current); connection.current?.setPresence({ sharing: false });
+    sharedAudio.current?.close(); sharedAudio.current = null; sourceStream.current?.getTracks().forEach((track) => track.stop()); sharingRef.current?.getTracks().forEach((track) => track.stop()); stopMeetingVideoRender(renderLoop); sourceStream.current = null; sharingRef.current = null; presentationOwner.current = null; setSharing(null); setShareHasAudio(false); setShareAudioEnabled(true); setCropSource(null); setPrivacySource(null); saveMediaPreferences({ sharing: false }); resetCollaboration(); await connection.current?.setLocalStream(reliableMeetingStream(mediaRef.current)); connection.current?.setPresence({ sharing: false });
   };
   const publishShare = async (stream) => { sharingRef.current = stream; presentationOwner.current = connection.current?.selfId || null; resetCollaboration(); setSharing(stream); saveMediaPreferences({ sharing: true }); await connection.current?.setLocalStream(await sharedLocalStream(stream)); connection.current?.setPresence({ sharing: true }); primeMeetingAudio(); requestAnimationFrame(primeMeetingAudio); };
   const toggleSharedAudio = () => {
@@ -1527,21 +1489,25 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
   useEffect(() => { if (joined) syncPipSource().catch(() => {}); }, [joined, preferredPipStream, meeting?.meetingId]);
   useEffect(() => {
     if (!joined) { stopMeetingAudioKeepAlive(); return undefined; }
+    const releaseAudioSession = claimMeetingAudioSession();
+    const context = meetingAudioContext();
     backgroundMicrophoneMode.current = null;
     const syncBackgroundMicrophone = async (background = document.hidden) => {
       if (!connection.current || sharingRef.current) { backgroundMicrophoneMode.current = null; return; }
-      const processedTrack = mediaRef.current.getAudioTracks()[0]; const nativeTrack = longRangeMicrophoneSources.get(processedTrack);
-      if (!processedTrack || !nativeTrack || nativeTrack.readyState !== 'live' || backgroundMicrophoneMode.current === background) return;
-      backgroundMicrophoneMode.current = background; nativeTrack.enabled = processedTrack.enabled;
-      const microphoneTrack = background ? nativeTrack : processedTrack;
-      await connection.current.setLocalStream(new MediaStream([microphoneTrack, ...mediaRef.current.getVideoTracks()])).catch(() => { backgroundMicrophoneMode.current = null; });
+      const stream = reliableMeetingStream(mediaRef.current, background);
+      const tracks = stream.getTracks(); const key = tracks.map((track) => track.id).join(':');
+      const attached = connection.current.localStream?.getTracks() || [];
+      if (backgroundMicrophoneMode.current === key && tracks.length === attached.length && tracks.every((track) => attached.includes(track))) return;
+      backgroundMicrophoneMode.current = key;
+      await connection.current.setLocalStream(stream).catch(() => { backgroundMicrophoneMode.current = null; });
     };
     const continueAudio = (background = document.hidden) => { keepMeetingAudioAlive(); syncBackgroundMicrophone(background); };
     const visibilityChanged = () => { continueAudio(document.hidden); };
     const pageHiding = () => { continueAudio(true); }; const pageShowing = () => { continueAudio(false); };
-    const timer = setInterval(() => { if (document.hidden) keepMeetingAudioAlive(); }, 2500);
-    continueAudio(); document.addEventListener('visibilitychange', visibilityChanged); window.addEventListener('pagehide', pageHiding); window.addEventListener('pageshow', pageShowing);
-    return () => { clearInterval(timer); backgroundMicrophoneMode.current = null; document.removeEventListener('visibilitychange', visibilityChanged); window.removeEventListener('pagehide', pageHiding); window.removeEventListener('pageshow', pageShowing); stopMeetingAudioKeepAlive(); };
+    const recover = () => continueAudio();
+    const timer = setInterval(recover, 2500);
+    continueAudio(); context?.addEventListener('statechange', recover); document.addEventListener('visibilitychange', visibilityChanged); window.addEventListener('pagehide', pageHiding); window.addEventListener('pageshow', pageShowing); window.addEventListener('focus', recover); window.addEventListener('galaxy:resume-meeting-audio', recover);
+    return () => { clearInterval(timer); backgroundMicrophoneMode.current = null; context?.removeEventListener('statechange', recover); document.removeEventListener('visibilitychange', visibilityChanged); window.removeEventListener('pagehide', pageHiding); window.removeEventListener('pageshow', pageShowing); window.removeEventListener('focus', recover); window.removeEventListener('galaxy:resume-meeting-audio', recover); releaseAudioSession(); stopMeetingAudioKeepAlive(); };
   }, [joined, sharing]);
   useEffect(() => {
     const continueOutside = () => { if (document.hidden && joined && !pipActive) { keepMeetingAudioAlive(); enterPictureInPicture(true); } };
@@ -1573,7 +1539,7 @@ export default function MeetingStudio({ toast, user, joinRequest, onSessionChang
       <div className={`meeting-stage-shell ${sharing ? 'has-analysis-tools' : ''}`}>
       <div className={`meeting-stage ${presentationStream ? 'presenting' : ''}`}>
         {presentationStream ? <><VideoSurface presentation stream={presentationStream} name={sharing ? 'Tu pantalla' : `${presentationPeer?.name || 'Participante'} · pantalla`} avatarSeed={sharing ? user.id : presentationPeer?.userId} avatar={sharing ? user.avatar : presentationPeer?.avatar} membership={sharing ? user.membership : presentationPeer?.membership} muted playAudio={false} /><span className="presenter-label">{sharing ? 'Tu pantalla · compartiendo por WebRTC' : `${presentationPeer?.name || 'Participante'} está compartiendo`}</span>{sharing && shareHasAudio && <button className={`presentation-audio-toggle ${shareAudioEnabled ? 'active' : ''}`} type="button" aria-pressed={shareAudioEnabled} title={shareAudioEnabled ? 'Silenciar sonido de la pantalla compartida' : 'Activar sonido de la pantalla compartida'} onClick={toggleSharedAudio}>{shareAudioEnabled ? <Volume2 /> : <VolumeX />}<span>{shareAudioEnabled ? 'Sonido compartido' : 'Sonido silenciado'}</span></button>}<CollaborationOverlay active={canCollaborate && Boolean(collaborationMode)} mode={collaborationMode} tool={sharing ? annotationTool : 'pen'} color={collaborationColor} strokes={annotationStrokes} cursors={remoteCursors} aspectRatio={presentationAspectRatio} onPoint={sendCollaborationPoint} onChange={updateAnnotation} onDelete={deleteAnnotation} onSelectionChange={setSelectedAnnotationId} /></> : <div className="video-grid"><VideoSurface stream={media} name={`${user.name} · Tú`} avatarSeed={user.id} avatar={user.avatar} membership={user.membership} muted mirrored speaking={localSpeaking} handRaised={handRaised} />{remoteEntries.map(([peerId, stream]) => { const peer = participants.find((item) => item.peerId === peerId); return <VideoSurface key={peerId} stream={stream} name={peer?.name || 'Participante'} avatarSeed={peer?.userId || peerId} avatar={peer?.avatar} membership={peer?.membership} playAudio={false} speaking={peer?.speaking} handRaised={peer?.handRaised} />; })}</div>}
-        <RemoteAudioLayer streams={remoteStreams} onBlockedChange={setAudioBlocked} />
+        <MeetingAudioLayer streams={remoteStreams} onBlockedChange={setAudioBlocked} onKeepAlive={keepMeetingAudioAlive} />
         {audioBlocked && <button className="meeting-audio-unlock" onClick={() => window.dispatchEvent(new Event('galaxy:resume-meeting-audio'))}><Volume2 /> Activar sonido de la reunión</button>}
         <div className="floating-chat-layer" aria-live="polite">{floatingMessages.map((item) => <article className="floating-chat-message" key={item.id}><ConstellationAvatar className="floating-message-avatar" seed={item.senderId} name={item.senderName} src={item.senderAvatar} membership={membershipForAvatar({ username: item.senderUsername, membership: item.senderMembership })} /><span><strong>{item.senderName}</strong><p>{item.body}</p></span></article>)}</div>
         {presentationStream && <div className={`collaboration-toolbar glass ${collaborationEnabled ? '' : 'disabled'}`}><button className={collaborationMode === 'draw' ? 'active' : ''} disabled={!collaborationEnabled || Boolean(requestedCollaboration)} title={!collaborationEnabled ? 'El administrador pausó la colaboración' : collaborationMode === 'draw' ? 'Haz clic nuevamente para dejar de dibujar' : 'Solicitar o activar dibujo'} onClick={() => selectCollaborationMode('draw', remotePresentation?.[0])}><Pencil /> {requestedCollaboration?.mode === 'draw' ? 'Esperando permiso' : collaborationMode === 'draw' ? 'Dejar de dibujar' : 'Dibujar'}</button><button className={collaborationMode === 'pointer' ? 'active' : ''} disabled={!collaborationEnabled || Boolean(requestedCollaboration)} title={!collaborationEnabled ? 'El administrador pausó la colaboración' : collaborationMode === 'pointer' ? 'Haz clic nuevamente para detener el control guiado' : 'Solicitar o activar control guiado'} onClick={() => selectCollaborationMode('pointer', remotePresentation?.[0])}><MousePointer2 /> {requestedCollaboration?.mode === 'pointer' ? 'Esperando permiso' : collaborationMode === 'pointer' ? 'Detener control guiado' : 'Control guiado'}</button>{sharing && <><label className="annotation-color" title={selectedAnnotationId ? 'Cambiar color del elemento seleccionado' : 'Color de anotación'}><input type="color" value={collaborationColor} disabled={!collaborationEnabled} onChange={(event) => changeAnnotationColor(event.target.value)} /></label><button disabled={!collaborationEnabled} onClick={clearAnnotations}><Eraser /> Limpiar</button></>}{isHost && <label className={`collaboration-access-toggle ${collaborationEnabled ? 'active' : ''}`} title="Permitir dibujo y control guiado durante la reunión"><input type="checkbox" checked={collaborationEnabled} onChange={toggleCollaborationAccess} /><span><ShieldCheck />{collaborationEnabled ? 'Colaboración activa' : 'Colaboración pausada'}</span></label>}</div>}
