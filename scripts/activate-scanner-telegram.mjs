@@ -48,6 +48,7 @@ export async function activateScannerTelegram({ enable = false, tokenFile = reso
   try {
     log(`Destino validado: ${chat.title} · bot @${bot.username}. No se envían mensajes de prueba.`);
     await call(['db', 'query', '--file', resolve(root, 'supabase/migrations/20261119120000_scanner_telegram.sql')]);
+    await call(['db', 'query', '--file', resolve(root, 'supabase/migrations/20261119150000_telegram_private_membership.sql')]);
     const secret = randomBytes(32).toString('base64url');
     await call(['secrets', 'set', '--env-file', await privateFile('telegram.env', `TELEGRAM_BOT_TOKEN=${token}\nTELEGRAM_CHAT_ID=${chat.id}\nTELEGRAM_DISPATCH_SECRET=${secret}\n`)]);
     await call(['functions', 'deploy', 'scanner-telegram', '--use-api', '--no-verify-jwt']);

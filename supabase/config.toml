@@ -18,3 +18,11 @@ verify_jwt = false
 # Private database-to-server dispatch; Telegram credentials never reach clients.
 [functions.scanner-telegram]
 verify_jwt = false
+
+# Validates the current JWT and active membership inside the handler.
+[functions.telegram-access]
+verify_jwt = false
+
+# Receives Telegram updates authenticated by its private webhook secret.
+[functions.telegram-community]
+verify_jwt = false

@@ -16,7 +16,7 @@ export async function deliverTelegram({ claim, finish, send, now = Date.now, sle
     try { text = telegramMessage(job); if (text.length > 4000) throw new Error('Message too long'); }
     catch { await finish(job, { status: 'failed', code: 'invalid_payload' }); totals.failed++; continue; }
     let response;
-    try { response = await send(text); }
+    try { response = await send(text, job); }
     catch { response = { status: 0 }; }
     if (response.status === 200 && response.ok === true && Number.isInteger(response.messageId)) {
       // A failed database acknowledgement must abort the drain; never send the
