@@ -21,7 +21,7 @@ Deno.serve(async (request) => {
       },
       send: async (text: string, job: { chatId?: number; kind: string }) => {
         const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000), headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: job.chatId ?? chatId, text, parse_mode: 'HTML', allow_paid_broadcast: false, link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: job.kind === 'LINK' ? 'Confirmar en Galaxy' : 'Ver en Galaxy', url: `https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html?section=black-trade${job.kind === 'LINK' ? '&telegram=1' : ''}` }]] } }) });
+          body: JSON.stringify({ chat_id: job.chatId ?? chatId, text, parse_mode: 'HTML', allow_paid_broadcast: false, link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: ['LINK', 'LINK_ERROR'].includes(job.kind) ? 'Continuar en Galaxy' : 'Ver en Galaxy', url: `https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html?section=black-trade${['LINK', 'LINK_ERROR'].includes(job.kind) ? '&telegram=1' : ''}` }]] } }) });
         const body = await response.json().catch(() => ({}));
         return { status: response.status, ok: body.ok, messageId: body.result?.message_id, retryAfter: body.parameters?.retry_after };
       },

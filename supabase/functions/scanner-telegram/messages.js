@@ -6,7 +6,10 @@ const date = (day) => new Date(`${day}T12:00:00-05:00`).toLocaleDateString('es-C
 export function telegramMessage(job) {
   const p = job.payload;
   if (job.kind === 'WELCOME') return '💜 <b>¡Bienvenido/a a PROJECT GALAXY!</b>\nSoy <b>PowerEliteBot</b>, tu compañero de Black Galaxy Trade. Aquí recibirás señales y reportes. ¡Qué gusto tenerte con nosotros! 🚀';
-  if (job.kind === 'LINK') return '💜 <b>¡Hola! Soy PowerEliteBot.</b>\nTu cuenta de Telegram está lista para vincularse. Vuelve a Galaxy y confirma que es tuya para solicitar el acceso privado.';
+  if (job.kind === 'LINK') return '💜 <b>¡Cuenta de Telegram detectada!</b>\nVuelve a la pestaña o app de Galaxy donde empezaste y confirma que esta cuenta es tuya. Después podrás solicitar el ingreso.\n\nSi usas el botón y se abre otra ventana, inicia sesión con la misma cuenta Galaxy para retomar este paso.';
+  if (job.kind === 'LINK_ERROR') return p.reason === 'ALREADY_LINKED'
+    ? '💜 Esta cuenta de Telegram ya está vinculada a otra cuenta Galaxy. Vuelve a la cuenta Galaxy con la que la confirmaste. No cambiamos ningún registro confirmado.'
+    : '💜 Ya se detectó otra cuenta de Telegram en ese enlace. Vuelve a Galaxy y elige «No es mi cuenta» si necesitas corregirla.';
   if (job.kind === 'EVENT') {
     const t = p.trade;
     if (!['SIGNAL', 'TP1', 'TP2', 'TP3', 'SL'].includes(p.type) || !['BUY', 'SELL'].includes(t?.side)

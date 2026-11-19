@@ -131,14 +131,20 @@ async function currentUser() {
 }
 
 async function invokeSecure(name, payload, fallback) {
-  const { data, error } = await supabase.functions.invoke(name, { body: payload });
-  if (data?.error) throw new Error(data.error);
-  if (error && ['registration', 'telegram-access'].includes(name) && error.context?.json) {
-    const detail = await error.context.json().catch(() => null);
-    if (detail?.error) throw new Error(detail.error);
+  const controller = name === 'telegram-access' ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), 15_000) : null;
+  try {
+    const { data, error } = await supabase.functions.invoke(name, { body: payload, ...(controller ? { signal: controller.signal } : {}) });
+    if (data?.error) throw new Error(data.error);
+    if (error && ['registration', 'telegram-access'].includes(name) && error.context?.json) {
+      const detail = await error.context.json().catch(() => null);
+      if (detail?.error) throw new Error(detail.error);
+    }
+    if (error) throw new Error(fallback);
+    return data;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
-  if (error) throw new Error(fallback);
-  return data;
 }
 
 export const api = {

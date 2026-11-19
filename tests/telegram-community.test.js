@@ -12,7 +12,7 @@ it('ignores normal conversations, other groups and updates older than activation
 });
 it('proposes a private bot identity without approving it before Galaxy confirmation',async()=>{
   const d=deps();await handleCommunityUpdate({update_id:2,message:{date,chat:{id:456,type:'private'},from:{id:456,first_name:'Ana'},text:'/start galaxy_'+'a'.repeat(32)}},d);
-  expect(d.rpc).toHaveBeenCalledWith('propose_telegram_account',expect.objectContaining({p_telegram_id:456,p_token:'a'.repeat(32)}));expect(d.telegram).not.toHaveBeenCalled();
+  expect(d.rpc).toHaveBeenCalledWith('propose_telegram_account_v2',expect.objectContaining({p_telegram_id:456,p_token:'a'.repeat(32)}));expect(d.telegram).not.toHaveBeenCalled();
 });
 it('approves the matching registered identity, records membership and revokes its invitation',async()=>{
   const d=deps();await handleCommunityUpdate(join,d);

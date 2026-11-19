@@ -20,7 +20,7 @@ beforeAll(async () => {
       if not exists(select 1 from profiles where id=v_id and status='ACTIVE' and paid and not is_guest) then raise exception 'Access denied';end if;return v_id;end;$$;
     create table scanner_events(id uuid primary key default gen_random_uuid(),trade_id uuid,type text,occurred_at timestamptz,payload jsonb);
     create table scanner_daily_statistics(day date primary key,totals numeric[],targets jsonb);`);
-  for (const file of ['20261119120000_scanner_telegram.sql','20261119150000_telegram_private_membership.sql']) await db.exec(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'));
+  for (const file of ['20261119120000_scanner_telegram.sql','20261119150000_telegram_private_membership.sql','20261119180000_telegram_resume_flow.sql']) await db.exec(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'));
 }, 30_000);
 beforeEach(async () => {
   await db.exec(`reset role;truncate telegram_memberships,telegram_webhook_updates,scanner_telegram_jobs;update profiles set status='ACTIVE',paid=true,is_guest=false;
@@ -81,4 +81,30 @@ it('keeps binding records, admin controls and delivery jobs private', async () =
   await expect(rpc(`public.claim_telegram_invite('${b}')`)).rejects.toThrow(/permission denied/);
   await expect(rpc('public.claim_telegram_webhook_update(1)')).rejects.toThrow(/permission denied/);
   await db.exec('reset role;set role anon'); await expect(rpc('public.begin_telegram_access()')).rejects.toThrow(/permission denied/); await db.exec('reset role');
+});
+
+it('lets the Telegram owner move an unconfirmed proposal to the Galaxy account they reopen, but never a confirmed binding', async () => {
+  const first = await begin(); await propose(first,123);
+  await who(b); const second = await begin(); expect(await propose(second,123)).toBe(true);
+  await who(a); const previous = await rpc('public.get_telegram_access()'); expect(previous).toMatchObject({ state:'WAITING',linkIssue:'REOPENED_ELSEWHERE' });
+  await expect(rpc('public.confirm_telegram_access()')).rejects.toThrow();
+  await who(b); await rpc('public.confirm_telegram_access()');
+  await who(a); const blocked = await rpc(`public.propose_telegram_account_v2('${token(first)}',123,'same','Same')`);
+  expect(blocked).toMatchObject({accepted:false,reason:'ALREADY_LINKED'});
+  expect((await rpc('public.get_telegram_access()')).linkIssue).toBe('ALREADY_LINKED');
+  expect(await query("select id from scanner_telegram_jobs where kind='LINK_ERROR' and recipient_id=123")).toHaveLength(1);
+  expect((await query('select count(*)::int count from telegram_memberships where confirmed_at is not null and telegram_id=123'))[0].count).toBe(1);
+});
+
+it('reports a conflicting proposed identity and clears that issue only through an explicit restart', async () => {
+  const first = await begin(); await propose(first,123);
+  const result = await rpc(`public.propose_telegram_account_v2('${token(first)}',456,null,'Other')`);
+  expect(result.reason).toBe('DIFFERENT_TELEGRAM'); expect((await rpc('public.get_telegram_access()')).linkIssue).toBe('DIFFERENT_TELEGRAM');
+  await rpc('public.reset_telegram_proposal()'); const fresh = await begin(); expect(fresh.linkIssue).toBe(null); expect(token(fresh)).not.toBe(token(first));
+  expect(await propose(first,456)).toBe(false); expect(await propose(fresh,456)).toBe(true);
+});
+
+it('releases an expired unconfirmed reservation when its Telegram owner starts a fresh account flow', async () => {
+  const first = await begin(); await propose(first,123); await db.exec("update telegram_memberships set token_expires_at=now()-interval '2 hours'");
+  await who(b); expect(await propose(await begin(),123)).toBe(true);
 });
