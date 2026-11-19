@@ -15,7 +15,7 @@ Deno.serve(async (request) => {
     const url = Deno.env.get('SUPABASE_URL')!;
     const userClient = createClient(url, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authorization } }, auth: { persistSession: false, autoRefreshToken: false } });
     const { data: identity, error: authError } = await userClient.auth.getUser(authorization.slice(7));
-    if (authError || !identity.user) return json({ error: 'Tu sesión debe estar activa.' }, 401);
+    if (authError || !identity.user) return json({ error: 'Vuelve a la pestaña o app donde iniciaste sesión en Galaxy, o inicia sesión aquí con la misma cuenta para continuar.' }, 401);
     const input = await request.json();
     const action = input?.action || 'status';
     if (!['begin', 'status', 'confirm', 'restart'].includes(action)) return json({ error: 'Solicitud inválida.' }, 400);

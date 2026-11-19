@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, Eye, EyeOff, LoaderCircle, MailCheck, Orbit, Use
 import { api } from '../services/api';
 import { CONFIG } from '../config';
 import NeuralCanvas from './NeuralCanvas';
+import { isTelegramReturn } from '../services/route-intent';
 
 export default function AuthGate({ onAuthenticated, onBack }) {
   const invitationAccess = new URLSearchParams(location.search).has('invite') || new URLSearchParams(location.search).has('meeting');
@@ -78,6 +79,7 @@ export default function AuthGate({ onAuthenticated, onBack }) {
       <p className="eyebrow">XAUUSD TRADING DESK</p>
       <h1>{mode === 'login' ? 'Vuelve al mercado.' : 'Crea tu acceso al desk.'}</h1>
       <p className="muted">{mode === 'login' ? 'Tus operativas en vivo, análisis y herramientas de liquidez te esperan.' : 'Una cuenta para acompañar el estudio de XAUUSD, liquidez y Kill Zones.'}</p>
+      {isTelegramReturn(location.search) && <div className="mode-note" role="status">Continúa tu acceso privado a Telegram. Si Galaxy ya está abierto, vuelve a esa pestaña o app. También puedes iniciar sesión aquí con la misma cuenta: retomaremos la confirmación automáticamente.</div>}
       {invitationAccess && <div className="mode-note">Inicia sesión con tu cuenta para entrar a la reunión. Las cuentas nuevas requieren una invitación del administrador.</div>}
       {token && mode === 'register' && <div className="mode-note">{invitation ? seconds > 0 ? invitation.plan_code + ' · Invitación: ' + Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') : 'La invitación venció. Solicita una nueva al administrador.' : error ? 'No se pudo validar esta invitación.' : 'Validando invitación…'}</div>}
 

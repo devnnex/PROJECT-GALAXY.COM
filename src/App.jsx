@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import MobileNavigation from './components/MobileNavigation';
+import { initialSection, isTelegramReturn } from './services/route-intent';
 import {
   Activity, ArrowRight, Bell, Bookmark, Boxes, CalendarDays, Check, ChevronDown, CircleDollarSign,
   Clock3, Compass, Copy, CreditCard, Eye, EyeOff, Flag, Heart, Home, KeyRound, Languages, LayoutGrid, LockKeyhole,
@@ -268,7 +269,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   const isAdmin = user.role === 'ADMIN'; const language = languageFor(user); const english = language === 'en';
   const availableNavigation = (user.isGuest ? navigation.filter(([id]) => id === 'meetings') : isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
   const inviteToken = new URLSearchParams(location.search).get('invite') || '';
-  const [page, setPage] = useState(() => inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings'); const [menu, setMenu] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(!user.isGuest); const [vipPromoOpen, setVipPromoOpen] = useState(false);
+  const [page, setPage] = useState(() => initialSection(location.search, availableNavigation.map(([id]) => id), inviteToken || new URLSearchParams(location.search).has('meeting') || localStorage.getItem(`galaxy_active_meeting_${user.id}`) ? 'meetings' : isAdmin ? 'dashboard' : 'meetings')); const [menu, setMenu] = useState(false); const [command, setCommand] = useState(false); const [selectedProduct, setSelectedProduct] = useState(null); const [toastItem, setToastItem] = useState(null); const [lotajesOpen, setLotajesOpen] = useState(!user.isGuest && !isTelegramReturn(location.search)); const [vipPromoOpen, setVipPromoOpen] = useState(false);
   const [meetingSession, setMeetingSession] = useState({ active: false, joined: false, title: '', audioBlocked: false });
   const [activeNotice, setActiveNotice] = useState(null); const [noticeBusy, setNoticeBusy] = useState(false); const [dismissedNotices, setDismissedNotices] = useState(() => new Set()); const [joinRequest, setJoinRequest] = useState(null);
   const [directUnread, setDirectUnread] = useState(0);
@@ -465,7 +466,8 @@ function AppShell({ user, onUserChange, onLogout }) {
 
 export default function App() {
   const sharedIntent = useMemo(() => { const params = new URLSearchParams(location.search); return params.has('invite') || params.has('meeting'); }, []);
-  const [view, setView] = useState(sharedIntent || new URLSearchParams(location.hash.slice(1)).has('registration') ? 'auth' : 'landing'); const [user, setUser] = useState(null); const [ready, setReady] = useState(false); const [sessionError, setSessionError] = useState('');
+  const telegramIntent = useMemo(() => isTelegramReturn(location.search), []);
+  const [view, setView] = useState(sharedIntent || telegramIntent || new URLSearchParams(location.hash.slice(1)).has('registration') ? 'auth' : 'landing'); const [user, setUser] = useState(null); const [ready, setReady] = useState(false); const [sessionError, setSessionError] = useState('');
   useEffect(() => {
     api.me().then(async (found) => {
       if (!found) return;

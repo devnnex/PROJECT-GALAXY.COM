@@ -17,7 +17,7 @@ export async function handleCommunityUpdate(update, { config, rpc, telegram }) {
   if (!claim.lease) throw new Error('Webhook already processing');
   if (message?.chat?.type === 'private') {
     const token = message.text.split('galaxy_')[1];
-    await rpc('propose_telegram_account', { p_token: token, p_telegram_id: message.from.id, p_username: message.from.username || null, p_first_name: message.from.first_name || null });
+    await rpc('propose_telegram_account_v2', { p_token: token, p_telegram_id: message.from.id, p_username: message.from.username || null, p_first_name: message.from.first_name || null });
   } else if (request) {
     const allowed = typeof request.invite_link?.invite_link === 'string' && await rpc('authorize_telegram_member', { p_telegram_id: request.from.id, p_link: request.invite_link.invite_link });
     if (!allowed) {
