@@ -34,7 +34,7 @@ Deno.serve(async (request) => {
       },
       send: async (text: string, job: { chatId?: number; kind: string; payload: Record<string, unknown> }) => {
         const photo=await telegramMedia(job,client,renderReportImage);
-        const strategyQuery=job.payload.strategy==='RANGE777'?'&strategy=range777':'';
+        const strategyQuery=job.payload.strategy==='RANGE777'?'&strategy=aurum':'';
         if (photo) {
           if(text.length>1024)throw new Error('Photo caption too long');
           const form = new FormData();

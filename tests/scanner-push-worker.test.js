@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { expect, it, vi } from 'vitest';
 
-it.each([['Ruptura 777','range777'],['Opus 5.5',null]])('opens a cold Push click in the correct strategy for %s',async(label,strategy)=>{
+it.each([['Ruptura 777','aurum'],['Galaxy Aurum Bot','aurum'],['Opus 5.5',null]])('opens a cold Push click in the correct strategy for %s',async(label,strategy)=>{
  const listeners={},openWindow=vi.fn(),scope='https://example.com/PROJECT-GALAXY.COM/dist/';
  const self={registration:{scope},location:{origin:'https://example.com'},addEventListener:(type,handler)=>{listeners[type]=handler;},clients:{matchAll:async()=>[],openWindow}};
  runInNewContext(readFileSync(new URL('../public/sw.js',import.meta.url),'utf8'),{self,URL,Date,Request});

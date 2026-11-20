@@ -5,14 +5,14 @@ import {reportCardTree} from '../supabase/functions/scanner-telegram/report-card
 import {runRangeTick} from '../supabase/functions/scanner-signals/range-worker';
 const event={kind:'EVENT',payload:{strategy:'RANGE777',type:'SIGNAL',tradeId:'12345678',occurredAt:'2026-11-19T14:00:00Z',trade:{side:'BUY',entry:4000,initialSl:3990,sl:3990}}};
 it('labels the breakout strategy and publishes BE/trailing instead of fictitious TP levels',()=>{
- const text=telegramMessage(event);expect(text).toContain('💠 <b>RUPTURA 777 · M5');expect(text).toContain('🟢 BUY');expect(text).toContain('BE desde +$5');expect(text).not.toMatch(/TP1|TP2|TP3/);expect(text.length).toBeLessThan(1024);
+ const text=telegramMessage(event);expect(text).toContain('💠 <b>GALAXY AURUM BOT · M5');expect(text).toContain('🟢 BUY');expect(text).toContain('BE desde +$5');expect(text).not.toMatch(/TP1|TP2|TP3/);expect(text.length).toBeLessThan(1024);
  const close=structuredClone(event);close.payload.type='CLOSED';close.payload.trade={...close.payload.trade,outcome:'BE',exit:4000};expect(telegramMessage(close)).toContain('CIERRE EN BREAKEVEN');
  close.payload.trade.exit=undefined;expect(()=>telegramMessage(close)).toThrow();
 });
 it('uses all closed results including BE for range reports, and keeps the image calculation consistent',()=>{
  const job={kind:'MONTHLY',payload:{strategy:'RANGE777',from:'2026-11-01',to:'2026-11-30',wins:4,losses:1,breakevens:3,protected:7,signalDays:5}};
  const text=telegramMessage(job);expect(text).toContain('50,0%');expect(text).toContain('4 de 8');expect(text).not.toContain('TP1');expect(text.length).toBeLessThan(1024);
- const image=JSON.stringify(reportCardTree(job));expect(image).toContain('50%');expect(image).toContain('RUPTURA 777');expect(image).not.toContain('OPUS');
+ const image=JSON.stringify(reportCardTree(job));expect(image).toContain('50%');expect(image).toContain('GALAXY AURUM BOT');expect(image).not.toContain('OPUS');
 });
 it('reuses Telegram file IDs without fetching a PNG and sends other outcome events as text',async()=>{
  const single=vi.fn().mockResolvedValue({data:{path:'reusable/galaxy-buy.png',file_id:'cached-photo'}}),download=vi.fn();

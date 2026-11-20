@@ -96,7 +96,7 @@ begin
   if tid is null then raise exception 'Missing range trade';end if;
   insert into public.range_scanner_events(trade_id,type,occurred_at,payload) values(tid,e->>'type',at_time,p) on conflict(trade_id,type) do nothing returning id into eid;
   if eid is not null then
-   title:=(case when e->>'type'='SIGNAL' then '🔵 '||(p->>'side') when e->>'type'='BE' then '✅ BE activado' when p->>'outcome'='WIN' then '✅ CIERRE positivo' when p->>'outcome'='BE' then '✅ BE · Cierre' else '🔴 SL' end)||' · Ruptura 777 · XAUUSD · 5m';
+   title:=(case when e->>'type'='SIGNAL' then '🔵 '||(p->>'side') when e->>'type'='BE' then '✅ BE activado' when p->>'outcome'='WIN' then '✅ CIERRE positivo' when p->>'outcome'='BE' then '✅ BE · Cierre' else '🔴 SL' end)||' · Galaxy Aurum Bot · XAUUSD · 5m';
    body:='🔵 Entrada '||round((p->>'entry')::numeric,3)||' | 🔴 SL '||round((p->>'sl')::numeric,3)||' | BE desde +$5 · Trailing $5';
    if e->>'type'='CLOSED' then body:=body||' | Salida observada '||round((p->>'exit')::numeric,3);end if;
    insert into public.notifications(user_id,type,title,body,resource_type,resource_id) select id,'SCANNER_SIGNAL',title,body,'RangeEvent',eid from public.profiles where status='ACTIVE' and not is_guest and public.has_active_membership(id);

@@ -7,10 +7,11 @@ import {resolve,join} from 'node:path';
 import {createClient} from '@supabase/supabase-js';
 const root=resolve(fileURLToPath(new URL('..',import.meta.url))),ref='xdsqtuubsptpzwadecha';
 const cli=process.env.SUPABASE_CLI||(process.platform==='win32'?join(process.env.LOCALAPPDATA||'','GALAXY-Tools/supabase/supabase.exe'):'supabase');
-async function call(args){try{const result=await promisify(execFile)(cli,args,{cwd:root,windowsHide:true,maxBuffer:4*1024*1024});return args[0]==='functions'?{}:JSON.parse(result.stdout);}catch{throw new Error(`No se pudo completar ${args.slice(0,2).join(' ')} de Ruptura 777. No se muestran credenciales.`);}}
+async function call(args){try{const result=await promisify(execFile)(cli,args,{cwd:root,windowsHide:true,maxBuffer:4*1024*1024});return args[0]==='functions'?{}:JSON.parse(result.stdout);}catch{throw new Error(`No se pudo completar ${args.slice(0,2).join(' ')} de Galaxy Aurum Bot. No se muestran credenciales.`);}}
 const db=(args)=>call(['db','query',...args,`--remote=${ref}`,'--yes','--output','json']);
 try {
  await db(['--file',resolve(root,'supabase/migrations/20261119210000_range777_strategy.sql')]);
+ await db(['--file',resolve(root,'supabase/migrations/20261119220000_aurum_bot_branding.sql')]);
  const keys=await call(['projects','api-keys','--project-ref',ref,'--output','json']);
  const key=(Array.isArray(keys)?keys:keys.api_keys||keys.data||[]).find(k=>k.name==='service_role')?.api_key;
  if(!key)throw new Error('Falta el acceso privado al proyecto configurado.');
@@ -38,4 +39,4 @@ try {
  const proof=JSON.parse(received?.content||'{}');if(received?.status_code!==200||!proof.rendered||proof.bytes<1000)throw new Error(`El generador de reportes no pasó la comprobación en el servidor (HTTP ${received?.status_code||'sin respuesta'}). La estrategia no se activa.`);
  if(process.argv.includes('--enable'))await db(["update public.range_scanner_state set enabled=true,started_at=coalesce(started_at,now()) where id"]);
  console.log(JSON.stringify({updated:true,activationRequested:process.argv.includes('--enable'),reportImageBytes:proof.bytes,syntheticSignalsSent:0}));
-}catch(error){console.error(error instanceof Error?error.message:'No se pudo actualizar Ruptura 777.');process.exitCode=1;}
+}catch(error){console.error(error instanceof Error?error.message:'No se pudo actualizar Galaxy Aurum Bot.');process.exitCode=1;}
