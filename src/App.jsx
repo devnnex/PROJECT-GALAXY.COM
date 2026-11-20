@@ -33,7 +33,7 @@ import { useNotificationInbox } from './services/use-notification-inbox';
 import { watchVisibleResource } from './services/visible-refresh';
 import { latestScannerBanner, scannerNoticeBatch } from './services/scanner-notices';
 import { playScannerSound, resumeScannerSound } from './services/scanner-audio';
-import { parseScannerNotice } from './services/scanner-presentation';
+import { parseScannerNotice, selectScannerNoticeStrategy } from './services/scanner-presentation';
 import { MembershipCheckoutModal, MembershipOrdersPage, MembershipProfileCard, ScannerCheckoutModal } from './components/MembershipExperience';
 import { membershipForAvatar } from './membership-badges';
 import lotajesImage from '../LOTAJES.jpeg';
@@ -295,7 +295,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     const open = (notice) => {
       if (!notice || notice.userId !== user.id) return;
       if (notice.type === 'DIRECT_MESSAGE') { setMessagePeer(notice.actorId || ''); navigate('messages'); }
-      else if (notice.type === 'SCANNER_SIGNAL') { navigate('black-trade'); }
+      else if (notice.type === 'SCANNER_SIGNAL') { selectScannerNoticeStrategy(notice); navigate('black-trade'); }
       else {
         navigate('meetings');
         if (/^[A-F0-9]{4}-[A-F0-9]{4}$/.test(notice.roomCode || '')) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() });
@@ -404,7 +404,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     if (actionableNotice(notice)) { setActiveNotice(notice); return; }
     if (notice.type === 'MEETING_ADMITTED' && notice.roomCode) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() });
     if (notice.type === 'DIRECT_MESSAGE') { setMessagePeer(notice.actorId || ''); navigate('messages'); }
-    else if (notice.type === 'SCANNER_SIGNAL') { navigate('black-trade'); }
+    else if (notice.type === 'SCANNER_SIGNAL') { selectScannerNoticeStrategy(notice); navigate('black-trade'); }
     else if (notice.meetingId) { if (notice.type === 'MEETING_AVAILABLE' && notice.roomCode) setJoinRequest({ roomCode: notice.roomCode, id: Date.now() }); navigate('meetings'); }
     else toast(notice.title, 'info');
   };
@@ -459,7 +459,7 @@ function AppShell({ user, onUserChange, onLogout }) {
     {!lotajesOpen && vipPromoOpen && page === 'marketplace' && <PromotionImageModal image={vipMembershipImage} alt="Membresía VIP anual" onClose={() => setVipPromoOpen(false)} className="vip-promotion" />}
     <NotificationActionModal notice={activeNotice} busy={noticeBusy} onAccept={() => resolveNotice(true)} onDecline={() => resolveNotice(false)} onClose={closeNotice} />
     {notices && <NotificationCenter items={inbox.visible} unread={unread} busy={inbox.busy} error={inbox.error} cleared={inbox.cleared} english={english} onClose={inbox.close} onOpen={openNotice} onReadAll={markAllRead} />}
-    {scannerQueue[0] && <ScannerNotice notice={scannerQueue[0]} onClose={() => setScannerQueue((current) => current.slice(1))} onOpen={() => { inbox.readAll(); navigate('black-trade'); setScannerQueue((current) => current.slice(1)); }} />}
+    {scannerQueue[0] && <ScannerNotice notice={scannerQueue[0]} onClose={() => setScannerQueue((current) => current.slice(1))} onOpen={() => { inbox.readAll(); selectScannerNoticeStrategy(scannerQueue[0]); navigate('black-trade'); setScannerQueue((current) => current.slice(1)); }} />}
     <Toast item={toastItem} />
   </div>;
 }

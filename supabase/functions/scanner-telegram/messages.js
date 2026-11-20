@@ -1,10 +1,12 @@
+import { rangeMessage } from './range-messages.js';
 const escape = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const number = (value, decimals = 0) => new Intl.NumberFormat('es-CO', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(Number(value) || 0);
 const date = (day) => new Date(`${day}T12:00:00-05:00`).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', year: 'numeric' });
 const trades = (value) => `${number(value)} ${Number(value) === 1 ? 'operativa' : 'operativas'}`;
 
-export function telegramMessage(job) {
+function messageContent(job) {
   const p = job.payload;
+  if (p.strategy === 'RANGE777') return rangeMessage(job);
   if (job.kind === 'PHOTO') {
     if (typeof p.caption !== 'string' || !p.caption.trim() || p.caption.length > 1024) throw new Error('Invalid photo caption');
     return p.caption;
@@ -36,4 +38,12 @@ export function telegramMessage(job) {
     : '🎯 <b>Seguimiento de efectividad</b>\nEste período aún no tiene operativas evaluables.';
   const bestDay = p.bestDay && closed ? `\n\n🌟 <b>Mejor jornada</b>\n${date(p.bestDay.day)} · <b>${number(p.bestDay.rate, 1)}%</b> (${number(p.bestDay.wins)}/${number(Number(p.bestDay.wins) + Number(p.bestDay.losses))} evaluadas)` : '';
   return `💜 <b>PROJECT GALAXY</b>\n<b>BLACK GALAXY TRADE</b>\n📊 <b>Efectividad ${job.kind === 'WEEKLY' ? 'semanal' : 'mensual'}</b>\n🗓 ${date(p.from)} — ${date(p.to)}\n\n${effectiveness}\n\n🚀 <b>Objetivos alcanzados</b>\n✅ TP1 · <b>${trades(p.hits?.[0])}</b>\n✅ TP2 · <b>${trades(p.hits?.[1])}</b>\n🏆 TP3 · <b>${trades(p.hits?.[2])}</b>${bestDay}\n\n💎 <b>Resultados visibles. Seguimiento de cada señal.</b>\n<i>Historial del período · ${number(p.signalDays)} ${Number(p.signalDays) === 1 ? 'día' : 'días'} con señales.</i>`;
+}
+
+export function telegramMessage(job) {
+  const text=messageContent(job);
+  if(job.payload.strategy==='RANGE777')return text;
+  if(job.kind==='EVENT')return text.replace('<b>💜 BLACK GALAXY TRADE</b>','<b>💜 BLACK GALAXY TRADE</b>\n💎 <b>OPUS 5.5 · M5</b>');
+  if(['WEEKLY','MONTHLY'].includes(job.kind))return text.replace('<b>BLACK GALAXY TRADE</b>','<b>BLACK GALAXY TRADE · OPUS 5.5</b>');
+  return text;
 }

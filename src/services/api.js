@@ -332,6 +332,8 @@ export const api = {
   getScannerDownload: () => invokeSecure('scanner-download', {}, 'No fue posible preparar la descarga privada.'),
   getBlackGalaxyTrade: (limit = 40) => rpc('get_black_galaxy_trade', { limit }),
   getScannerAnalytics: () => rpc('get_scanner_analytics'),
+  getRangeTrade: (limit = 40) => rpc('get_range_trade', { limit }),
+  getRangeAnalytics: () => rpc('get_range_analytics'),
   telegramAccess: (action = 'status') => invokeSecure('telegram-access', { action }, 'No fue posible conectar tu acceso a Telegram.'),
   createMeeting: (payload) => rpc('create_meeting', payload),
   createMeetingShareLink: (meetingId, guestLimit = 1) => rpc('create_meeting_share_link', { meetingId, guestLimit }),

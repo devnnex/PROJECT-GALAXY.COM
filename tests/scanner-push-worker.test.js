@@ -2,6 +2,14 @@ import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { expect, it, vi } from 'vitest';
 
+it.each([['Ruptura 777','range777'],['Opus 5.5',null]])('opens a cold Push click in the correct strategy for %s',async(label,strategy)=>{
+ const listeners={},openWindow=vi.fn(),scope='https://example.com/PROJECT-GALAXY.COM/dist/';
+ const self={registration:{scope},location:{origin:'https://example.com'},addEventListener:(type,handler)=>{listeners[type]=handler;},clients:{matchAll:async()=>[],openWindow}};
+ runInNewContext(readFileSync(new URL('../public/sw.js',import.meta.url),'utf8'),{self,URL,Date,Request});
+ let pending;listeners.notificationclick({notification:{data:{id:'signal',type:'SCANNER_SIGNAL',userId:'member',title:`BUY · ${label}`},close:vi.fn()},waitUntil:value=>{pending=value;}});await pending;
+ const url=new URL(openWindow.mock.calls[0][0]);expect(url.searchParams.get('strategy')).toBe(strategy);expect(url.searchParams.get('section')).toBe('black-trade');expect(url.searchParams.get('recipient')).toBe('member');
+});
+
 it('requests audible scanner notifications with the Galaxy image and forwards the same ID to the open app', async () => {
   const listeners = {}, showNotification = vi.fn(async () => {}), postMessage = vi.fn();
   const scope = 'https://example.com/PROJECT-GALAXY.COM/dist/';
