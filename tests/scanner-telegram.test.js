@@ -14,9 +14,27 @@ it('renders the same entry, stop and targets with Bogotá time and protects prio
   expect(sell).not.toMatch(/COMPRA|VENTA/); expect(sell).toContain('<code>4015.000</code>');
   expect(() => telegramMessage({ ...event(), payload: { ...event().payload, type: '<script>' } })).toThrow();
 });
-it('distinguishes report effectiveness, signal days and historical target scenarios', () => {
-  const text = telegramMessage({ kind: 'WEEKLY', payload: { from: '2026-11-16', to: '2026-11-22', asOf: '2026-11-23T13:00:00Z', signals: 5, wins: 2, losses: 2, ignored: 1, open: 0, signalDays: 2, hits: [2, 1, 1], bestDay: { day: '2026-11-16', rate: 66.67, wins: 2, losses: 1 }, targets: [{ level: 1, net: 50 }, { level: 2, net: 0 }, { level: 3, net: -50 }] } });
-  expect(text).toContain('50,0% (2/4)'); expect(text).toContain('2 días con señales'); expect(text).toContain('USD -50.00'); expect(text).toContain('no es ganancia garantizada'); expect(text.length).toBeLessThan(4000);
+it.each(['WEEKLY', 'MONTHLY'])('focuses the %s report on measured effectiveness and achieved targets', (kind) => {
+  const text = telegramMessage({ kind, payload: { from: '2026-11-16', to: '2026-11-22', asOf: '2026-11-23T13:00:00Z', signals: 5, wins: 2, losses: 2, ignored: 1, open: 0, signalDays: 2, hits: [2, 1, 1], bestDay: { day: '2026-11-16', rate: 66.67, wins: 2, losses: 1 }, targets: [{ level: 1, net: 50 }, { level: 2, net: 0 }, { level: 3, net: -50 }] } });
+  expect(text).toContain('50,0% de efectividad histórica'); expect(text).toContain('2 de 4 operativas evaluadas');
+  expect(text).toContain('TP3 · <b>1 operativa</b>'); expect(text).toContain('Mejor jornada'); expect(text).toContain('66,7%');
+  expect(text).toContain('2 días con señales'); expect(text).not.toMatch(/USD|Simulación|Menor acierto|Ganadas:|SL:|garantizada/); expect(text.length).toBeLessThan(4000);
+});
+it('does not invent effectiveness for an unevaluated period or inflate a losing period', () => {
+  const job = { kind:'WEEKLY', payload:{from:'2026-11-16',to:'2026-11-22',wins:0,losses:0,signalDays:0,hits:[0,0,0]} };
+  expect(telegramMessage(job)).toContain('aún no tiene operativas evaluables');
+  expect(telegramMessage(job)).not.toContain('0,0%');
+  job.payload.losses=3;
+  expect(telegramMessage(job)).toContain('0,0% de efectividad histórica');
+  expect(telegramMessage(job)).toContain('0 de 3 operativas evaluadas');
+});
+it('validates photo captions and preserves media metadata through delivery acknowledgement', async () => {
+  const job = {id:8,lease:'photo-lease',kind:'PHOTO',payload:{path:'scheduled/example.png',caption:'💜 <b>Efectividad histórica</b>'}};
+  const send=vi.fn().mockResolvedValue({status:200,ok:true,messageId:50}),finish=vi.fn();
+  await deliverTelegram({claim:vi.fn().mockResolvedValueOnce({job}).mockResolvedValueOnce(null),send,finish});
+  expect(send).toHaveBeenCalledWith(job.payload.caption,job);
+  expect(finish).toHaveBeenCalledWith(job,{status:'sent',messageId:50});
+  for(const caption of ['', ' '.repeat(10), 'a'.repeat(1025)]) expect(()=>telegramMessage({...job,payload:{caption}})).toThrow();
 });
 it('paces a burst and acknowledges successful sends with their lease and Telegram receipt', async () => {
   let time = 0;

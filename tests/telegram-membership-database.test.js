@@ -20,7 +20,7 @@ beforeAll(async () => {
       if not exists(select 1 from profiles where id=v_id and status='ACTIVE' and paid and not is_guest) then raise exception 'Access denied';end if;return v_id;end;$$;
     create table scanner_events(id uuid primary key default gen_random_uuid(),trade_id uuid,type text,occurred_at timestamptz,payload jsonb);
     create table scanner_daily_statistics(day date primary key,totals numeric[],targets jsonb);`);
-  for (const file of ['20261119120000_scanner_telegram.sql','20261119150000_telegram_private_membership.sql','20261119180000_telegram_resume_flow.sql']) await db.exec(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'));
+  for (const file of ['20261119120000_scanner_telegram.sql','20261119150000_telegram_private_membership.sql','20261119180000_telegram_resume_flow.sql','20261119193000_telegram_scheduled_photo.sql']) await db.exec(readFileSync(new URL(`../supabase/migrations/${file}`, import.meta.url), 'utf8'));
 }, 30_000);
 beforeEach(async () => {
   await db.exec(`reset role;truncate telegram_memberships,telegram_webhook_updates,scanner_telegram_jobs;update profiles set status='ACTIVE',paid=true,is_guest=false;
@@ -107,4 +107,13 @@ it('reports a conflicting proposed identity and clears that issue only through a
 it('releases an expired unconfirmed reservation when its Telegram owner starts a fresh account flow', async () => {
   const first = await begin(); await propose(first,123); await db.exec("update telegram_memberships set token_expires_at=now()-interval '2 hours'");
   await who(b); expect(await propose(await begin(),123)).toBe(true);
+});
+
+it('holds scheduled photos until due and gives trading events priority', async () => {
+ await db.exec("insert into scanner_telegram_jobs(dedupe_key,kind,payload,next_attempt_at,expires_at) values('photo:test','PHOTO','{}',now()+interval '1 hour',now()+interval '2 hours')");
+ expect(await rpc('public.claim_scanner_telegram_job()')).toBe(null);
+ await db.exec("update scanner_telegram_jobs set next_attempt_at=now();insert into scanner_telegram_jobs(dedupe_key,kind,payload,expires_at) values('event:test','EVENT','{}',now()+interval '1 minute')");
+ expect((await rpc('public.claim_scanner_telegram_job()')).job.kind).toBe('EVENT');
+ await db.exec("update scanner_telegram_settings set next_send_at='-infinity'");
+ expect((await rpc('public.claim_scanner_telegram_job()')).job.kind).toBe('PHOTO');
 });

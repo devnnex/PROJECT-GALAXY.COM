@@ -1,10 +1,14 @@
 const escape = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 const number = (value, decimals = 0) => new Intl.NumberFormat('es-CO', { minimumFractionDigits: decimals, maximumFractionDigits: decimals }).format(Number(value) || 0);
-const money = (value) => `USD ${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(value) || 0)}`;
 const date = (day) => new Date(`${day}T12:00:00-05:00`).toLocaleDateString('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short', year: 'numeric' });
+const trades = (value) => `${number(value)} ${Number(value) === 1 ? 'operativa' : 'operativas'}`;
 
 export function telegramMessage(job) {
   const p = job.payload;
+  if (job.kind === 'PHOTO') {
+    if (typeof p.caption !== 'string' || !p.caption.trim() || p.caption.length > 1024) throw new Error('Invalid photo caption');
+    return p.caption;
+  }
   if (job.kind === 'WELCOME') return '💜 <b>¡Bienvenido/a a PROJECT GALAXY!</b>\nSoy <b>PowerEliteBot</b>, tu compañero de Black Galaxy Trade. Aquí recibirás señales y reportes. ¡Qué gusto tenerte con nosotros! 🚀';
   if (job.kind === 'LINK') return '💜 <b>¡Cuenta de Telegram detectada!</b>\nVuelve a la pestaña o app de Galaxy donde empezaste y confirma que esta cuenta es tuya. Después podrás solicitar el ingreso.\n\nSi usas el botón y se abre otra ventana, inicia sesión con la misma cuenta Galaxy para retomar este paso.';
   if (job.kind === 'LINK_ERROR') return p.reason === 'ALREADY_LINKED'
@@ -27,9 +31,9 @@ export function telegramMessage(job) {
   }
   if (!['WEEKLY', 'MONTHLY'].includes(job.kind) || !/^\d{4}-\d{2}-\d{2}$/.test(p.from) || !/^\d{4}-\d{2}-\d{2}$/.test(p.to)) throw new Error('Invalid report payload');
   const closed = Number(p.wins) + Number(p.losses);
-  const rate = closed ? `${number(Number(p.wins) * 100 / closed, 1)}% (${number(p.wins)}/${number(closed)})` : 'Sin operaciones evaluables';
-  const day = (value) => value ? `${date(value.day)} · ${number(value.rate, 1)}% (${number(value.wins)}/${number(Number(value.wins) + Number(value.losses))})` : 'Sin datos evaluables';
-  const scenarios = (p.targets || []).map((target) => `Salir en TP${target.level}: <b>${money(target.net)}</b>`).join('\n');
-  const asOf = new Date(p.asOf).toLocaleString('es-CO', { timeZone: 'America/Bogota', dateStyle: 'short', timeStyle: 'short' });
-  return `<b>BLACK GALAXY TRADE</b>\n📊 <b>Reporte ${job.kind === 'WEEKLY' ? 'semanal' : 'mensual'}</b>\n${date(p.from)} — ${date(p.to)}\n\nSeñales: <b>${number(p.signals)}</b> · ${number(p.signalDays)} días con señales\nGanadas: ${number(p.wins)} · SL: ${number(p.losses)}\nAbiertas: ${number(p.open)} · No consideradas: ${number(p.ignored)}\n<b>Efectividad: ${rate}</b>\nTP1: ${number(p.hits?.[0])} · TP2: ${number(p.hits?.[1])} · TP3: ${number(p.hits?.[2])}\n\nMejor día: ${day(p.bestDay)}\nMenor acierto: ${day(p.worstDay)}\n\n<b>Simulación histórica · 0,10 lotes</b>\n${scenarios}\n100 oz/lote. SL tras TP previo sin descuento. Sin comisiones ni deslizamiento; no es ganancia garantizada.\n\nResultados de las señales emitidas en este período, registrados al ${escape(asOf)} · Bogotá.`;
+  const effectiveness = closed
+    ? `🎯 <b>${number(Number(p.wins) * 100 / closed, 1)}% de efectividad histórica</b>\n<b>${number(p.wins)} de ${trades(closed)} ${closed === 1 ? 'evaluada' : 'evaluadas'} con resultado ganador.</b>`
+    : '🎯 <b>Seguimiento de efectividad</b>\nEste período aún no tiene operativas evaluables.';
+  const bestDay = p.bestDay && closed ? `\n\n🌟 <b>Mejor jornada</b>\n${date(p.bestDay.day)} · <b>${number(p.bestDay.rate, 1)}%</b> (${number(p.bestDay.wins)}/${number(Number(p.bestDay.wins) + Number(p.bestDay.losses))} evaluadas)` : '';
+  return `💜 <b>PROJECT GALAXY</b>\n<b>BLACK GALAXY TRADE</b>\n📊 <b>Efectividad ${job.kind === 'WEEKLY' ? 'semanal' : 'mensual'}</b>\n🗓 ${date(p.from)} — ${date(p.to)}\n\n${effectiveness}\n\n🚀 <b>Objetivos alcanzados</b>\n✅ TP1 · <b>${trades(p.hits?.[0])}</b>\n✅ TP2 · <b>${trades(p.hits?.[1])}</b>\n🏆 TP3 · <b>${trades(p.hits?.[2])}</b>${bestDay}\n\n💎 <b>Resultados visibles. Seguimiento de cada señal.</b>\n<i>Historial del período · ${number(p.signalDays)} ${Number(p.signalDays) === 1 ? 'día' : 'días'} con señales.</i>`;
 }
