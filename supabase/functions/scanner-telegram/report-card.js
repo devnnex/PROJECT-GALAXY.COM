@@ -8,7 +8,7 @@ export function reportCardTree(job) {
   return block({width:1200,height:760,padding:'56px 64px',flexDirection:'column',color:'#f7f3ff',fontFamily:'sans-serif',backgroundImage:'radial-gradient(ellipse at 90% 10%, #54238c 0%, #15101f 52%, #090b15 100%)'},
     block({fontSize:23,letterSpacing:6,color:'#d5b4ff'},'PROJECT GALAXY'),
     block({marginTop:14,fontSize:40,fontWeight:700},'BLACK GALAXY TRADE'),
-    block({marginTop:16,fontSize:24,color:'#e3d5fb'},`${range?'RUPTURA 777':'OPUS 5.5'} · M5  /  ${job.kind==='WEEKLY'?'SEMANAL':'MENSUAL'}`),
+    block({marginTop:16,fontSize:24,color:'#e3d5fb'},`${range?'GALAXY AURUM BOT':'OPUS 5.5'} · M5  /  ${job.kind==='WEEKLY'?'SEMANAL':'MENSUAL'}`),
     block({marginTop:12,fontSize:21,color:'#b7b0cb'},`${p.from} — ${p.to} · Bogotá`),
     block({marginTop:26,alignItems:'center',gap:28},block({fontSize:116,lineHeight:1,fontWeight:700,color:'#d4b0ff'},rate),
       block({flexDirection:'column',fontSize:25,gap:10},'EFECTIVIDAD HISTÓRICA',block({fontSize:21,color:'#c6bfd5'},closed?`${format(p.wins)} de ${format(closed)} ${closed===1?'operativa evaluada':'operativas evaluadas'}`:'Aún sin operativas evaluables'))),

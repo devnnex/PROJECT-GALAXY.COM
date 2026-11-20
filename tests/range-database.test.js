@@ -21,7 +21,7 @@ beforeAll(async()=>{
  create table scanner_trades(id uuid);create table scanner_events(id uuid primary key,trade_id uuid,type text,occurred_at timestamptz,payload jsonb);
  create table scanner_daily_statistics(day date,totals numeric[],targets jsonb);
  create table telegram_community_config(id boolean,chat_id bigint);insert into telegram_community_config values(true,-123);`);
- for(const name of ['20261119120000_scanner_telegram.sql','20261119193000_telegram_scheduled_photo.sql','20261119210000_range777_strategy.sql'])await db.exec(readFileSync(new URL(`../supabase/migrations/${name}`,import.meta.url),'utf8'));
+ for(const name of ['20261119120000_scanner_telegram.sql','20261119193000_telegram_scheduled_photo.sql','20261119210000_range777_strategy.sql','20261119220000_aurum_bot_branding.sql'])await db.exec(readFileSync(new URL(`../supabase/migrations/${name}`,import.meta.url),'utf8'));
 },30000);
 beforeEach(async()=>{await db.exec(`reset role;truncate range_scanner_events,range_scanner_trades,range_daily_statistics,notifications,scanner_telegram_jobs;
  update range_scanner_state set enabled=true,started_at=now()-interval '90 days',runtime='{}',lease=null,lease_until=null,totals=array[0,0,0,0,0,0,0,0,0]::numeric[];

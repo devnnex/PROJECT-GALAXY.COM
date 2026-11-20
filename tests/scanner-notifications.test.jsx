@@ -2,7 +2,7 @@ import { expect, it, vi, afterEach } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ScannerNotice, TradeLevels } from '../src/components/BlackGalaxyTrade';
 import { latestScannerBanner, scannerNoticeBatch } from '../src/services/scanner-notices';
-import { parseScannerNotice, quotePresentation } from '../src/services/scanner-presentation';
+import { parseScannerNotice, quotePresentation, scannerNoticeTitle, scannerStrategyForNotice } from '../src/services/scanner-presentation';
 vi.mock('../src/services/api', () => ({ api: { getBlackGalaxyTrade: vi.fn() } }));
 
 it('shows the newest target immediately instead of putting it behind older nine-second banners', () => {
@@ -52,6 +52,11 @@ it('recognizes the event for sound after adding emoji and keeps old notification
   expect(parseScannerNotice({ title: '🔵 SELL · Entrada' }).event).toBe('SELL');
   expect(parseScannerNotice({ title: 'TP1 XAUUSD · 5m', body: 'Entrada 100.000 | SL 90.000 | TP1 105.000 | TP2 110.000 | TP3 115.000' }).trade).toMatchObject({ entry: 100, sl: 90, tp1: 105, hit1: true });
   expect(parseScannerNotice({ body: '✅ TP1 not-a-number | 🔴 SL NaN' }).trade).toEqual({});
+  for (const title of ['🔵 BUY · Ruptura 777','🔵 BUY · Galaxy Aurum Bot']) {
+    expect(scannerStrategyForNotice({title})).toBe('RANGE777');
+    expect(parseScannerNotice({title}).trade.strategy).toBe('RANGE777');
+    expect(scannerNoticeTitle({title})).toBe('🔵 BUY · Galaxy Aurum Bot');
+  }
 });
 it('updates the reported age and never calls a stale Gold API sample a live OANDA price', () => {
   const now = Date.now(), data = { enabled: true, ready: true, lastQuoteAt: now - 23_000 };

@@ -3,7 +3,7 @@ import { ArrowDownRight, ArrowUpRight, Calculator, Crosshair, RefreshCw, Send, S
 import TelegramAccess from './TelegramAccess';
 import { api } from '../services/api';
 import { scannerAudioReady, scannerSoundEnabled, setScannerSound } from '../services/scanner-audio';
-import { levelSymbol, parseScannerNotice, quotePresentation } from '../services/scanner-presentation';
+import { levelSymbol, parseScannerNotice, quotePresentation, scannerNoticeTitle } from '../services/scanner-presentation';
 import { eventTone } from '../services/scanner-analytics';
 import { watchVisibleResource } from '../services/visible-refresh';
 import '../black-galaxy-trade.css';
@@ -18,12 +18,12 @@ export function TradeLevels({ trade }) {
 }
 export function ScannerNotice({ notice, onOpen, onClose }) {
   const { trade: levels } = parseScannerNotice(notice);
-  return <aside className="bgt-notice" role="status" aria-live="polite"><div className="bgt-notice-head"><img className="bgt-notice-logo" src={`${import.meta.env.BASE_URL}galaxy-notification.png`} alt="Galaxy" /><div><small>BLACK GALAXY TRADE</small><strong>{notice.title}</strong></div><button className="icon-button" onClick={onClose} aria-label="Cerrar aviso"><X /></button></div><TradeLevels trade={levels} /><button className="bgt-open" onClick={onOpen}>Ver señal e historial <ArrowUpRight size={16} /></button></aside>;
+  return <aside className="bgt-notice" role="status" aria-live="polite"><div className="bgt-notice-head"><img className="bgt-notice-logo" src={`${import.meta.env.BASE_URL}galaxy-notification.png`} alt="Galaxy" /><div><small>BLACK GALAXY TRADE</small><strong>{scannerNoticeTitle(notice)}</strong></div><button className="icon-button" onClick={onClose} aria-label="Cerrar aviso"><X /></button></div><TradeLevels trade={levels} /><button className="bgt-open" onClick={onOpen}>Ver señal e historial <ArrowUpRight size={16} /></button></aside>;
 }
 export function ScannerNotificationLabel({ notice }) {
   const { event } = parseScannerNotice(notice);
-  if (!event) return notice.title;
-  return <><span className={`bgt-badge ${eventTone(event)}`}>{event}</span> {String(notice.title).replace(/^(?:🔵|🔴|✅)?\s*(?:BUY|SELL|TP[123]|SL)\s*(?:·\s*)?/u, '')}</>;
+  if (!event) return scannerNoticeTitle(notice);
+  return <><span className={`bgt-badge ${eventTone(event)}`}>{event}</span> {String(scannerNoticeTitle(notice)).replace(/^(?:🔵|🔴|✅)?\s*(?:BUY|SELL|TP[123]|SL)\s*(?:·\s*)?/u, '')}</>;
 }
 
 function QuoteStatus({ data, loading, unavailable }) {
@@ -39,7 +39,7 @@ function QuoteStatus({ data, loading, unavailable }) {
 }
 
 export default function BlackGalaxyTrade({ toast }) {
-  const [strategy,setStrategy]=useState(()=>new URLSearchParams(location.search).get('strategy')==='range777'?'RANGE777':'OPUS');
+  const [strategy,setStrategy]=useState(()=>['aurum','range777'].includes(new URLSearchParams(location.search).get('strategy'))?'RANGE777':'OPUS');
   const [data, setData] = useState(null); const [loading, setLoading] = useState(true); const [unavailable, setUnavailable] = useState(false);
   const [sound, setSound] = useState(scannerSoundEnabled); const [filter, setFilter] = useState('ALL');
   const [audioReady, setAudioReady] = useState(scannerAudioReady), [simulator, setSimulator] = useState(false);
@@ -75,8 +75,8 @@ export default function BlackGalaxyTrade({ toast }) {
   useEffect(() => setEventCount(12), [eventFilter, sideFilter, eventDay]);
   return <section className="bgt-page">
     <header className="bgt-header"><div><p className="bgt-eyebrow">POWER ELITE · XAUUSD</p><h1>Black Galaxy <em>Trade</em></h1><p>Señales, objetivos y resultados en un solo lugar.</p></div><div className="bgt-audio-controls"><button className="bgt-telegram-link" onClick={() => setTelegram(true)}><Send size={16} />Telegram privado</button><button className={`bgt-sound ${sound && audioReady ? 'enabled' : ''}`} onClick={toggleSound} aria-label={sound && audioReady ? 'Silenciar avisos' : 'Activar y probar sonido'}>{sound ? <Volume2 size={18} /> : <VolumeX size={18} />}{sound && audioReady ? 'Sonido activado' : 'Activar sonido'}</button>{sound && audioReady && <button className="bgt-audio-test" onClick={() => setScannerSound(true).catch((error) => toast(error.message, 'error'))}>Probar sonido</button>}</div></header>
-    <div className="bgt-strategy-tabs" role="tablist" aria-label="Estrategia de Black Galaxy Trade">{[['OPUS','💎 Opus 5.5','Objetivos TP1 · TP2 · TP3'],['RANGE777','💠 Ruptura 777','Canal de 20 velas · BE + trailing']].map(([key,label,detail])=><button role="tab" aria-selected={strategy===key} key={key} onClick={()=>{setStrategy(key);setSimulator(false);const url=new URL(location.href);if(key==='RANGE777')url.searchParams.set('strategy','range777');else url.searchParams.delete('strategy');window.history.replaceState(null,'',url);}}><strong>{label}<span>M5</span></strong><small>{detail}</small></button>)}</div>
-    {strategy==='RANGE777'?<Suspense fallback={<p role="status">Preparando Ruptura 777…</p>}><RangeGalaxyTrade QuoteStatus={QuoteStatus}/></Suspense>:<>
+    <div className="bgt-strategy-tabs" role="tablist" aria-label="Estrategia de Black Galaxy Trade">{[['OPUS','💎 Opus 5.5','Objetivos TP1 · TP2 · TP3'],['RANGE777','💠 Galaxy Aurum Bot','Precisión del oro · Gestión dinámica']].map(([key,label,detail])=><button role="tab" aria-selected={strategy===key} key={key} onClick={()=>{setStrategy(key);setSimulator(false);const url=new URL(location.href);if(key==='RANGE777')url.searchParams.set('strategy','aurum');else url.searchParams.delete('strategy');window.history.replaceState(null,'',url);}}><strong>{label}<span>M5</span></strong><small>{detail}</small></button>)}</div>
+    {strategy==='RANGE777'?<Suspense fallback={<p role="status">Preparando Galaxy Aurum Bot…</p>}><RangeGalaxyTrade QuoteStatus={QuoteStatus}/></Suspense>:<>
     <QuoteStatus data={data} loading={loading} unavailable={unavailable} />
     <div className="bgt-stats"><div className="bgt-effectiveness"><span>Efectividad</span><button className="bgt-sim-launch" onClick={() => setSimulator(true)} aria-label="Abrir simulador de resultados" title="Simular ganancias y explorar mejores períodos"><Calculator size={16} /><span>Simular</span></button><strong>{rate == null ? '—' : `${rate.toFixed(2)}%`}</strong><small>{wins + losses} señales con resultado</small></div><div className="profit"><span>Ganadas</span><strong>{wins}</strong><small>Al menos un TP antes de cerrar</small></div><div className="risk"><span>SL</span><strong>{losses}</strong><small>Stop inicial sin TP previo</small></div><div><span>Señales</span><strong>{data?.signals || 0}</strong><small>{data?.ignored || 0} sin resultado · excluidas</small></div></div>
     {latest ? <article className={`bgt-current ${latest.side === 'SELL' ? 'sell' : 'buy'}`}><div className="bgt-current-head"><div className="bgt-direction">{latest.side === 'BUY' ? <ArrowUpRight /> : <ArrowDownRight />}<div><small>ÚLTIMA SEÑAL · {moment(latest.detectedAt)}</small><h2>{latest.side} <span>XAUUSD</span></h2></div></div><span className={`bgt-outcome bgt-badge ${latest.outcome === 'WIN' ? 'win' : latest.outcome === 'SL' ? 'loss' : latest.outcome === 'IGNORED' ? 'neutral' : 'pending'}`}>{latest.status === 'OPEN' ? 'En seguimiento' : latest.outcome === 'WIN' ? 'Ganada' : latest.outcome === 'SL' ? 'SL tocado' : 'Sin resultado'}</span></div><TradeLevels trade={latest} /><footer><span><ShieldCheck size={14} /> Entrada y niveles fijos</span><span>R:R hasta TP3 <strong>{latest.rewardRatio ? `1:${latest.rewardRatio.toFixed(2)}` : '—'}</strong></span></footer></article> : <div className="bgt-empty"><Crosshair size={32} /><h2>{loading ? 'Cargando señales' : 'Esperando la primera señal'}</h2><p>{unavailable || !data?.enabled ? 'La recepción de señales todavía no está activada.' : 'El scanner analiza XAUUSD. La próxima señal aparecerá aquí.'}</p></div>}

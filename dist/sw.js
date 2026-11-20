@@ -1,4 +1,4 @@
-const CACHE = 'galaxy-shell-mwob0ich';
+const CACHE = 'galaxy-shell-mwobinxr';
 const SHELL = ['index.html', 'manifest.webmanifest', 'galaxy-icon.svg', 'galaxy-notification.png'];
 const scopedUrl = (path) => new URL(path, self.registration.scope).href;
 self.addEventListener('install', (event) => event.waitUntil(
@@ -65,7 +65,7 @@ self.addEventListener('notificationclick', (event) => {
     const url = new URL('index.html', scope);
     url.searchParams.set('section', notice.type === 'DIRECT_MESSAGE' ? 'messages' : notice.type === 'SCANNER_SIGNAL' ? 'black-trade' : 'meetings');
     url.searchParams.set('recipient', notice.userId);
-    if (notice.type === 'SCANNER_SIGNAL' && String(notice.title || '').includes('Ruptura 777')) url.searchParams.set('strategy', 'range777');
+    if (notice.type === 'SCANNER_SIGNAL' && /Ruptura\s*777|Galaxy\s+Aurum\s+Bot/i.test(String(notice.title || ''))) url.searchParams.set('strategy', 'aurum');
     if (notice.type === 'DIRECT_MESSAGE') url.searchParams.set('peer', notice.actorId);
     else if (notice.roomCode) url.searchParams.set('room', notice.roomCode);
     await self.clients.openWindow(url.href);

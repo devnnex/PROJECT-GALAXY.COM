@@ -1,4 +1,4 @@
-# Ruptura 777 · M5
+# Galaxy Aurum Bot · M5
 
 Segunda estrategia de Black Galaxy Trade, aprobada como adaptación del EA `XAUUSD_Ruptura_Rangos_M1_M5_777` v1.12 sobre el feed gratuito actual. Opus 5.5 conserva su motor, historial, TP y criterio de efectividad. La nueva estrategia tiene tablas, estado, eventos y agregados propios.
 
@@ -27,7 +27,7 @@ Ruptura: **positivas / (positivas + SL + BE)**. Los BE cuentan como evaluados co
 
 ## Telegram e imágenes
 
-Cada mensaje identifica `💎 OPUS 5.5 · M5` o `💠 RUPTURA 777 · M5`. Las nuevas entradas de ambas estrategias incluyen el banner galáctico BUY/SELL y sus propios niveles. Los avisos de seguimiento son texto para conservar rapidez y evitar imágenes repetidas en cada ajuste.
+Cada mensaje identifica `💎 OPUS 5.5 · M5` o `💠 GALAXY AURUM BOT · M5`. Las nuevas entradas de ambas estrategias incluyen el banner galáctico BUY/SELL y sus propios niveles. Los avisos de seguimiento son texto para conservar rapidez y evitar imágenes repetidas en cada ajuste.
 
 Las ilustraciones de `assets/telegram` se generan una vez, se guardan en almacenamiento privado y se reutiliza el `file_id` de Telegram después del primer envío confirmado, como recomienda la [Bot API oficial](https://core.telegram.org/bots/api#sending-files). Los reportes semanales/mensuales de cada estrategia conservan su clave de deduplicación y horario: lunes/día 1, 08:00 Bogotá. Incluyen imagen PNG de sus datos y explicación centrada en efectividad. No se usa generación de IA por envío, navegador externo ni servicio de screenshots. El renderizado utiliza el patrón de [OG images de Supabase](https://supabase.com/docs/guides/functions/examples/og-image).
 
