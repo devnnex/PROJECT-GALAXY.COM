@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { ArrowDownRight, ArrowUpRight, Calculator, Crosshair, RefreshCw, Send, ShieldCheck, Volume2, VolumeX, X } from 'lucide-react';
 import TelegramAccess from './TelegramAccess';
+import TradeStrategyControls from './TradeStrategyControls';
 import { api } from '../services/api';
 import { scannerAudioReady, scannerSoundEnabled, setScannerSound } from '../services/scanner-audio';
 import { levelSymbol, parseScannerNotice, quotePresentation, scannerNoticeTitle } from '../services/scanner-presentation';
@@ -38,7 +39,7 @@ function QuoteStatus({ data, loading, unavailable }) {
     <div className={`bgt-quote-details ${fresh ? '' : 'delayed'}`}><span>{quote.source}</span><span>{quote.ageSeconds == null ? 'Sin actualización recibida' : `Actualización hace ${quote.ageSeconds} s · ${new Date(Number(data.lastQuoteAt)).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}</span><small>Feed distinto de OANDA. La hora corresponde a la actualización informada por Gold API.</small></div></>;
 }
 
-export default function BlackGalaxyTrade({ toast }) {
+export default function BlackGalaxyTrade({ toast, user }) {
   const [strategy,setStrategy]=useState(()=>['aurum','range777'].includes(new URLSearchParams(location.search).get('strategy'))?'RANGE777':'OPUS');
   const [data, setData] = useState(null); const [loading, setLoading] = useState(true); const [unavailable, setUnavailable] = useState(false);
   const [sound, setSound] = useState(scannerSoundEnabled); const [filter, setFilter] = useState('ALL');
@@ -75,6 +76,7 @@ export default function BlackGalaxyTrade({ toast }) {
   useEffect(() => setEventCount(12), [eventFilter, sideFilter, eventDay]);
   return <section className="bgt-page">
     <header className="bgt-header"><div><p className="bgt-eyebrow">POWER ELITE · XAUUSD</p><h1>Black Galaxy <em>Trade</em></h1><p>Señales, objetivos y resultados en un solo lugar.</p></div><div className="bgt-audio-controls"><button className="bgt-telegram-link" onClick={() => setTelegram(true)}><Send size={16} />Telegram privado</button><button className={`bgt-sound ${sound && audioReady ? 'enabled' : ''}`} onClick={toggleSound} aria-label={sound && audioReady ? 'Silenciar avisos' : 'Activar y probar sonido'}>{sound ? <Volume2 size={18} /> : <VolumeX size={18} />}{sound && audioReady ? 'Sonido activado' : 'Activar sonido'}</button>{sound && audioReady && <button className="bgt-audio-test" onClick={() => setScannerSound(true).catch((error) => toast(error.message, 'error'))}>Probar sonido</button>}</div></header>
+    {user?.role === 'ADMIN' && user.email?.toLowerCase() === 'elkin56ty@gmail.com' && <TradeStrategyControls toast={toast} />}
     <div className="bgt-strategy-tabs" role="tablist" aria-label="Estrategia de Black Galaxy Trade">{[['OPUS','💎 Opus 5.5','Objetivos TP1 · TP2 · TP3'],['RANGE777','💠 Galaxy Aurum Bot','Precisión del oro · Gestión dinámica']].map(([key,label,detail])=><button role="tab" aria-selected={strategy===key} key={key} onClick={()=>{setStrategy(key);setSimulator(false);const url=new URL(location.href);if(key==='RANGE777')url.searchParams.set('strategy','aurum');else url.searchParams.delete('strategy');window.history.replaceState(null,'',url);}}><strong>{label}<span>M5</span></strong><small>{detail}</small></button>)}</div>
     {strategy==='RANGE777'?<Suspense fallback={<p role="status">Preparando Galaxy Aurum Bot…</p>}><RangeGalaxyTrade QuoteStatus={QuoteStatus}/></Suspense>:<>
     <QuoteStatus data={data} loading={loading} unavailable={unavailable} />

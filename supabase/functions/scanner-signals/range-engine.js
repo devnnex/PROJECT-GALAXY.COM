@@ -1,6 +1,6 @@
 // Signal-only adaptation of XAUUSD_Ruptura_Rangos_M1_M5_777 v1.12.
 // Gold API supplies sampled prices, not broker bid/ask, orders or fills.
-export const RANGE_SETTINGS = Object.freeze({ timeframeMinutes: 5, rangeBars: 20, buffer: 0.05, initialStop: 10, breakeven: 5, trailing: 5, trailingStep: 0.10, validityMs: 20_000 });
+export const RANGE_SETTINGS = Object.freeze({ timeframeMinutes: 5, rangeBars: 20, buffer: 0.05, initialStop: 10, breakeven: 10, trailing: 5, trailingStep: 0.10, validityMs: 20_000 });
 const interval = 300_000;
 const iso = (at) => new Date(at).toISOString();
 
@@ -12,7 +12,7 @@ export function rangeBreakout(bars) {
     : signal.close < low - RANGE_SETTINGS.buffer ? {side:'SELL', level:low - RANGE_SETTINGS.buffer, high, low} : null;
 }
 
-export function advanceRange(saved, quote, receivedAt = Date.now()) {
+export function advanceRange(saved, quote, receivedAt = Date.now(), signalsEnabled = true) {
   if (!Number.isFinite(quote?.price) || quote.price <= 0 || !Number.isSafeInteger(quote.at) || quote.source !== 'gold-api') throw new Error('INVALID_RANGE_QUOTE');
   const state = saved?.schema === 1 ? structuredClone(saved) : {schema:1, bars:[], bar:null, trade:null, lastQuoteAt:null};
   const events = [], trades = [];
@@ -21,13 +21,16 @@ export function advanceRange(saved, quote, receivedAt = Date.now()) {
   const emit = (type, trade) => events.push({type, tradeKey:trade.key, occurredAt:iso(quote.at), payload:structuredClone(trade)});
   if (state.trade?.status === 'OPEN') {
     const t = state.trade, direction = t.side === 'BUY' ? 1 : -1;
-    // Evaluate the existing stop BEFORE raising it. Never credit an unobserved
-    // excursion or pretend a gap filled at the stop rather than the sample.
+    // Evaluate the existing stop BEFORE raising it. SL Profit is the signal's
+    // protected level; preserve the sampled price separately, never as a fill.
     if ((quote.price - t.sl) * direction <= 0) {
-      t.status='CLOSED'; t.exit=quote.price; t.closedAt=iso(quote.at); t.net=Number(((quote.price-t.entry)*direction).toFixed(6));
+      const profitStop=(t.sl-t.entry)*direction>0;
+      t.status='CLOSED'; t.observedExit=quote.price; t.observedNet=Number(((quote.price-t.entry)*direction).toFixed(6));
+      t.exit=profitStop?t.sl:quote.price; t.accountingBasis=profitStop?'STOP_LEVEL':'OBSERVED_SAMPLE';
+      t.closedAt=iso(quote.at); t.net=Number(((t.exit-t.entry)*direction).toFixed(6));
       t.outcome=t.net > 0 ? 'WIN' : t.net < 0 ? 'SL' : 'BE';
-      t.exitReason=t.beAt ? 'TRAILING' : 'INITIAL_SL'; emit('CLOSED',t);
-    } else if ((quote.price-t.entry)*direction >= RANGE_SETTINGS.breakeven) {
+      t.exitReason=profitStop?'SL_PROFIT':t.beAt?'TRAILING':'INITIAL_SL'; emit('CLOSED',t);
+    } else if (t.beAt || (quote.price-t.entry)*direction >= RANGE_SETTINGS.breakeven) {
       const desired = direction === 1 ? Math.max(t.entry,quote.price-RANGE_SETTINGS.trailing) : Math.min(t.entry,quote.price+RANGE_SETTINGS.trailing);
       // Directional pip rounding matches PrecioAlTick's floor/ceil convention.
       const candidate = (direction === 1 ? Math.floor(desired*100+1e-8) : Math.ceil(desired*100-1e-8))/100;
@@ -51,7 +54,8 @@ export function advanceRange(saved, quote, receivedAt = Date.now()) {
   const fresh=receivedAt-quote.at<=20_000 && quote.at-receivedAt<=15_000;
   const withinWindow=quote.at-bucket<RANGE_SETTINGS.validityMs && receivedAt-bucket<RANGE_SETTINGS.validityMs;
   if (state.pending && (!withinWindow || (quote.price-state.pending.level)*(state.pending.side === 'BUY' ? 1 : -1)<=0)) state.pending=null;
-  if (state.pending && state.trade?.status !== 'OPEN' && withinWindow && fresh) {
+  if (!signalsEnabled) state.pending=null;
+  if (signalsEnabled && state.pending && state.trade?.status !== 'OPEN' && withinWindow && fresh) {
     const direction=state.pending.side === 'BUY' ? 1 : -1;
     const initialSl=(direction===1?Math.floor((quote.price-RANGE_SETTINGS.initialStop)*100+1e-8):Math.ceil((quote.price+RANGE_SETTINGS.initialStop)*100-1e-8))/100;
     const trade={key:`RANGE777:XAUUSD:5:${bucket}`,strategy:'RANGE777',symbol:'XAUUSD',timeframeMinutes:5,source:'gold-api',

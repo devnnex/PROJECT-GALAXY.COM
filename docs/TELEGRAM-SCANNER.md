@@ -18,7 +18,7 @@ Para detener los envíos: `update public.scanner_telegram_settings set enabled=f
 
 Un trigger sobre `scanner_events` crea un único trabajo por evento canónico: entrada, TP1, TP2, TP3 y SL. El número de miembros conectados y las limpiezas del centro de notificaciones no cambian la cantidad de mensajes. Entrada, SL y los tres objetivos coinciden con el evento del scanner. Se respeta «SL tras TP · sin descuento».
 
-El despacho se solicita al crear el evento, sin esperar una consulta de un usuario. `pg_net` realiza el HTTP fuera de la transacción. Un cron privado comprueba trabajos pendientes cada 10 segundos como recuperación; no invoca funciones Edge con la cola vacía o la integración desactivada. Telegram no bloquea el envío Push de Galaxy.
+El despacho se solicita al crear el evento, en la misma transacción que los avisos de Galaxy y Push. `pg_net` realiza el HTTP después del commit. El debounce dura un segundo y la recuperación revisa pendientes cada segundo: evita que un worker ya vacío deje bloqueado el próximo aviso durante 25 segundos. Los eventos tienen prioridad sobre reportes y fotos programadas; se conserva la separación de 3,1 segundos para respetar el límite oficial de 20 mensajes/minuto por grupo y se respeta `retry_after`. Telegram no bloquea el envío Push de Galaxy. Una llegada idéntica al milisegundo no puede garantizarse entre transportes distintos.
 
 Los reportes se generan los lunes a las 08:00 y el día 1 a las 08:00, zona `America/Bogota`. El cron horario también recupera el reporte de la frontera vigente tras un fallo, con clave única por período. Semanal: lunes a domingo anterior; mensual: mes calendario anterior, incluyendo cambios de año. El primer reporte corresponde a una fecha programada posterior a la activación.
 

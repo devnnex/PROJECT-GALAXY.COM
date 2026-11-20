@@ -1,0 +1,100 @@
+import { readFileSync } from 'node:fs';
+import { PGlite } from '@electric-sql/pglite';
+import { beforeAll, beforeEach, afterAll, expect, it } from 'vitest';
+const owner='00000000-0000-4000-8000-000000000001', member='00000000-0000-4000-8000-000000000002', otherAdmin='00000000-0000-4000-8000-000000000003';
+let db, historical;
+const q=(sql,args=[])=>db.query(sql,args);
+const value=async(sql,args=[])=>(await q(sql,args)).rows[0].value;
+const migration=()=>readFileSync(new URL('../supabase/migrations/20261120120000_strategy_controls_fast_telegram.sql',import.meta.url),'utf8');
+const who=async(id)=>q("select set_config('test.user',$1,false)",[id]);
+const rangeClaim=()=>value('select public.claim_range_tick() value');
+const complete=(lease,trades,events=[])=>value('select public.complete_range_tick($1,$2,$3,$4) value',[lease,'{}',JSON.stringify(trades),JSON.stringify(events)]);
+const trade=()=>({key:'RANGE777:test',strategy:'RANGE777',side:'BUY',symbol:'XAUUSD',source:'gold-api',timeframeMinutes:5,barAt:new Date().toISOString(),detectedAt:new Date().toISOString(),entry:100,initialSl:90,sl:90,status:'OPEN',outcome:null,beAt:null});
+beforeAll(async()=>{
+ db=new PGlite();
+ await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;create schema vault;create schema net;
+ create table auth.users(id uuid primary key,email text);
+ insert into auth.users values('${owner}','elkin56ty@gmail.com'),('${member}','member@example.com'),('${otherAdmin}','other@example.com');
+ create function auth.uid() returns uuid language sql as $$select nullif(current_setting('test.user',true),'')::uuid$$;
+ create table profiles(id uuid primary key,name text,status text default 'ACTIVE',role text,is_guest boolean default false);
+ insert into profiles(id,name,role) values('${owner}','Owner','ADMIN'),('${member}','Member','MEMBER'),('${otherAdmin}','Other','ADMIN');
+ create function public.require_registered_member() returns uuid language sql as $$select auth.uid()$$;
+ create function public.has_active_membership(p uuid) returns boolean language sql as $$select true$$;
+ create function public.require_admin() returns uuid language plpgsql as $$begin if not exists(select 1 from profiles where id=auth.uid() and role='ADMIN' and status='ACTIVE') then raise exception 'Forbidden' using errcode='42501';end if;return auth.uid();end;$$;
+ create table notifications(id uuid primary key default gen_random_uuid(),user_id uuid,actor_id uuid,type text,title text,body text,resource_type text,resource_id uuid,read_at timestamptz,created_at timestamptz default now());
+ create table push_subscriptions(id uuid primary key,user_id uuid,subscription jsonb);
+ create table push_delivery_jobs(id uuid primary key,notification_id uuid,subscription_id uuid,attempts integer,sent_at timestamptz,leased_until timestamptz,created_at timestamptz);
+ create table meetings(id uuid,status text,locked boolean,scheduled_ends_at timestamptz,room_code text);
+ create function public.dispatch_pending_push() returns void language sql as $$select$$;
+ create table vault.decrypted_secrets(name text,decrypted_secret text);
+ insert into vault.decrypted_secrets values('galaxy_telegram_dispatch_url','https://example.com/worker'),('galaxy_telegram_dispatch_secret','test-secret');
+ create table dispatch_log(at timestamptz default clock_timestamp());
+ create function net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) returns bigint language plpgsql as $$begin insert into dispatch_log default values;return 1;end;$$;
+ create table telegram_community_config(id boolean,chat_id bigint);insert into telegram_community_config values(true,-123);`);
+ for(const name of ['20261113010000_server_scanner_signals.sql','20261113131000_scanner_notice_symbols.sql','20261118010000_scanner_speed_and_analytics.sql','20261118170000_scanner_target_scenarios.sql','20261119120000_scanner_telegram.sql','20261119193000_telegram_scheduled_photo.sql','20261119210000_range777_strategy.sql','20261119220000_aurum_bot_branding.sql'])await db.exec(readFileSync(new URL(`../supabase/migrations/${name}`,import.meta.url),'utf8'));
+ await q('alter table public.scanner_telegram_jobs add column recipient_id bigint');
+ // A legacy BUY had a profitable $0.20 stop, but its next observed price gapped below entry.
+ await q("insert into range_scanner_trades(trade_key,bar_at,status,outcome,payload) values('legacy',now(),'CLOSED','SL',$1)",[JSON.stringify({...trade(),key:'legacy',status:'CLOSED',outcome:'SL',sl:100.2,exit:98,net:-2,beAt:new Date().toISOString()})]);
+ await db.exec(migration());
+ historical={trade:await value("select payload value from range_scanner_trades where trade_key='legacy'"),report:await value("select public.range_report('2000-01-01','2200-01-01') value")};
+ await db.exec(migration());
+ historical.again=await value("select public.range_report('2000-01-01','2200-01-01') value");
+},30000);
+beforeEach(async()=>{
+ await db.exec(`reset role;truncate range_scanner_events,range_scanner_trades,range_daily_statistics,notifications,scanner_telegram_jobs,dispatch_log;
+ update range_scanner_state set enabled=true,signals_enabled=true,lease=null,lease_until=null,totals=array[0,0,0,0,0,0,0,0,0]::numeric[];
+ update scanner_streams set enabled=true,signals_enabled=true,provider='gold-api',lease_id=null,lease_until=null,next_poll_at=now();
+ update scanner_telegram_settings set enabled=true,activated_at=now()-interval '1 day',next_send_at='-infinity',dispatch_until='-infinity';`);
+ await who(owner);
+});
+afterAll(async()=>db?.close());
+it('reclassifies historical SL Profit and repairs statistics once while preserving the observed loss sample',()=>{
+ expect(historical.trade).toMatchObject({outcome:'WIN',exitReason:'SL_PROFIT',exit:100.2,net:.2,observedExit:98,observedNet:-2,accountingBasis:'STOP_LEVEL'});
+ expect(historical.report).toMatchObject({wins:1,losses:0,net:.2});expect(historical.again).toMatchObject({wins:1,losses:0,net:.2});
+});
+it('allows only the exact owner identity to change each strategy independently',async()=>{
+ await db.exec('set role authenticated');
+ expect(await value("select public.set_trade_strategy('OPUS',false) value")).toEqual({OPUS:false,RANGE777:true});
+ expect(await value("select public.set_trade_strategy('RANGE777',false) value")).toEqual({OPUS:false,RANGE777:false});
+ await expect(q("select public.set_trade_strategy('UNKNOWN',true)")).rejects.toThrow(/Estrategia/);
+ await expect(q("select public.set_trade_strategy('OPUS',null)")).rejects.toThrow(/Estrategia/);
+ await who(member);await expect(q('select public.get_trade_strategies()')).rejects.toThrow(/Forbidden/);
+ await who(otherAdmin);await expect(q("select public.set_trade_strategy('OPUS',true)")).rejects.toThrow(/Acceso reservado/);
+ await db.exec('reset role;set role anon');await expect(q('select public.get_trade_strategies()')).rejects.toThrow(/permission denied/);
+});
+it('passes entry pause state to both workers and rejects an entry computed before a pause',async()=>{
+ const c=await rangeClaim(),t=trade();
+ await value("select public.set_trade_strategy('RANGE777',false) value");
+ expect(await complete(c.lease,[t],[{type:'SIGNAL',tradeKey:t.key,occurredAt:t.detectedAt,payload:t}])).toBe(false);
+ expect((await q('select id from range_scanner_trades')).rows).toHaveLength(0);
+ expect(await rangeClaim()).toMatchObject({signalsEnabled:false});
+ await value("select public.set_trade_strategy('OPUS',false) value");
+ expect(await value('select public.claim_scanner_tick() value')).toMatchObject({signalsEnabled:false});
+});
+it('keeps managing existing trades while paused and never notifies protection-only or excluded BE events',async()=>{
+ const t=trade();let c=await rangeClaim();await complete(c.lease,[t]);
+ await value("select public.set_trade_strategy('RANGE777',false) value");
+ t.sl=100;t.beAt=new Date().toISOString();c=await rangeClaim();
+ await complete(c.lease,[t],[{type:'BE',tradeKey:t.key,occurredAt:new Date().toISOString(),payload:t}]);
+ t.status='CLOSED';t.outcome='BE';t.exit=100;t.net=0;c=await rangeClaim();
+ await complete(c.lease,[t],[{type:'CLOSED',tradeKey:t.key,occurredAt:new Date().toISOString(),payload:t}]);
+ expect((await q('select * from notifications')).rows).toHaveLength(0);expect((await q('select * from scanner_telegram_jobs')).rows).toHaveLength(0);
+ expect(await value("select public.range_report('2000-01-01','2200-01-01') value")).toMatchObject({wins:0,losses:0,breakevens:1,bestDay:null});
+});
+it('dispatches new work within one second of an earlier empty drain, keeping group throttling and event priority',async()=>{
+ await q("insert into scanner_telegram_jobs(dedupe_key,kind,payload,expires_at) values('report','WEEKLY','{}',now()+interval '1 day'),('signal','EVENT','{}',now()+interval '1 minute')");
+ await q('select public.dispatch_scanner_telegram()');
+ expect(await value("select dispatch_until<=now()+interval '1.1 seconds' value from scanner_telegram_settings where id")).toBe(true);
+ expect((await value('select public.claim_scanner_telegram_job() value')).job.kind).toBe('EVENT');
+ expect(await value("select next_send_at>=now()+interval '3 seconds' value from scanner_telegram_settings where id")).toBe(true);
+ await q("update scanner_telegram_settings set dispatch_until=now()-interval '1 second'");await q('select public.dispatch_scanner_telegram()');
+ expect((await q('select * from dispatch_log')).rows).toHaveLength(2);
+});
+it('publishes a single useful positive protection notice and deduplicates retries',async()=>{
+ const t=trade();let c=await rangeClaim();await complete(c.lease,[t]);
+ t.sl=101;t.beAt=new Date().toISOString();const event={type:'BE',tradeKey:t.key,occurredAt:new Date().toISOString(),payload:t};
+ c=await rangeClaim();await complete(c.lease,[t],[event]);c=await rangeClaim();await complete(c.lease,[t],[event]);
+ expect((await q('select * from notifications')).rows).toHaveLength(3);
+ expect((await q('select payload from scanner_telegram_jobs')).rows).toHaveLength(1);
+ expect((await q('select title from notifications limit 1')).rows[0].title).toContain('Beneficio protegido');
+});

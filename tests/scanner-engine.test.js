@@ -12,6 +12,16 @@ const signal = { key: 'XAUUSD:5:1', symbol: 'XAUUSD', side: 'BUY', entry: 100, s
   detectedAt: new Date(at).toISOString(), barAt: new Date(at).toISOString(), source: 'gold-api', timeframeMinutes: 5 };
 
 describe('Pine SuperTrend port', () => {
+  it('pauses new entries, consumes paused candidates, and keeps existing trade management active', () => {
+    const history = [candle(at - 3 * interval), candle(at - 2 * interval), candle(at - interval)];
+    const prepared = seedScanner(history, settings, at);
+    const paused = advanceScanner(prepared, { price: 96, at: at + 1000 }, settings, false);
+    expect(paused.signal).toBeNull();expect(paused.events).toEqual([]);
+    expect(advanceScanner(paused.state, {price:95,at:at+2000}, settings, true).signal).toBeNull();
+    const opened = advanceScanner(prepared, {price:96,at:at+1000},settings);
+    const stopped = advanceScanner(opened.state,{price:opened.state.trade.sl+1,at:at+2000},settings,false);
+    expect(stopped.events.map(e=>e.type)).toContain('SL');expect(stopped.signal).toBeNull();
+  });
   it('uses Wilder RMA, hl2 and the previous completed bands, with the original direction conditions', () => {
     let previous = null;
     for (let i = 0; i < 3; i++) previous = evaluateBar(candle(at + i * interval), previous, settings);

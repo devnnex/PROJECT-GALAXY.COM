@@ -41,7 +41,7 @@ export function evaluateBar(bar, previous, input = DEFAULT_SETTINGS) {
   };
 }
 
-export function advanceScanner(saved, quote, input = DEFAULT_SETTINGS) {
+export function advanceScanner(saved, quote, input = DEFAULT_SETTINGS, signalsEnabled = true) {
   const config = settingsFor(input);
   const settingsKey = JSON.stringify(config);
   if (!Number.isFinite(quote?.price) || quote.price <= 0 || !Number.isSafeInteger(quote?.at)) throw new Error('INVALID_QUOTE');
@@ -70,7 +70,12 @@ export function advanceScanner(saved, quote, input = DEFAULT_SETTINGS) {
   const calculation = evaluateBar(state.bar, state.previous, config);
   const ready = calculation.atr != null;
   const events = []; const trades = [];
-  const newDirection = ready && calculation.candidateSide !== 0 && state.bar.signalSide === 0 && calculation.candidateSide !== state.lastSide;
+  const newDirection = signalsEnabled && ready && calculation.candidateSide !== 0 && state.bar.signalSide === 0 && calculation.candidateSide !== state.lastSide;
+  // Consume paused candidates so resuming cannot replay an earlier entry.
+  if (!signalsEnabled && calculation.candidateSide) {
+    state.bar.signalSide = calculation.candidateSide;
+    state.lastSide = calculation.candidateSide;
+  }
   if (state.trade?.status === 'OPEN') {
     const result = updateTrade(state.trade, quote.price, quote.at, newDirection && (calculation.candidateSide === 1 ? 'BUY' : 'SELL') !== state.trade.side);
     state.trade = result.trade;

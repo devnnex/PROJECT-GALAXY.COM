@@ -122,7 +122,9 @@ canvas {
     position: fixed;
     inset: auto 0 0;
     margin: 0;
-    transform: translate3d(0, var(--bottom-nav-offset, 0px), 0);
+    /* Native fixed positioning follows mobile browser chrome without stale
+       scroll-driven transforms that can leave the bar above the bottom. */
+    transform: none;
     backface-visibility: hidden;
     isolation: isolate;
     contain: layout style;

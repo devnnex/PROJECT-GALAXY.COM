@@ -24,16 +24,16 @@ it('expires an entry at twenty seconds and rejects late receipts and a return to
  expect(advanceRange(saved(),quote(103),quote(103).at+25000).trades).toHaveLength(0);
  expect(advance(saved(),quote(102)).trades).toHaveLength(0);
 });
-it.each(['BUY','SELL'])('activates BE, tightens without retreating and records the sampled exit for %s',side=>{
+it.each(['BUY','SELL'])('waits for $10, announces protection once and classifies the protected stop for %s',side=>{
  const direction=side==='BUY'?1:-1,entry=side==='BUY'?103:97;
  let result=advance(saved(side),quote(entry));
- result=advance(result.state,quote(entry+direction*5,30000));expect(result.state.trade.sl).toBe(entry);expect(result.events[0].type).toBe('BE');
- result=advance(result.state,quote(entry+direction*10,60000));expect(result.state.trade.sl).toBe(entry+direction*5);expect(result.events).toHaveLength(0);
- result=advance(result.state,quote(entry+direction*9,90000));expect(result.state.trade.sl).toBe(entry+direction*5);
- result=advance(result.state,quote(entry+direction*4,120000));expect(result.state.trade).toMatchObject({status:'CLOSED',outcome:'WIN',net:4});expect(result.events[0].type).toBe('CLOSED');
+ result=advance(result.state,quote(entry+direction*5,30000));expect(result.state.trade.sl).toBe(entry-direction*10);expect(result.events).toHaveLength(0);
+ result=advance(result.state,quote(entry+direction*10,60000));expect(result.state.trade.sl).toBe(entry+direction*5);expect(result.events.map(e=>e.type)).toEqual(['BE']);
+ result=advance(result.state,quote(entry+direction*9,90000));expect(result.state.trade.sl).toBe(entry+direction*5);expect(result.events).toEqual([]);
+ result=advance(result.state,quote(entry+direction*4,120000));expect(result.state.trade).toMatchObject({status:'CLOSED',outcome:'WIN',net:5,exitReason:'SL_PROFIT',observedNet:4,accountingBasis:'STOP_LEVEL'});expect(result.events[0].type).toBe('CLOSED');
 });
 it('keeps a breakeven close distinct and counts a gap through BE as an observed loss',()=>{
- const opened=advance(saved(),quote(103));const be=advance(opened.state,quote(108,30000));
+ const opened=advance(saved(),quote(103));const be=structuredClone(opened);be.state.trade.sl=103;be.state.trade.beAt=new Date(quote(108,30000).at).toISOString();
  expect(advance(be.state,quote(103,60000)).state.trade).toMatchObject({outcome:'BE',net:0});
  expect(advance(be.state,quote(101,60000)).state.trade).toMatchObject({outcome:'SL',net:-2,exit:101});
 });
@@ -48,8 +48,21 @@ it('builds its complete channel from continuous shared samples without historica
  for(let i=0;i<=210;i++){const at=start+i*30000;result=advance(state,{price:100,source:'gold-api',at});state=result.state;expect(result.events).toHaveLength(0);}
  expect(state.bars).toHaveLength(21);expect(result.status).toBe('ready');expect(state.trade).toBe(null);
 });
-it('ranks weighted periods including BE and applies dates without mixing strategies',()=>{
+it('excludes break even from weighted effectiveness and applies dates without mixing strategies',()=>{
  const rows=[{day:'2025-12-31',wins:1,losses:0,breakevens:0,signals:1},{day:'2026-01-01',wins:2,losses:1,breakevens:1,signals:4},{day:'2026-01-02',wins:1,losses:0,breakevens:0,signals:1}];
- const all=rangePeriods(rows);expect(all.rate).toBeCloseTo(100*4/6);expect(all.bestDays.best.key).toBe('2025-12-31');expect(all.bestYears.best.key).toBe('2025');
- const filtered=rangePeriods(rows,'2026-01-01','2026-01-01');expect(filtered.rate).toBe(50);expect(filtered.closed).toBe(4);
+ const all=rangePeriods(rows);expect(all.rate).toBe(80);expect(all.bestDays.best.key).toBe('2025-12-31');expect(all.bestYears.best.key).toBe('2025');
+ const filtered=rangePeriods(rows,'2026-01-01','2026-01-01');expect(filtered.rate).toBeCloseTo(200/3);expect(filtered.closed).toBe(3);expect(filtered.total.breakevens).toBe(1);
+});
+it.each(['BUY','SELL'])('retains legacy positive stops as winners even when the next %s sample crosses entry',side=>{
+ const dir=side==='BUY'?1:-1,entry=side==='BUY'?103:97;
+ const opened=advance(saved(side),quote(entry));
+ opened.state.trade.sl=entry+dir*.2;opened.state.trade.beAt=new Date(quote(entry+dir*5,30000).at).toISOString();
+ const closed=advance(opened.state,quote(entry-dir*2,60000));
+ expect(closed.state.trade).toMatchObject({outcome:'WIN',exitReason:'SL_PROFIT',net:.2,observedNet:-2,observedExit:entry-dir*2});
+});
+it('pauses entries without pausing stop management or replaying a pending breakout on resume',()=>{
+ const q=quote(103),paused=advanceRange(saved(),q,q.at,false);expect(paused.events).toEqual([]);expect(paused.state.trade).toBeNull();
+ expect(advance(paused.state,quote(104,10000)).events).toEqual([]);
+ const opened=advance(saved(),q);const stopped=advanceRange(opened.state,quote(92,30000),quote(92,30000).at,false);
+ expect(stopped.state.trade).toMatchObject({status:'CLOSED',outcome:'SL'});expect(stopped.events.map(e=>e.type)).toEqual(['CLOSED']);
 });

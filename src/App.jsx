@@ -435,7 +435,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   const activeLabel = availableNavigation.find(([id]) => id === page)?.[1] || 'Reuniones';
   let content;
   if (page === 'dashboard') content = <Dashboard user={representedUser} navigate={navigate} openProduct={setSelectedProduct} />;
-  else if (page === 'black-trade') content = <BlackGalaxyTrade toast={toast} />;
+  else if (page === 'black-trade') content = <BlackGalaxyTrade toast={toast} user={user} />;
   else if (page === 'reports') content = <ReportsPage user={representedUser} toast={toast} />;
   else if (page === 'marketplace') content = <Marketplace onOpen={setSelectedProduct} user={representedUser} />;
   else if (page === 'store') content = <GalaxyStore isAdmin={isAdmin} toast={toast} />;

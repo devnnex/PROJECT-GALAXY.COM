@@ -8,3 +8,5 @@ Prompts finales (herramienta integrada; fondo opaco):
 - SELL: banner galáctico premium 1536×1024 para PROJECT GALAXY; astronauta con armadura metálica oscura a la izquierda, nebulosa violeta, paneles de vidrio morado, trayectoria descendente rojo rubí y arco planetario; tipografía metálica blanca “SELL”, “PROJECT GALAXY” y “BLACK GALAXY TRADE”; márgenes seguros; sin precios, resultados, porcentajes, promesas ni texto adicional.
 
 La identidad de estrategia y los precios vigentes van en la explicación de cada mensaje. Los reportes estadísticos se renderizan como PNG a partir de sus datos, mediante código y WASM en el servidor.
+
+`galaxy-aurum.png`: generado con la herramienta integrada `imagegen`, inspeccionado y guardado en este directorio. Prompt final: banner Telegram premium 1536×1024, robot de oro y obsidiana, nebulosa dorada con acentos violetas; textos exactos “PROJECT GALAXY”, “GALAXY AURUM BOT”, “XAUUSD · M5”, “BLACK GALAXY TRADE”; fondo opaco, márgenes seguros, sin precios, resultados ni promesas. Se reutiliza para BUY y SELL; la dirección va en el mensaje. Caché independiente `AURUM`, ruta privada `reusable/galaxy-aurum.png`.

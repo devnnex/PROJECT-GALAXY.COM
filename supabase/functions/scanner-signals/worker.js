@@ -34,7 +34,7 @@ export async function runScannerTick({ client, goldKey, getQuote = fetchGoldQuot
       saved = prepared;
       cache = history.cache;
     }
-    const result = advanceScanner(saved, quote, settings);
+    const result = advanceScanner(saved, quote, settings, claimed.signalsEnabled !== false);
     if (Number.isFinite(quote.nextFetchAt)) result.state.nextQuoteFetchAt = quote.nextFetchAt;
     if (cache) result.state.bootstrap = cache;
     const stored = await rpc('complete_scanner_tick', { p_lease: claimed.lease, p_provider: claimed.provider,

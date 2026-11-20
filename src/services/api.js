@@ -15,7 +15,7 @@ const parameterNames = Object.freeze({
   priceUsdt: 'p_price_usdt', imagePath: 'p_image_path', soldOut: 'p_sold_out',
   guestLimit: 'p_guest_limit', reportId: 'p_report_id', category: 'p_category', subject: 'p_subject',
   details: 'p_details', priority: 'p_priority', adminNotes: 'p_admin_notes', recipientId: 'p_recipient_id',
-  senderId: 'p_sender_id',
+  senderId: 'p_sender_id', strategy: 'p_strategy', enabled: 'p_enabled',
 });
 
 const PROFILE_AVATAR_BUCKET = 'profile-avatars';
@@ -334,6 +334,8 @@ export const api = {
   getScannerAnalytics: () => rpc('get_scanner_analytics'),
   getRangeTrade: (limit = 40) => rpc('get_range_trade', { limit }),
   getRangeAnalytics: () => rpc('get_range_analytics'),
+  getTradeStrategies: () => rpc('get_trade_strategies'),
+  setTradeStrategy: (strategy, enabled) => rpc('set_trade_strategy', { strategy, enabled }),
   telegramAccess: (action = 'status') => invokeSecure('telegram-access', { action }, 'No fue posible conectar tu acceso a Telegram.'),
   createMeeting: (payload) => rpc('create_meeting', payload),
   createMeetingShareLink: (meetingId, guestLimit = 1) => rpc('create_meeting_share_link', { meetingId, guestLimit }),

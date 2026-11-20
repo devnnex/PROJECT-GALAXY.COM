@@ -12,6 +12,7 @@ const db=(args)=>call(['db','query',...args,`--remote=${ref}`,'--yes','--output'
 try {
  await db(['--file',resolve(root,'supabase/migrations/20261119210000_range777_strategy.sql')]);
  await db(['--file',resolve(root,'supabase/migrations/20261119220000_aurum_bot_branding.sql')]);
+ await db(['--file',resolve(root,'supabase/migrations/20261120120000_strategy_controls_fast_telegram.sql')]);
  const keys=await call(['projects','api-keys','--project-ref',ref,'--output','json']);
  const key=(Array.isArray(keys)?keys:keys.api_keys||keys.data||[]).find(k=>k.name==='service_role')?.api_key;
  if(!key)throw new Error('Falta el acceso privado al proyecto configurado.');
@@ -19,7 +20,7 @@ try {
  const bucket='telegram-evidence';const existing=await client.storage.getBucket(bucket);
  if(existing.error){const result=await client.storage.createBucket(bucket,{public:false,fileSizeLimit:3*1024*1024,allowedMimeTypes:['image/png']});if(result.error)throw new Error('No fue posible preparar las imágenes privadas.');}
  else if(existing.data.public)throw new Error('El bucket de Telegram debe ser privado.');
- for(const side of ['BUY','SELL']){
+ for(const side of ['BUY','SELL','AURUM']){
   const bytes=await readFile(resolve(root,`assets/telegram/galaxy-${side.toLowerCase()}.png`));
   const hash=createHash('sha256').update(bytes).digest('hex'),path=`reusable/galaxy-${side.toLowerCase()}.png`;
   const previous=await client.from('scanner_telegram_media').select('sha256').eq('key',side).maybeSingle();

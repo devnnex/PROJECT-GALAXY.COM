@@ -285,3 +285,4 @@
   .bgt-liquid-control[data-phase="active"] .bgt-lot-slider::-moz-range-thumb{transform:none}
   .bgt-profit-hero>.bgt-profit-number[data-flash]{background:none;color:#f0e5ff}
 }
+.bgt-strategy-controls{margin:0 0 18px;padding:18px;border:1px solid rgba(187,144,255,.22);border-radius:14px;background:rgba(150,100,230,.05)}.bgt-strategy-controls>div:first-child{display:grid;gap:5px}.bgt-strategy-controls small{font-size:11px;color:#aaa1b5;line-height:1.6}.bgt-strategy-switches{display:flex;flex-wrap:wrap;gap:18px;margin-top:16px}.bgt-strategy-switches .access-toggle{flex-wrap:wrap;min-height:36px}.bgt-strategy-switches strong{font-size:12px}.bgt-strategy-switches input:focus-visible+span{outline:2px solid #d2b5ff;outline-offset:4px}.bgt-strategy-controls p{font-size:12px;color:#e1b4bc}.bgt-strategy-controls p button{border:0;background:transparent;color:#d2b5ff;text-decoration:underline;cursor:pointer}
