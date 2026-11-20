@@ -5,10 +5,11 @@ it('updates only the new migration and the two scanner delivery functions withou
   const execute = vi.fn(async () => ({ stdout: '{}' }));
   await updateBlackGalaxy({ execute, log: vi.fn() });
   const calls = execute.mock.calls.map((call) => call[1]);
-  expect(calls).toHaveLength(4);
+  expect(calls).toHaveLength(5);
   expect(calls[0].join(' ')).toContain('20261118010000_scanner_speed_and_analytics.sql');
   expect(calls[1].join(' ')).toContain('20261118170000_scanner_target_scenarios.sql');
-  expect(calls[2]).toContain('scanner-signals'); expect(calls[3]).toContain('push-notifications');
+  expect(calls[2].join(' ')).toContain('20261119210000_range777_strategy.sql');
+  expect(calls[3]).toContain('scanner-signals'); expect(calls[4]).toContain('push-notifications');
   expect(calls.flat()).not.toContain('secrets'); expect(calls.flat()).not.toContain('--prune');
   expect(calls.flat()).not.toContain('--enable');
 });

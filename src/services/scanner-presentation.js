@@ -2,6 +2,15 @@ export function levelSymbol(level, reached = false) {
   return level === 'entry' ? '🔵' : level === 'sl' ? '🔴' : reached ? '✅' : '🎯';
 }
 
+export function scannerStrategyForNotice(notice) { return String(notice?.title||'').includes('Ruptura 777') ? 'RANGE777' : 'OPUS'; }
+export function selectScannerNoticeStrategy(notice) {
+  if(!notice?.title)return; // A cold Push return already carries its URL intent.
+  const strategy=scannerStrategyForNotice(notice),url=new URL(window.location.href);
+  if(strategy==='RANGE777')url.searchParams.set('strategy','range777');else url.searchParams.delete('strategy');
+  window.history.replaceState(null,'',url);
+  window.dispatchEvent(new CustomEvent('galaxy:scanner-strategy',{detail:strategy}));
+}
+
 export function parseScannerNotice(notice) {
   const trade = {};
   for (const part of String(notice.body || '').split('|')) {
@@ -20,6 +29,7 @@ export function parseScannerNotice(notice) {
     // TP2/TP3 include all preceding targets by definition.
     for (let level = 1; level <= Number(event.slice(2)); level++) trade[`hit${level}`] = true;
   }
+  if(String(notice.title||'').includes('Ruptura 777'))trade.strategy='RANGE777';
   return { trade, event };
 }
 

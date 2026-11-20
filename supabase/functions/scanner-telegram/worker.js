@@ -21,7 +21,7 @@ export async function deliverTelegram({ claim, finish, send, now = Date.now, sle
     if (response.status === 200 && response.ok === true && Number.isInteger(response.messageId)) {
       // A failed database acknowledgement must abort the drain; never send the
       // same leased job twice in one invocation.
-      await finish(job, { status: 'sent', messageId: response.messageId }); totals.sent++;
+      await finish(job, { status: 'sent', messageId: response.messageId, ...(response.photoFileId ? { photoFileId: response.photoFileId } : {}) }); totals.sent++;
     } else {
       const retry = response.status === 0 || response.status === 429 || response.status >= 500;
       await finish(job, { status: retry ? 'retry' : 'failed', retryAfter: Math.min(86400, Math.max(0, Number(response.retryAfter) || 0)), code: `telegram_${Number(response.status) || 'transport'}` });
