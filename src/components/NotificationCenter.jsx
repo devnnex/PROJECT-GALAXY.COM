@@ -1,3 +1,4 @@
+import { lockAppScroll } from '../services/lock-app-scroll';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bell, Check, CheckCheck, ChevronRight, RefreshCw, X } from 'lucide-react';
@@ -8,8 +9,8 @@ export default function NotificationCenter({ items, unread, busy, error, cleared
   const [filter, setFilter] = useState('ALL');
   const panel = useRef(null);
   useEffect(() => {
-    const previous = document.activeElement, overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden'; panel.current?.focus();
+    const previous = document.activeElement, releaseScroll = lockAppScroll();
+    panel.current?.focus();
     const key = (event) => {
       if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
       if (event.key !== 'Tab') return;
@@ -19,7 +20,7 @@ export default function NotificationCenter({ items, unread, busy, error, cleared
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     };
     document.addEventListener('keydown', key);
-    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', key); previous?.focus(); };
+    return () => { releaseScroll(); document.removeEventListener('keydown', key); previous?.focus(); };
   }, [onClose]);
   const visible = filter === 'UNREAD' ? items.filter((item) => !item.readAt) : items;
   const time = (value) => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(english ? 'en-US' : 'es-CO', { timeZone: 'America/Bogota', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';

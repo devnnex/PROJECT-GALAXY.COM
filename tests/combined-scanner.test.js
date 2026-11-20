@@ -1,5 +1,11 @@
 import {expect,it,vi} from 'vitest';
 import {runCombinedScannerTick} from '../supabase/functions/scanner-signals/combined-worker';
+it('starts Telegram directly after each commit without waiting for the other strategy',async()=>{
+ const order=[],getQuote=vi.fn().mockResolvedValue({price:4000}),onEvents=vi.fn(()=>order.push('send'));
+ await runCombinedScannerTick({getQuote,onEvents,scanner:async options=>{await options.getQuote();order.push('opus-commit');return {events:1};},range:async()=>{order.push('aurum-commit');return {events:1};}});
+ expect(order).toEqual(['opus-commit','send','aurum-commit','send']);expect(onEvents).toHaveBeenCalledTimes(2);
+ await expect(runCombinedScannerTick({onEvents:()=>{throw new Error('Transport failure');},scanner:async()=>({events:1,status:'ready'})})).resolves.toEqual({events:1,status:'ready'});
+});
 it('uses a single provider sample and commits the original scanner before the independent range ledger',async()=>{
  const order=[],quote={price:4000,at:Date.now(),source:'gold-api'},getQuote=vi.fn().mockResolvedValue(quote),range=vi.fn(async()=>{order.push('range');});
  const result=await runCombinedScannerTick({client:{},getQuote,scanner:async options=>{expect(await options.getQuote()).toBe(quote);order.push('original-committed');return {status:'ready'};},range});

@@ -14,7 +14,7 @@ export async function updateBlackGalaxy({ execute = promisify(execFile), log = c
     catch { throw new Error(`No se completó ${args.slice(0, 2).join(' ')}. Revisa el acceso a Supabase. No publiques el frontend hasta completar la actualización.`); }
   };
   log('1/3 Preparando estadísticas y entrega rápida a partir del historial existente…');
-  for (const name of ['20261118010000_scanner_speed_and_analytics.sql', '20261118170000_scanner_target_scenarios.sql', '20261119210000_range777_strategy.sql', '20261120120000_strategy_controls_fast_telegram.sql']) {
+  for (const name of ['20261118010000_scanner_speed_and_analytics.sql', '20261118170000_scanner_target_scenarios.sql', '20261119210000_range777_strategy.sql', '20261120120000_strategy_controls_fast_telegram.sql', '20261120160000_strategy_access_and_instant_delivery.sql']) {
     await call(['db', 'query', '--file', resolve(root, 'supabase/migrations', name)]);
   }
   log('2/3 Actualizando el muestreo con caché del proveedor…');

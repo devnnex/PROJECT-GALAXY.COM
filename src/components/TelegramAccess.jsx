@@ -1,3 +1,4 @@
+import { lockAppScroll } from '../services/lock-app-scroll';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowUpRight, CheckCheck, LoaderCircle, LockKeyhole, Send, ShieldCheck, X } from 'lucide-react';
@@ -10,8 +11,8 @@ export default function TelegramAccess({ onClose }) {
   const panel = useRef(null), alive = useRef(false), pending = useRef(false), watcher = useRef(null), version = useRef(0);
   const merge = (next) => setState((previous) => ({ ...next, botUrl: next.state === 'WAITING' ? next.botUrl || previous?.botUrl : null }));
   useEffect(() => {
-    alive.current = true; let stopped = false; const previous = document.activeElement, overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden'; panel.current?.focus();
+    alive.current = true; let stopped = false; const previous = document.activeElement, releaseScroll = lockAppScroll();
+    panel.current?.focus();
     const key = (event) => {
       if (event.key === 'Escape') { event.stopPropagation(); onClose(); }
       if (event.key !== 'Tab') return;
@@ -24,7 +25,7 @@ export default function TelegramAccess({ onClose }) {
     api.telegramAccess('begin').then((value) => {
       if (stopped) return; merge(value);
     }).catch((cause) => { if (!stopped) setError(cause.message); }).finally(() => { if (!stopped) setBusy(false); });
-    return () => { stopped = true; alive.current = false; document.body.style.overflow = overflow; document.removeEventListener('keydown', key); previous?.focus(); };
+    return () => { stopped = true; alive.current = false; releaseScroll(); document.removeEventListener('keydown', key); previous?.focus(); };
   }, [onClose]);
   useEffect(() => {
     if (!state?.enabled || !['WAITING', 'PROPOSED', 'LINKED'].includes(state.state)) return undefined;

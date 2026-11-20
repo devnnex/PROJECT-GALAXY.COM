@@ -13,6 +13,7 @@ try {
  await db(['--file',resolve(root,'supabase/migrations/20261119210000_range777_strategy.sql')]);
  await db(['--file',resolve(root,'supabase/migrations/20261119220000_aurum_bot_branding.sql')]);
  await db(['--file',resolve(root,'supabase/migrations/20261120120000_strategy_controls_fast_telegram.sql')]);
+ await db(['--file',resolve(root,'supabase/migrations/20261120160000_strategy_access_and_instant_delivery.sql')]);
  const keys=await call(['projects','api-keys','--project-ref',ref,'--output','json']);
  const key=(Array.isArray(keys)?keys:keys.api_keys||keys.data||[]).find(k=>k.name==='service_role')?.api_key;
  if(!key)throw new Error('Falta el acceso privado al proyecto configurado.');

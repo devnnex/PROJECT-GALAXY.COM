@@ -103,6 +103,64 @@ canvas {
 }
 
 @media (max-width: 700px) {
+  html.galaxy-app-viewport,
+  body.galaxy-app-viewport {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body.galaxy-app-viewport {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+  }
+
+  .galaxy-app-viewport #root,
+  .galaxy-app-viewport .app-shell {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .galaxy-app-viewport .app-main {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
+  }
+
+  .galaxy-app-viewport .topbar {
+    position: relative;
+    top: auto;
+    flex: 0 0 60px;
+  }
+
+  .galaxy-app-viewport .page-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    margin: 0 auto;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 24px;
+  }
+
+  .galaxy-app-viewport .bottom-nav {
+    position: absolute;
+    bottom: 0;
+    transform: none;
+    background: #0c0a0f;
+  }
+
   @supports (height: 100dvh) {
     .hero {
       height: calc(100dvh - 64px);

@@ -1,3 +1,4 @@
+import { lockAppScroll } from '../services/lock-app-scroll';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowDownRight, ArrowUpRight, CalendarDays, Calculator, ChevronDown, RefreshCw, Sparkles, X } from 'lucide-react';
@@ -42,8 +43,8 @@ export default function ScannerSimulator({ onClose, revision }) {
   const dialog = useRef(null);
 
   useEffect(() => {
-    const previous = document.activeElement, overflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden'; dialog.current?.focus();
+    const previous = document.activeElement, releaseScroll = lockAppScroll();
+    dialog.current?.focus();
     const key = (event) => {
       if (event.key === 'Escape') onClose();
       if (event.key !== 'Tab') return;
@@ -60,7 +61,7 @@ export default function ScannerSimulator({ onClose, revision }) {
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
     };
     document.addEventListener('keydown', key);
-    return () => { document.body.style.overflow = overflow; document.removeEventListener('keydown', key); previous?.focus(); };
+    return () => { releaseScroll(); document.removeEventListener('keydown', key); previous?.focus(); };
   }, [onClose]);
 
   useEffect(() => {

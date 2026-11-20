@@ -1,4 +1,4 @@
-const CACHE = 'galaxy-shell-mwp1ox75';
+const CACHE = 'galaxy-shell-mwp5sa03';
 const SHELL = ['index.html', 'manifest.webmanifest', 'galaxy-icon.svg', 'galaxy-notification.png'];
 const scopedUrl = (path) => new URL(path, self.registration.scope).href;
 self.addEventListener('install', (event) => event.waitUntil(

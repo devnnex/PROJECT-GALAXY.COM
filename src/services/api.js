@@ -335,6 +335,7 @@ export const api = {
   getRangeTrade: (limit = 40) => rpc('get_range_trade', { limit }),
   getRangeAnalytics: () => rpc('get_range_analytics'),
   getTradeStrategies: () => rpc('get_trade_strategies'),
+  getTradeStrategyAccess: () => rpc('get_trade_strategy_access'),
   setTradeStrategy: (strategy, enabled) => rpc('set_trade_strategy', { strategy, enabled }),
   telegramAccess: (action = 'status') => invokeSecure('telegram-access', { action }, 'No fue posible conectar tu acceso a Telegram.'),
   createMeeting: (payload) => rpc('create_meeting', payload),
@@ -421,6 +422,16 @@ export const api = {
       channel = supabase.channel(`db:participants:${meetingId}:${crypto.randomUUID()}`, { config: { private: true } })
         .on('postgres_changes', { event: '*', schema: 'public', table: 'meeting_participants', filter: `meeting_id=eq.${meetingId}` }, callback)
         .subscribe();
+    }).catch(() => {});
+    return () => { active = false; if (channel) supabase.removeChannel(channel); };
+  },
+  onTradeStrategyAccess(callback) {
+    let active = true, channel = null;
+    authorizeRealtime().then((session) => {
+      if (!active) return;
+      channel = supabase.channel(`db:notifications:${session.user.id}:trade-strategies:${crypto.randomUUID()}`, { config: { private: true } })
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'trade_strategy_access' }, callback)
+        .subscribe((status) => { if (status === 'SUBSCRIBED') callback(); });
     }).catch(() => {});
     return () => { active = false; if (channel) supabase.removeChannel(channel); };
   },

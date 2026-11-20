@@ -266,6 +266,11 @@ function NotificationActionModal({ notice, busy, onAccept, onDecline, onClose })
 }
 
 function AppShell({ user, onUserChange, onLogout }) {
+  useEffect(() => {
+    document.documentElement.classList.add('galaxy-app-viewport');
+    document.body.classList.add('galaxy-app-viewport');
+    return () => { document.documentElement.classList.remove('galaxy-app-viewport'); document.body.classList.remove('galaxy-app-viewport'); };
+  }, []);
   const isAdmin = user.role === 'ADMIN'; const language = languageFor(user); const english = language === 'en';
   const availableNavigation = (user.isGuest ? navigation.filter(([id]) => id === 'meetings') : isAdmin ? navigation : memberNavigation).map(([id, label, Icon]) => [id, english ? navigationEnglish[id] : label, Icon]);
   const inviteToken = new URLSearchParams(location.search).get('invite') || '';
@@ -281,7 +286,7 @@ function AppShell({ user, onUserChange, onLogout }) {
   const inbox = useNotificationInbox(user.id, api.markAllNotificationsRead);
   const { items: notificationItems, setItems: setNotificationItems, open: notices } = inbox;
   useEffect(() => { const key = (event) => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); setCommand(true); } if (event.key === 'Escape') { setCommand(false); setSelectedProduct(null); } }; addEventListener('keydown', key); return () => removeEventListener('keydown', key); }, []);
-  const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); scrollTo({ top: 0, behavior: 'smooth' }); };
+  const navigate = (id) => { const target = availableNavigation.some(([allowed]) => allowed === id) ? id : isAdmin ? 'dashboard' : 'meetings'; setPage(target); setMenu(false); document.querySelector('.page-content')?.scrollTo({ top: 0 }); scrollTo({ top: 0, behavior: 'smooth' }); };
   useEffect(() => {
     if (user.isGuest || !import.meta.env.PROD) return undefined;
     return createPushEnrollment({ userId: user.id, adapter: api });

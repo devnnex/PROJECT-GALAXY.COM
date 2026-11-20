@@ -15,7 +15,7 @@ async function call(args){
  catch {throw new Error(`No se pudo completar ${args.slice(0,2).join(' ')}. No se muestran credenciales.`);}
 }
 try {
- if(!historyOnly)await call(['db','query','--file',resolve(root,'supabase/migrations/20261120120000_strategy_controls_fast_telegram.sql'),`--remote=${ref}`,'--yes','--output','json']);
+ if(!historyOnly)for(const migration of ['20261120120000_strategy_controls_fast_telegram.sql','20261120160000_strategy_access_and_instant_delivery.sql'])await call(['db','query','--file',resolve(root,'supabase/migrations',migration),`--remote=${ref}`,'--yes','--output','json']);
  const keys=await call(['projects','api-keys','--project-ref',ref,'--output','json']);
  const key=(Array.isArray(keys)?keys:keys.api_keys||keys.data||[]).find(k=>k.name==='service_role')?.api_key;
  if(!key)throw new Error('No se obtuvo acceso al proyecto configurado.');

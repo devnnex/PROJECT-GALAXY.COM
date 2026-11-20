@@ -39,9 +39,10 @@ beforeAll(async()=>{
  historical={trade:await value("select payload value from range_scanner_trades where trade_key='legacy'"),report:await value("select public.range_report('2000-01-01','2200-01-01') value")};
  await db.exec(migration());
  historical.again=await value("select public.range_report('2000-01-01','2200-01-01') value");
+ await db.exec(readFileSync(new URL('../supabase/migrations/20261120160000_strategy_access_and_instant_delivery.sql',import.meta.url),'utf8'));
 },30000);
 beforeEach(async()=>{
- await db.exec(`reset role;truncate range_scanner_events,range_scanner_trades,range_daily_statistics,notifications,scanner_telegram_jobs,dispatch_log;
+ await db.exec(`reset role;truncate range_scanner_events,range_scanner_trades,range_daily_statistics,notifications,scanner_telegram_jobs,scanner_telegram_send_slots,dispatch_log;
  update range_scanner_state set enabled=true,signals_enabled=true,lease=null,lease_until=null,totals=array[0,0,0,0,0,0,0,0,0]::numeric[];
  update scanner_streams set enabled=true,signals_enabled=true,provider='gold-api',lease_id=null,lease_until=null,next_poll_at=now();
  update scanner_telegram_settings set enabled=true,activated_at=now()-interval '1 day',next_send_at='-infinity',dispatch_until='-infinity';`);
@@ -86,9 +87,43 @@ it('dispatches new work within one second of an earlier empty drain, keeping gro
  await q('select public.dispatch_scanner_telegram()');
  expect(await value("select dispatch_until<=now()+interval '1.1 seconds' value from scanner_telegram_settings where id")).toBe(true);
  expect((await value('select public.claim_scanner_telegram_job() value')).job.kind).toBe('EVENT');
- expect(await value("select next_send_at>=now()+interval '3 seconds' value from scanner_telegram_settings where id")).toBe(true);
+ expect((await value('select public.claim_scanner_telegram_job() value')).waitMs).toBeLessThan(3100);
  await q("update scanner_telegram_settings set dispatch_until=now()-interval '1 second'");await q('select public.dispatch_scanner_telegram()');
  expect((await q('select * from dispatch_log')).rows).toHaveLength(2);
+});
+it('blocks inactive strategies and analytics in the database and restores access on enable',async()=>{
+ await who(member);await db.exec('set role authenticated');
+ expect(await value('select public.get_trade_strategy_access() value')).toMatchObject({OPUS:true,RANGE777:true});
+ await db.exec('reset role');await who(owner);await value("select public.set_trade_strategy('RANGE777',false) value");
+ await who(member);await db.exec('set role authenticated');
+ expect(await value('select public.get_trade_strategy_access() value')).toMatchObject({OPUS:true,RANGE777:false});
+ await expect(q('select public.get_range_trade()')).rejects.toThrow(/desactivada/);
+ await expect(q('select public.get_range_analytics()')).rejects.toThrow(/desactivada/);
+ expect(await value('select public.get_black_galaxy_trade() value')).toBeTruthy();
+ await expect(q("update public.trade_strategy_access set enabled=true where strategy='RANGE777'")).rejects.toThrow(/permission denied/);
+ await db.exec('reset role');await who(owner);await value("select public.set_trade_strategy('RANGE777',true) value");
+ await value("select public.set_trade_strategy('OPUS',false) value");await who(member);await db.exec('set role authenticated');
+ expect(await value('select public.get_range_trade() value')).toBeTruthy();
+ await expect(q('select public.get_black_galaxy_trade()')).rejects.toThrow(/desactivada/);
+ await expect(q('select public.get_scanner_analytics()')).rejects.toThrow(/desactivada/);
+});
+it('prioritizes an entry over a prior stop and paces short bursts near one second',async()=>{
+ await q(`insert into scanner_telegram_jobs(dedupe_key,kind,payload,expires_at) values('stop','EVENT','{"type":"SL"}',now()+interval '1 minute'),('entry','EVENT','{"type":"SIGNAL"}',now()+interval '1 minute')`);
+ const first=await value('select public.claim_scanner_telegram_job() value');expect(first.job.payload.type).toBe('SIGNAL');
+ await value('select public.finish_scanner_telegram_job($1,$2,$3,$4) value',[first.job.id,first.job.lease,'sent',100]);
+ const wait=await value('select public.claim_scanner_telegram_job() value');expect(wait.waitMs).toBeGreaterThan(0);expect(wait.waitMs).toBeLessThanOrEqual(1050);
+ await q("update scanner_telegram_send_slots set reserved_at=reserved_at-interval '2 seconds'");
+ expect((await value('select public.claim_scanner_telegram_job() value')).job.payload.type).toBe('SL');
+});
+it('enforces the rolling group limit and honours Telegram retry_after',async()=>{
+ await q("insert into scanner_telegram_jobs(dedupe_key,kind,payload,expires_at) values('entry','EVENT','{}',now()+interval '5 minutes')");
+ await q("insert into scanner_telegram_send_slots(recipient_id,job_id,reserved_at) select -123,(select id from scanner_telegram_jobs limit 1),now()-interval '10 seconds' from generate_series(1,20)");
+ expect((await value('select public.claim_scanner_telegram_job() value')).waitMs).toBeGreaterThan(49000);
+ await q("update scanner_telegram_send_slots set reserved_at=now()-interval '61 seconds'");
+ const first=await value('select public.claim_scanner_telegram_job() value');expect(first.job).toBeTruthy();
+ await value('select public.finish_scanner_telegram_job($1,$2,$3,null,60,$4) value',[first.job.id,first.job.lease,'retry','telegram_429']);
+ await q("update scanner_telegram_jobs set next_attempt_at=now()");
+ expect((await value('select public.claim_scanner_telegram_job() value')).waitMs).toBeGreaterThan(59000);
 });
 it('publishes a single useful positive protection notice and deduplicates retries',async()=>{
  const t=trade();let c=await rangeClaim();await complete(c.lease,[t]);
