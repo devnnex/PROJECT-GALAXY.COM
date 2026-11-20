@@ -1,7 +1,7 @@
 begin;
 alter table public.telegram_memberships add column if not exists link_issue text;
 alter table public.scanner_telegram_jobs drop constraint if exists scanner_telegram_jobs_kind_check;
-alter table public.scanner_telegram_jobs add constraint scanner_telegram_jobs_kind_check check(kind in ('EVENT','WEEKLY','MONTHLY','WELCOME','LINK','LINK_ERROR'));
+alter table public.scanner_telegram_jobs add constraint scanner_telegram_jobs_kind_check check(kind in ('EVENT','WEEKLY','MONTHLY','WELCOME','LINK','LINK_ERROR','PHOTO'));
 
 create or replace function public.telegram_access_view(p_row public.telegram_memberships) returns jsonb
 language sql stable security definer set search_path=public as $$

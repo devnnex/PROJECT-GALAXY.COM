@@ -31,6 +31,7 @@ try {
   console.log('Grupo privado y permisos validados. Se conservan los miembros y las conversaciones existentes.');
   await call(['db', 'query', '--file', resolve(root, 'supabase/migrations/20261119150000_telegram_private_membership.sql')]);
   await call(['db', 'query', '--file', resolve(root, 'supabase/migrations/20261119180000_telegram_resume_flow.sql')]);
+  await call(['db', 'query', '--file', resolve(root, 'supabase/migrations/20261119193000_telegram_scheduled_photo.sql')]);
   const secret = randomBytes(32).toString('hex');
   await call(['secrets', 'set', '--env-file', await privateFile('community.env', `TELEGRAM_WEBHOOK_SECRET=${secret}\n`)]);
   for (const name of ['scanner-telegram', 'telegram-access', 'telegram-community']) await call(['functions', 'deploy', name, '--use-api', '--no-verify-jwt']);

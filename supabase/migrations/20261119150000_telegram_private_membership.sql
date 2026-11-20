@@ -21,7 +21,7 @@ alter table public.telegram_webhook_updates enable row level security;
 revoke all on public.telegram_community_config,public.telegram_memberships,public.telegram_webhook_updates from public,anon,authenticated;
 grant all on public.telegram_community_config,public.telegram_memberships,public.telegram_webhook_updates to service_role;
 alter table public.scanner_telegram_jobs drop constraint if exists scanner_telegram_jobs_kind_check;
-alter table public.scanner_telegram_jobs add constraint scanner_telegram_jobs_kind_check check(kind in ('EVENT','WEEKLY','MONTHLY','WELCOME','LINK'));
+alter table public.scanner_telegram_jobs add constraint scanner_telegram_jobs_kind_check check(kind in ('EVENT','WEEKLY','MONTHLY','WELCOME','LINK','LINK_ERROR','PHOTO'));
 alter table public.scanner_telegram_jobs add column if not exists recipient_id bigint;
 
 create or replace function public.telegram_user_eligible(p_user uuid) returns boolean

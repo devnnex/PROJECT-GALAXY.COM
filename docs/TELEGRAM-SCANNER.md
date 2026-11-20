@@ -22,7 +22,7 @@ El despacho se solicita al crear el evento, sin esperar una consulta de un usuar
 
 Los reportes se generan los lunes a las 08:00 y el día 1 a las 08:00, zona `America/Bogota`. El cron horario también recupera el reporte de la frontera vigente tras un fallo, con clave única por período. Semanal: lunes a domingo anterior; mensual: mes calendario anterior, incluyendo cambios de año. El primer reporte corresponde a una fecha programada posterior a la activación.
 
-Cada reporte presenta señales, días con señales, ganadas, SL, abiertas, no consideradas, efectividad y TP tocados. La efectividad usa `WIN / (WIN + SL)` y excluye no consideradas/abiertas. Mejor y peor día muestran fecha, porcentaje y muestra; empates favorecen mayor muestra y luego fecha más antigua.
+Cada reporte destaca la efectividad hist?rica, su muestra evaluada, los TP alcanzados y la mejor jornada, con un formato breve de PROJECT GALAXY. La efectividad usa `WIN / (WIN + SL)` y excluye no consideradas/abiertas. La mejor jornada muestra fecha, porcentaje y muestra; empates favorecen mayor muestra y luego fecha m?s antigua. Un per?odo sin resultados evaluables lo indica sin inventar una tasa.
 
 Los resultados corresponden a señales **emitidas** en el período, con su estado registrado al corte; una operación todavía abierta puede evolucionar después. Los reportes ya enviados son snapshots. No se mezclan con recuentos de eventos TP ocurridos en el período sobre señales de otros días.
 
@@ -35,3 +35,7 @@ Cola privada con RLS y RPC solo para `service_role`, leases de 60 segundos y con
 Telegram no ofrece clave de idempotencia para `sendMessage`: si acepta un envío y se pierde su respuesta o la confirmación de base de datos, un reintento puede duplicarlo. No se promete entrega exactamente una vez ni simultaneidad absoluta entre Telegram y Push. La cola conserva estado y códigos, nunca tokens ni contenidos del grupo en logs. Los metadatos de trabajos finalizados se limpian a los 45 días; el registro canónico de operaciones se conserva.
 
 Fuentes: https://core.telegram.org/bots/api#sendmessage y https://core.telegram.org/bots/faq#my-bot-is-hitting-limits-how-do-i-avoid-this
+
+## Evidencia visual puntual
+
+Los trabajos privados `PHOTO` reutilizan `next_attempt_at` y el dispatcher existente; las se?ales conservan prioridad. La imagen PNG se descarga del bucket privado `telegram-evidence`, se env?a con su explicaci?n y se retira tras confirmar la entrega. El texto admite hasta 1024 caracteres. No se a?ade otro cron ni almacenamiento p?blico; im?genes, credenciales y herramientas privadas de env?o puntual quedan fuera de Git.

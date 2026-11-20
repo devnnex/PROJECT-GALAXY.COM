@@ -15,11 +15,26 @@ Deno.serve(async (request) => {
     const rpc = async (name: string, params?: object) => { const { data, error } = await client.rpc(name, params); if (error) throw new Error('Delivery database unavailable'); return data; };
     const result = await deliverTelegram({
       claim: () => rpc('claim_scanner_telegram_job'),
-      finish: async (job: { id: number; lease: string }, delivery: { status: string; messageId?: number; retryAfter?: number; code?: string }) => {
+      finish: async (job: { id: number; lease: string; kind: string; payload: { path?: string } }, delivery: { status: string; messageId?: number; retryAfter?: number; code?: string }) => {
         const accepted = await rpc('finish_scanner_telegram_job', { p_id: job.id, p_lease: job.lease, p_status: delivery.status, p_message_id: delivery.messageId ?? null, p_retry_after: delivery.retryAfter ?? 0, p_code: delivery.code ?? null });
         if (accepted !== true) throw new Error('Delivery lease changed');
+        if (delivery.status === 'sent' && job.kind === 'PHOTO' && /^scheduled\/[a-f0-9-]+\.png$/.test(job.payload.path || '')) {
+          await client.storage.from('telegram-evidence').remove([job.payload.path!]).catch(() => {});
+        }
       },
-      send: async (text: string, job: { chatId?: number; kind: string }) => {
+      send: async (text: string, job: { chatId?: number; kind: string; payload: { path?: string } }) => {
+        if (job.kind === 'PHOTO') {
+          if (!/^scheduled\/[a-f0-9-]+\.png$/.test(job.payload.path || '')) throw new Error('Invalid evidence path');
+          const { data: photo, error } = await client.storage.from('telegram-evidence').download(job.payload.path!);
+          if (error || !photo) throw new Error('Evidence unavailable');
+          const form = new FormData();
+          form.set('chat_id', String(job.chatId ?? chatId)); form.set('photo', photo, 'opus-55-evidence.png');
+          form.set('caption', text); form.set('parse_mode', 'HTML'); form.set('allow_paid_broadcast', 'false');
+          form.set('reply_markup', JSON.stringify({ inline_keyboard: [[{ text: 'Ver Black Galaxy Trade', url: 'https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html?section=black-trade' }]] }));
+          const response = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form, redirect: 'error', signal: AbortSignal.timeout(10000) });
+          const body = await response.json().catch(() => ({}));
+          return { status: response.status, ok: body.ok, messageId: body.result?.message_id, retryAfter: body.parameters?.retry_after };
+        }
         const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(8000), headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ chat_id: job.chatId ?? chatId, text, parse_mode: 'HTML', allow_paid_broadcast: false, link_preview_options: { is_disabled: true }, reply_markup: { inline_keyboard: [[{ text: ['LINK', 'LINK_ERROR'].includes(job.kind) ? 'Continuar en Galaxy' : 'Ver en Galaxy', url: `https://devnnex.github.io/PROJECT-GALAXY.COM/dist/index.html?section=black-trade${['LINK', 'LINK_ERROR'].includes(job.kind) ? '&telegram=1' : ''}` }]] } }) });
         const body = await response.json().catch(() => ({}));
